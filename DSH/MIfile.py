@@ -142,7 +142,7 @@ class MIfile():
                 for i in range(0, len(data_arr), xsec_per_buffer):
                     self.FileHandle.write(self._imgs_to_bytes(data_arr[i:min(i+xsec_per_buffer, len(data_arr))], self.ByteFormat, do_flatten=True))
         else:
-            self.FileHandle.write(self._imgs_to_bytes(data_arr, self.ByteFormat, do_flatten=True))
+            self.FileHandle.write(self._imgs_to_bytes(data_arr, self.PixelFormat, do_flatten=True))
         if (closeAfter):
             self.Close()
 

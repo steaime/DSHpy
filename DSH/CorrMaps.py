@@ -47,7 +47,10 @@ class CorrMaps():
             self.inputShape = [self.imgNumber, self.MIinput.ImageHeight(), self.MIinput.ImageWidth()]
         else:
             self.inputShape = [self.imgNumber, self.cropROI[3],self.cropROI[2]]
-        self.Kernel['size'] = int(self.Kernel['sigma']*self.Kernel['cutoff'])
+        if (self.Kernel['type']=='Gauss'):
+            self.Kernel['size'] = int(self.Kernel['sigma']*self.Kernel['cutoff'])
+        else:
+            raise ValueError('Kernel type "' + str(self.Kernel['type']) + '" not supported')
         if (self.Kernel['padding']):
             self.Kernel['padw'] = self.Kernel['size']
             self.trimMargin = 0
