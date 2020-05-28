@@ -2,12 +2,7 @@ import os
 import numpy as np
 import sys
 import struct
-if False:
-    import SharedFunctions as sf
-    import Config as cf
-else:
-    from DSH import SharedFunctions as sf
-    from DSH import Config as cf
+from DSH import Config as cf
 
 _data_depth = {'b':1, 'B':1, '?':1, 'h':2, 'H':2, 'i':4, 'I':4, 'f':4, 'd':8}
 _data_types = {'b':np.int8, 'B':np.uint8, '?':bool, 'h':np.int16, 'H':np.uint16, 'i':np.int32, 'I':np.uint32, 'f':np.float32, 'd':np.float64}
@@ -277,13 +272,3 @@ class MIfile():
             data = data.astype(_data_types[data_format])
         res += struct.pack(('%s' + data_format) % len(data), *data)
         return res
-    
-    def _MIinfo_from_name(MI_filename):
-        int_list = sf.AllIntInStr(sf.GetFilenameFromCompletePath(MI_filename))
-        if (len(int_list) > 2):
-            return {'img_width':int(int_list[-3]), 'img_height':int(int_list[-2]), 'img_num':int(int_list[-1])}
-        elif (len(int_list) > 1):
-            return {'img_width':int(int_list[-2]), 'img_height':int(int_list[-1])}
-        else:
-            raise ValueError('Cannot retrieve image shape from filename ' + str(MI_filename))
-            return None

@@ -1,13 +1,8 @@
+import os
 import numpy as np
 import time
-if False:
-    import SharedFunctions as sf
-    import Config as cf
-    import MIfile as MI
-else:
-    from DSH import SharedFunctions as sf
-    from DSH import Config as cf
-    from DSH import MIfile as MI
+from DSH import Config as cf
+from DSH import MIfile as MI
 
 class CorrMaps():
     """ Class to compute correlation maps from a MIfile """
@@ -41,7 +36,7 @@ class CorrMaps():
             self.imgRange[1] = self.MIinput.ImageNumber()
         if (len(self.imgRange) < 2):
             self.imgRange.append(1)
-        self.imgNumber = sf.CountRange(self.imgRange)
+        self.imgNumber = len(list(range(*self.imgRange)))
         self.cropROI = self.MIinput.ValidateROI(cropROI)
         self.Kernel = KernelSpecs
         if (self.cropROI is None):
@@ -109,7 +104,8 @@ class CorrMaps():
         if not silent:
             start_time = time.time()
             print('Computing correlation maps:')
-        sf.CheckCreateFolder(self.outFolder)
+        if (not os.path.isdir(self.outFolder)):
+            os.makedirs(self.outFolder)
         dict_config = {'mi_input' : self.MIinput.GetMetadata(),
                        'mi_output' : self.outMetaData,
                        'parameters' : {'out_folder' : self.outFolder,
@@ -121,7 +117,7 @@ class CorrMaps():
                        }
         conf = cf.Config()
         conf.Import(dict_config, section_name=None)
-        conf.Export(sf.JoinPath(self.outFolder, 'CorrMapsConfig.ini'))
+        conf.Export(os.path.join(self.outFolder, 'CorrMapsConfig.ini'))
         
         if not silent:
             print('  STEP 1: Preparing memory...')
@@ -182,7 +178,7 @@ class CorrMaps():
                         temp_num = np.true_divide(temp_num, MaskNorm[ridx][cidx])
                         AvgIntensity[tidx][ridx][cidx] = np.true_divide(AvgIntensity[tidx][ridx][cidx], MaskNorm[ridx][cidx])
                     AutoCorr[tidx][ridx][cidx]   = temp_num/np.square(AvgIntensity[tidx][ridx][cidx])-1 
-        MI.MIfile(sf.JoinPath(self.outFolder, 'CorrMap_d0.dat'), self.outMetaData).WriteData(AutoCorr)
+        MI.MIfile(os.path.join(self.outFolder, 'CorrMap_d0.dat'), self.outMetaData).WriteData(AutoCorr)
         
         if not silent:
             print('  STEP 5: Normalizing and saving correlations...')
@@ -198,7 +194,7 @@ class CorrMaps():
                             temp_num = np.true_divide(temp_num, MaskNorm[ridx][cidx])
                         cur_corr[tidx][ridx][cidx] = np.true_divide(temp_num/(AvgIntensity[tidx][ridx][cidx]*AvgIntensity[tidx+self.lagList[lidx]][ridx][cidx])-1,\
                                                                     AutoCorr[tidx][ridx][cidx])
-            MI.MIfile(sf.JoinPath(self.outFolder, 'CorrMap_d%s.dat' % self.lagList[lidx]), self.outMetaData).WriteData(cur_corr)        
+            MI.MIfile(os.path.join(self.outFolder, 'CorrMap_d%s.dat' % self.lagList[lidx]), self.outMetaData).WriteData(cur_corr)        
             if return_maps:
                 res_4D.append(np.asarray(cur_corr, dtype=np.float32))
 
