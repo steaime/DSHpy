@@ -157,7 +157,7 @@ class MIfile():
         return self.MetaData._sections['MIfile']
     
     def ImageNumber(self):
-        return int(self.ImageNumber)
+        return int(self.ImgNumber)
     def ImageShape(self):
         return [int(self.ImgHeight), int(self.ImgWidth)]
     def ImageHeight(self):
