@@ -44,6 +44,7 @@ class Config():
                     if (not self.config.has_section(key)):
                         self.config.add_section(key)
                     for subkey in dict_config[key].keys():
+                        print(dict_config[key][subkey])
                         self.config.set(key, subkey, dict_config[key][subkey])
         else:
             if (not self.config.has_section(section_name)):
