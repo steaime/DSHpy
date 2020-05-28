@@ -90,24 +90,15 @@ class CorrMaps():
             print('  STEP 1: Preparing memory...')
         # This will contain image data, eventually zero-padded
         Intensity = np.empty([self.inputShape[0], self.inputShape[1] + 2*self.Kernel['padw'], self.inputShape[2] + 2*self.Kernel['padw']])
-        #Intensity = np.empty([self.inputShape[0], self.inputShape[1] + 2*self.Kernel['padw'], self.inputShape[2] + 2*self.Kernel['padw']], dtype=self.MIinput.DataType())
         # This contains ones eventually padded with zeros to properly average correlations
         # Without padding it is just ones
         IntensityMask = np.pad(np.ones(self.inputShape[1:]), self.Kernel['padw'], 'constant')
-        #IntensityMask = np.pad(np.ones(self.inputShape[1:], dtype=np.uint8), self.Kernel['padw'], 'constant')
         # This will contain kernel-averaged mask values
         # Without padding it is just ones
         MaskNorm = np.empty([self.outputShape[1],self.outputShape[2]])
         # This will contain cross product of image intensities:
         # CrossProducts[i,j,k,l] = Intensity[j,k,l]*Intensity[j+lag[i],k,l]
-        if (self.MIinput.DataFormat() in ['c', 'b', 'B']):
-            xprod_dtype = np.int16
-        elif (self.MIinput.DataFormat() in ['h', 'H']):
-            xprod_dtype = np.int32
-        else:
-            xprod_dtype = self.MIinput.DataType()
         CrossProducts = np.empty([self.numLags+1, self.inputShape[0], self.inputShape[1] + 2*self.Kernel['padw'], self.inputShape[2] + 2*self.Kernel['padw']])
-        #CrossProducts = np.empty([self.numLags+1, self.inputShape[0], self.inputShape[1] + 2*self.Kernel['padw'], self.inputShape[2] + 2*self.Kernel['padw']], dtype=xprod_dtype)
         # This will contain autocorrelation data ("d0")
         AutoCorr = np.empty(self.outputShape)
         # This will contain kernel-averaged intensity data
@@ -163,7 +154,8 @@ class CorrMaps():
                         temp_num = np.true_divide(np.sum(np.multiply(weights, CrossProducts[lidx+1][tidx][ridx:ridx+2*self.Kernel['size']+1,\
                                                                                                 cidx:cidx+2*self.Kernel['size']+1])),\
                                                     MaskNorm[ridx][cidx])
-                        cur_corr[tidx][ridx][cidx] = (temp_num/(AvgIntensity[tidx][ridx][cidx]*AvgIntensity[tidx+self.lagList[lidx]][ridx][cidx])-1)/AutoCorr[tidx][ridx][cidx]
+                        cur_corr[tidx][ridx][cidx] = np.true_divide(temp_num/(AvgIntensity[tidx][ridx][cidx]*AvgIntensity[tidx+self.lagList[lidx]][ridx][cidx])-1,\
+                                                                    AutoCorr[tidx][ridx][cidx])
             MI.MIfile(sf.JoinPath(self.outFolder, 'CorrMap_d%s.dat' % self.lagList[lidx]), self.outMetaData).WriteData(cur_corr)        
 
         if not silent:
