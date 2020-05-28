@@ -108,7 +108,7 @@ class CorrMaps():
         if not silent:
             print('  STEP 2: Loading images...')
         self.MIinput.OpenForReading()
-        t_list = sf.RangeToList(*self.imgRange)
+        t_list = list(range(*self.imgRange))
         for tidx in range(self.imgNumber):  
             temp = self.MIinput.GetImage(img_idx=t_list[tidx], cropROI=self.cropROI)
             Intensity[tidx] = np.pad(temp, self.Kernel['padw'], 'constant')  
