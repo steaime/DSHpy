@@ -49,7 +49,7 @@ class Config():
             if (not self.config.has_section(section_name)):
                 self.config.add_section(section_name)
             for key in dict_config.keys():
-                self.config.set(section_name, key, dict_config[key])
+                self.config.set(section_name, key, str(dict_config[key]))
     
     def Export(self, configFile):
         """Export all entries in configuration file
