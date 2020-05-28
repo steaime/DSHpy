@@ -30,14 +30,14 @@ class MIfile():
         self._load_metadata(MetaData)
     
     def __repr__(self):
-        return '<MIfile: %s+%sx%sx%sx%s bytes>' % (self.HeaderSize, self.ImgNumber, self.ImgHeight, self.ImgWidth, self.PixelDepth)
+        return '<MIfile: %s+%sx%sx%sx%s bytes>' % (self.hdrSize, self.ImgNumber, self.ImgHeight, self.ImgWidth, self.PixelDepth)
     
     def __str__(self):
         str_res  = '\n|---------------|'
         str_res += '\n| MIfile class: |'
         str_res += '\n|---------------+------------'
         str_res += '\n| Filename      : ' + str(self.FileName)
-        str_res += '\n| Header        : ' + str(self.HeaderSize) + 'bytes'
+        str_res += '\n| Header        : ' + str(self.hdrSize) + 'bytes'
         str_res += '\n| Shape         : ' + str(self.Shape) + 'px'
         str_res += '\n| Pixel format  : ' + str(self.PixelFormat) + ' (' + str(self.PixelDepth) + ' bytes/px)'
         str_res += '\n|----------------------------'
@@ -167,7 +167,7 @@ class MIfile():
     def Shape(self):
         return np.asarray(self.Shape.copy())
     def HeaderSize(self):
-        return int(self.HeaderSize)
+        return int(self.hdrSize)
     def GetFPS(self):
         return float(self.FPS)
     def GetPixelSize(self):
@@ -212,7 +212,7 @@ class MIfile():
         self.MaxBufferSize = self.MetaData.Get('settings', 'max_buffer_size', 100000000, int)
         if (self.FileName is None):
             self.FileName = self.MetaData.Get('MIfile', 'filename', None)
-        self.HeaderSize = self.MetaData.Get('MIfile', 'hdr_len', 0, int)
+        self.hdrSize = self.MetaData.Get('MIfile', 'hdr_len', 0, int)
         self.Shape = self.MetaData.Get('MIfile', 'shape', [0,0,0], int)
         self.ImgNumber = self.Shape[0]
         self.ImgHeight = self.Shape[1]
@@ -232,7 +232,7 @@ class MIfile():
         row_idx : row index (top row is #0)
         col_idx : column index (left column is #0)
         """
-        return self.HeaderSize + (img_idx * self.PxPerImg + row_idx * self.ImgWidth + col_idx) * self.PixelDepth
+        return self.hdrSize + (img_idx * self.PxPerImg + row_idx * self.ImgWidth + col_idx) * self.PixelDepth
     
     def _read_pixels(self, px_num=1, seek_pos=None):
         """Read given number of contiguous pixels from MIfile
