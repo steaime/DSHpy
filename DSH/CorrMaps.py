@@ -1,4 +1,5 @@
 import numpy as np
+import time
 if False:
     import SharedFunctions as sf
     import Config as cf
@@ -59,7 +60,7 @@ class CorrMaps():
             self.trimMargin = self.Kernel['size']
         self.outputShape = [self.inputShape[0], self.inputShape[1] - 2*self.trimMargin, self.inputShape[2] - 2*self.trimMargin]
         self.outMetaData = {
-                'hdr_len' : self.MIinput.HeaderSize(),
+                'hdr_len' : 0,
                 'shape' : self.outputShape,
                 'px_format' : 'f',
                 'fps' : self.MIinput.GetFPS(),
@@ -69,6 +70,7 @@ class CorrMaps():
     def Compute(self, silent=True):
         
         if not silent:
+            start_time = time.time()
             print('Computing correlation maps:')
         sf.CheckCreateFolder(self.outFolder)
         dict_config = {'mi_input' : self.MIinput.GetMetadata(),
@@ -160,3 +162,6 @@ class CorrMaps():
                                                     MaskNorm[ridx][cidx])
                         cur_corr[tidx][ridx][cidx] = (temp_num/(AvgIntensity[tidx][ridx][cidx]*AvgIntensity[tidx+self.lagList[lidx]][ridx][cidx])-1)/AutoCorr[tidx][ridx][cidx]
             MI.MIfile(sf.JoinPath(self.outFolder, 'CorrMap_d%s.dat' % self.lagList[lidx]), self.outMetaData).WriteData(cur_corr)        
+
+        if not silent:
+            print('Procedure completed in {0:.1f} seconds!'.format(time.time()-start_time))
