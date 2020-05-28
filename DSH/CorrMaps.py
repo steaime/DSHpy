@@ -77,6 +77,7 @@ class CorrMaps():
                                    },
                         'kernel' : self.Kernel
                        }
+        print(dict_config)
         conf = cf.Config()
         conf.Import(dict_config, section_name=None)
         conf.Export(sf.JoinPath(self.outFolder, 'CorrMapsConfig.ini'))
