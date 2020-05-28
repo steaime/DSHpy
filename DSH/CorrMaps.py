@@ -88,7 +88,7 @@ class CorrMaps():
             str_res += 'PADDING (width=' + str(self.Kernel['padw']) + ')'
         else:
             str_res += 'NO PADDING (trimming margin=' + str(self.trimMargin) + ')'
-        str_res += '\n|----------------------------'
+        str_res += '\n|------------------------------'
         return str_res
 
     def Compute(self, silent=True, return_maps=False):
@@ -161,7 +161,9 @@ class CorrMaps():
         y = np.asarray(range(-self.Kernel['size'], self.Kernel['size']+1))
         grid = np.meshgrid(x,y)
         if (self.Kernel['type']=='Gauss'):
-            weights = np.exp(np.divide(np.square(grid[0])+np.square(grid[1]),-np.square(self.Kernel['sigma'])))    
+            weights = np.exp(np.divide(np.square(grid[0])+np.square(grid[1]),-np.square(self.Kernel['sigma'])))
+            # let's normalize so that weights has unitary integral
+            weights = np.true_divide(weights, np.sum(weights))
         else:
             raise ValueError('Kernel type "' + str(self.Kernel['type']) + '" not supported')
         if (self.Kernel['padding']):
