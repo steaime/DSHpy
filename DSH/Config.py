@@ -117,3 +117,16 @@ class Config():
         
     def Set(self, sect, key, value):
         self.config.set(sect, key, value)
+        
+    def ToDict(self, section=None):
+        """Export to dictionary
+        
+        Parameters
+        ----------
+        section : section to export as a dictionary
+                if None, export all sections
+        """
+        if (section is None):
+            return self.config._sections
+        else:
+            return self.config._sections[section]

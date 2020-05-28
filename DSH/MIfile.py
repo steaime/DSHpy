@@ -154,7 +154,7 @@ class MIfile():
     def GetMetadata(self):
         """Returns dictionary with metadata
         """
-        return self.MetaData._sections['MIfile']
+        return self.MetaData.ToDict(section='MIfile')
     
     def ImageNumber(self):
         return int(self.ImgNumber)
