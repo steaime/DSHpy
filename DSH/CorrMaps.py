@@ -95,7 +95,7 @@ class CorrMaps():
         IntensityMask = np.pad(np.ones(self.inputShape[1:], dtype=np.uint8), self.Kernel['padw'], 'constant')
         # This will contain kernel-averaged mask values
         # Without padding it is just ones
-        MaskNorm = np.empty([self.outputShape[1],self.outputShape[2]], dtype=np.uint8)
+        MaskNorm = np.empty([self.outputShape[1],self.outputShape[2]])
         # This will contain cross product of image intensities:
         # CrossProducts[i,j,k,l] = Intensity[j,k,l]*Intensity[j+lag[i],k,l]
         if (self.MIinput.DataFormat() in ['c', 'b', 'B']):
@@ -106,9 +106,9 @@ class CorrMaps():
             xprod_dtype = self.MIinput.DataType()
         CrossProducts = np.empty([self.numLags+1, self.inputShape[0], self.inputShape[1] + 2*self.Kernel['padw'], self.inputShape[2] + 2*self.Kernel['padw']], dtype=xprod_dtype)
         # This will contain autocorrelation data ("d0")
-        AutoCorr = np.empty(self.outputShape, dtype=MI._data_types[self.outMetaData['px_format']])
+        AutoCorr = np.empty(self.outputShape)
         # This will contain kernel-averaged intensity data
-        AvgIntensity = np.empty_like(AutoCorr, dtype=MI._data_types[self.outMetaData['px_format']])
+        AvgIntensity = np.empty_like(AutoCorr)
         
         if not silent:
             print('  STEP 2: Loading images...')
