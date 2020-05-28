@@ -157,21 +157,21 @@ class MIfile():
         return self.MetaData._sections['MIfile']
     
     def ImageNumber(self):
-        return self.ImageNumber
+        return int(self.ImageNumber)
     def ImageShape(self):
-        return [self.ImgHeight, self.ImgWidth]
+        return [int(self.ImgHeight), int(self.ImgWidth)]
     def ImageHeight(self):
-        return self.ImgHeight
+        return int(self.ImgHeight)
     def ImageWidth(self):
-        return self.ImgWidth
+        return int(self.ImgWidth)
     def Shape(self):
-        return self.Shape.copy()
+        return np.asarray(self.Shape.copy())
     def HeaderSize(self):
-        return self.HeaderSize
+        return int(self.HeaderSize)
     def GetFPS(self):
-        return self.FPS
+        return float(self.FPS)
     def GetPixelSize(self):
-        return self.PixelSize
+        return float(self.PixelSize)
     
     def ValidateROI(self, ROI):
         """Validates a Region Of Interest (ROI)

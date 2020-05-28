@@ -45,8 +45,8 @@ def CountRange(index_range):
     return len(RangeToList(index_range))
 
 def RangeToList(index_range):
-    print(index_range)
-    print(list(range(*index_range)))
+    #print(index_range)
+    #print(list(range(*index_range)))
     return list(range(*index_range))
 
 def GetFolderFromCompletePath(my_string):

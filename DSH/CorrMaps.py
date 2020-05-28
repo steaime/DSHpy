@@ -40,6 +40,7 @@ class CorrMaps():
             self.imgRange[1] = self.MIinput.ImageNumber()
         if (len(self.imgRange) < 2):
             self.imgRange.append(1)
+        print(self.imgRange)
         self.imgNumber = sf.CountRange(self.imgRange)
         self.cropROI = self.MIinput.ValidateROI(cropROI)
         self.Kernel = KernelSpecs
