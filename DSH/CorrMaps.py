@@ -76,7 +76,7 @@ class CorrMaps():
         str_res += '\n|-----------------+------------'
         str_res += '\n| MI Filename     : ' + str(self.MIinput.GetFilename())
         str_res += '\n| output folder   : ' + str(self.outFolder)
-        str_res += '\n| lag times (' + str(self.numLags).zfill(2) + ')  : ' + str(self.lagLis)
+        str_res += '\n| lag times (' + str(self.numLags).zfill(2) + ')  : ' + str(self.lagList)
         str_res += '\n| image range     : ' + str(self.imgRange)
         str_res += '\n| crop ROI        : ' + str(self.cropROI)
         str_res += '\n| Kernel          : ' + str(self.Kernel['type']) + ' - '
