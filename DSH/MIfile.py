@@ -172,6 +172,10 @@ class MIfile():
         return float(self.FPS)
     def GetPixelSize(self):
         return float(self.PixelSize)
+    def DataType(self):
+        return self.PixelDataType
+    def DataFormat(self):
+        return self.PixelFormat
     
     def ValidateROI(self, ROI):
         """Validates a Region Of Interest (ROI)
@@ -220,6 +224,7 @@ class MIfile():
         self.PxPerImg = self.ImgHeight * self.ImgWidth
         self.PixelFormat = self.MetaData.Get('MIfile', 'px_format', 'B', str)
         self.PixelDepth = _data_depth[self.PixelFormat]
+        self.PixelDataType = _data_types[self.PixelFormat]
         self.FPS = self.MetaData.Get('MIfile', 'fps', 1.0, float)
         self.PixelSize = self.MetaData.Get('MIfile', 'px_size', 1.0, float)
 

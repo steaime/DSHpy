@@ -84,20 +84,26 @@ class CorrMaps():
         if not silent:
             print('  STEP 1: Preparing memory...')
         # This will contain image data, eventually zero-padded
-        Intensity = np.empty([self.inputShape[0], self.inputShape[1] + 2*self.Kernel['padw'], self.inputShape[2] + 2*self.Kernel['padw']])
+        Intensity = np.empty([self.inputShape[0], self.inputShape[1] + 2*self.Kernel['padw'], self.inputShape[2] + 2*self.Kernel['padw']], dtype=self.MIinput.DataType())
         # This contains ones eventually padded with zeros to properly average correlations
         # Without padding it is just ones
-        IntensityMask = np.pad(np.ones(self.inputShape[1:]), self.Kernel['padw'], 'constant')
+        IntensityMask = np.pad(np.ones(self.inputShape[1:], dtype=np.uint8), self.Kernel['padw'], 'constant')
         # This will contain kernel-averaged mask values
         # Without padding it is just ones
-        MaskNorm = np.empty([self.outputShape[1],self.outputShape[2]])
+        MaskNorm = np.empty([self.outputShape[1],self.outputShape[2]], dtype=np.uint8)
         # This will contain cross product of image intensities:
         # CrossProducts[i,j,k,l] = Intensity[j,k,l]*Intensity[j+lag[i],k,l]
-        CrossProducts = np.empty([self.numLags+1, self.inputShape[0], self.inputShape[1] + 2*self.Kernel['padw'], self.inputShape[2] + 2*self.Kernel['padw']])
+        if (self.MIinput.DataFormat() in ['c', 'b', 'B']):
+            xprod_dtype = np.int16
+        elif (self.MIinput.DataFormat() in ['h', 'H']):
+            xprod_dtype = np.int32
+        else:
+            xprod_dtype = self.MIinput.DataType()
+        CrossProducts = np.empty([self.numLags+1, self.inputShape[0], self.inputShape[1] + 2*self.Kernel['padw'], self.inputShape[2] + 2*self.Kernel['padw']], dtype=xprod_dtype)
         # This will contain autocorrelation data ("d0")
-        AutoCorr = np.empty(self.outputShape)
+        AutoCorr = np.empty(self.outputShape, dtype=MI._data_types[self.outMetaData['px_format']])
         # This will contain kernel-averaged intensity data
-        AvgIntensity = np.empty_like(AutoCorr)
+        AvgIntensity = np.empty_like(AutoCorr, dtype=MI._data_types[self.outMetaData['px_format']])
         
         if not silent:
             print('  STEP 2: Loading images...')
