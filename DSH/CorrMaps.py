@@ -19,7 +19,7 @@ class CorrMaps():
         ----------
         MIin : input multi image file (MIfile class)
         outFolder : output folder path. If the directory doesn't exist, it will be created
-        lagList : list of lagtimes (in image units)
+        lagList : list of lagtimes (in units of the image step specified in imgRange)
         KernelSpecs : dictionary with kernel specifications 
                     for Gaussian kernels: {'type':'Gauss', 'sigma':std_dev, 'cutoff':sigma_cutoff, 'padding':true/false}
                     if 'padding' is True the output will have same shape as image (or cropped ROI)
@@ -66,6 +66,30 @@ class CorrMaps():
                 'fps' : self.MIinput.GetFPS(),
                 'px_size' : self.MIinput.GetPixelSize()
                 }
+
+    def __repr__(self):
+        return '<CorrMaps class>'
+    
+    def __str__(self):
+        str_res  = '\n|-----------------|'
+        str_res += '\n| CorrMaps class: |'
+        str_res += '\n|-----------------+------------'
+        str_res += '\n| MI Filename     : ' + str(self.MIinput.GetFilename())
+        str_res += '\n| output folder   : ' + str(self.outFolder)
+        str_res += '\n| lag times (' + str(self.numLags).zfill(2) + ')  : ' + str(self.lagLis)
+        str_res += '\n| image range     : ' + str(self.imgRange)
+        str_res += '\n| crop ROI        : ' + str(self.cropROI)
+        str_res += '\n| Kernel          : ' + str(self.Kernel['type']) + ' - '
+        for key in self.Kernel:
+            if key not in ['type', 'padw', 'padding', 'size']:
+                str_res += str(key) + '=' + str(self.Kernel[key]) + ', '
+        str_res += '\n| Kernel size     : ' + str(self.Kernel['size']) + ' '
+        if (self.Kernel['padding']):
+            str_res += 'PADDING (width=' + str(self.Kernel['padw']) + ')'
+        else:
+            str_res += 'NO PADDING (trimming margin=' + str(self.trimMargin) + ')'
+        str_res += '\n|----------------------------'
+        return str_res
 
     def Compute(self, silent=True, return_maps=False):
         """Computes correlation maps

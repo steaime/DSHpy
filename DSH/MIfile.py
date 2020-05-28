@@ -159,6 +159,8 @@ class MIfile():
         """
         return self.MetaData.ToDict(section='MIfile')
     
+    def GetFilename(self):
+        return self.FileName
     def ImageNumber(self):
         return int(self.ImgNumber)
     def ImageShape(self):
