@@ -77,7 +77,7 @@ class MIfile():
                   width and/or height can be -1 to signify till the end of the image
         """
         if (cropROI is None):
-            return self.GetStack(start_idx=img_idx, imgs_num=1, cropROI=cropROI).reshape(self.ImgHeight, self.ImgWidth)
+            return self.GetStack(start_idx=img_idx, imgs_num=1).reshape(self.ImgHeight, self.ImgWidth)
         else:
             cropROI = self._validate_roi(cropROI)
             if (cropROI[0]==0 and cropROI[2]==self.ImgWidth):
