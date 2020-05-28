@@ -89,10 +89,12 @@ class CorrMaps():
         if not silent:
             print('  STEP 1: Preparing memory...')
         # This will contain image data, eventually zero-padded
-        Intensity = np.empty([self.inputShape[0], self.inputShape[1] + 2*self.Kernel['padw'], self.inputShape[2] + 2*self.Kernel['padw']], dtype=self.MIinput.DataType())
+        Intensity = np.empty([self.inputShape[0], self.inputShape[1] + 2*self.Kernel['padw'], self.inputShape[2] + 2*self.Kernel['padw']])
+        #Intensity = np.empty([self.inputShape[0], self.inputShape[1] + 2*self.Kernel['padw'], self.inputShape[2] + 2*self.Kernel['padw']], dtype=self.MIinput.DataType())
         # This contains ones eventually padded with zeros to properly average correlations
         # Without padding it is just ones
-        IntensityMask = np.pad(np.ones(self.inputShape[1:], dtype=np.uint8), self.Kernel['padw'], 'constant')
+        IntensityMask = np.pad(np.ones(self.inputShape[1:]), self.Kernel['padw'], 'constant')
+        #IntensityMask = np.pad(np.ones(self.inputShape[1:], dtype=np.uint8), self.Kernel['padw'], 'constant')
         # This will contain kernel-averaged mask values
         # Without padding it is just ones
         MaskNorm = np.empty([self.outputShape[1],self.outputShape[2]])
@@ -104,7 +106,8 @@ class CorrMaps():
             xprod_dtype = np.int32
         else:
             xprod_dtype = self.MIinput.DataType()
-        CrossProducts = np.empty([self.numLags+1, self.inputShape[0], self.inputShape[1] + 2*self.Kernel['padw'], self.inputShape[2] + 2*self.Kernel['padw']], dtype=xprod_dtype)
+        CrossProducts = np.empty([self.numLags+1, self.inputShape[0], self.inputShape[1] + 2*self.Kernel['padw'], self.inputShape[2] + 2*self.Kernel['padw']])
+        #CrossProducts = np.empty([self.numLags+1, self.inputShape[0], self.inputShape[1] + 2*self.Kernel['padw'], self.inputShape[2] + 2*self.Kernel['padw']], dtype=xprod_dtype)
         # This will contain autocorrelation data ("d0")
         AutoCorr = np.empty(self.outputShape)
         # This will contain kernel-averaged intensity data

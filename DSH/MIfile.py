@@ -43,6 +43,9 @@ class MIfile():
         str_res += '\n|----------------------------'
         return str_res
 
+    def __del__(self):
+        self.Close()
+
     def OpenForReading(self):
         if (self.FileHandle is None):
             self.FileHandle = open(self.FileName, 'rb')
