@@ -1,19 +1,10 @@
 import numpy as np
 import scipy as sp
-import configparser
 from scipy import signal, spatial
 import os
 import re
 import shutil
 import sys
-import pkg_resources
-pkg_installed = {pkg.key for pkg in pkg_resources.working_set}
-if 'json' in pkg_installed:
-    import json
-    use_json = True
-else:
-    import ast
-    use_json = False
 
 def AllIntInStr(my_string):
     arr_str = re.findall(r'\d+', my_string)
@@ -50,6 +41,12 @@ def FirstFloatInStr(my_string):
     else:
         return None
 
+def CountRange(index_range):
+    return len(RangeToList(index_range))
+
+def RangeToList(index_range):
+    return list(range(*index_range))
+
 def GetFolderFromCompletePath(my_string):
     return os.path.dirname(my_string)
         
@@ -62,6 +59,9 @@ def GetFilenameFromCompletePath(my_string):
             if len(split2)>0:
                 res = split2[-1]
     return res
+
+def JoinPath(folder, file):
+    return os.path.join(folder, file)
 
 def CheckFolderExists(folderPath):
     if (folderPath is None):
@@ -210,62 +210,6 @@ def ExtractIndexFromStrings(StringList, index_pos=0, index_notfound=-1):
         else:
             res.append(index_notfound)
     return res
-
-def ReadConfig(config_file, config_defaults=[]):
-    # Read input file for configuration
-    config = configparser.ConfigParser(allow_no_value=True)
-    for conf_f in config_defaults:
-        print('Reading config file: ' + str(conf_f))
-        config.read(conf_f)
-    if (config_file is not None):
-        config.read(config_file)
-    return config
-
-def ExportConfig(config, filename):
-    cfgfile = open(filename,'w')
-    config.write(cfgfile)
-    cfgfile.close()
-
-def ConfigGet(config, sect, key, default=None, cast_type=None, verbose=1):
-    if (config.has_option(sect, key)):
-        res = config[sect][key]
-        if (str(res)[0] in ['[','(', '{']):
-            if use_json:
-                res = json.loads(res)
-            else:
-                res = ast.literal_eval(res)
-        if (type(res) in [list,tuple]):
-            for i in range(len(res)):
-                if (type(res[i]) in [list,tuple]):
-                    if (cast_type is not None):
-                        for j in range(len(res[i])):
-                            res[i][j] = cast_type(res[i][j])
-                else:
-                    if (cast_type is not None):
-                        res[i] = cast_type(res[i])
-                    
-            return res
-        elif (cast_type is bool):
-            return config.getboolean(sect, key)
-        elif (cast_type is int):
-            return config.getint(sect, key)
-        elif (cast_type is float):
-            if (res == 'nan'):
-                return np.nan
-            else:
-                return config.getfloat(sect, key)
-        else:
-            if (cast_type is None):
-                return res
-            else:
-                return cast_type(res)
-    else:
-        if (verbose>0):
-            print('"' + key + '" not found in section "' + sect + '": default value ' + str(default) + ' returned.')
-        return default
-
-def ConfigSet(config, sect, key, value):
-    config.set(sect, key, value)
 
 # Boundaries: (min_val, max_val) acceptable values.
 # if Boundaries != None, values outside boundaries will be discarded

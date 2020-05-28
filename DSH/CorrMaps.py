@@ -1,117 +1,151 @@
-import sys
-import os
 import numpy as np
-import SharedFunctions
-import DSHfunctions
+import SharedFunctions as sf
+import Config as cf
+import MIfile as MI
+#from DSH import SharedFunctions as sf
+#from DSH import Config as cf
+#from DSH import MIfile as MI
 
-ProgramRoot = os.path.dirname(sys.argv[0]) + '/'
-print('Program root: ' + str(ProgramRoot))
-
-config = None
-
-# READ CONFIG FILE
-def ReadConfig(filename='config_CorrMaps.ini'):
-    config = SharedFunctions.ReadConfig(str(ProgramRoot) + filename)
-    return config
-
-#exec(open(str(ProgramRoot) + 'var_names.py').read())
-#exec(open(str(ProgramRoot) + 'functions.py').read())
-
-#initialize variables and dictionaries
-#exec(open(str(ProgramRoot) + 'config/config_mv_corr_map.py').read())
-
-
-def ComputeCorrMaps():
+class CorrMaps():
+    """ Class to compute correlation maps from a MIfile """
     
-    # EXPORT CONFIGURATION FILE
-    #open(OutFolder + 'Config.txt', 'a').close()
-    copyfile(ProgramRoot + 'config/ConfigFile_mv_corr_map.txt', OutFolder + 'config.txt')
-    
-    
-    print('Calculating correlations...')
-    
-    raw_filename = InputFolder + MIfile_name
-    
-    
-    if Analysis_info[K_AN_USE_PADDING]:
-        pad_width   = int(Analysis_info[K_AN_SIGMA]*Analysis_info[K_AN_CUTOFF])
-        I_pad       = np.empty([Analysis_info[K_AN_NUM_LAGS]+1, Analysis_info[K_AN_IMGS_NUM], Analysis_info[K_AN_ROI_SIZE][1] + 2*pad_width,\
-                      Analysis_info[K_AN_ROI_SIZE][0] + 2*pad_width])
-        ROIs_pad    = np.empty([Analysis_info[K_AN_IMGS_NUM], Analysis_info[K_AN_ROI_SIZE][1] + 2*pad_width,\
-                      Analysis_info[K_AN_ROI_SIZE][0] + 2*pad_width])
+    def __init__(self, MIin, outFolder, lagList, KernelSpecs, imgRange=None, cropROI=None):
+        """Initialize MIfile
         
-    ROIs    = np.empty([Analysis_info[K_AN_IMGS_NUM], Analysis_info[K_AN_ROI_SIZE][1], Analysis_info[K_AN_ROI_SIZE][0]])
-    G       = np.empty([Analysis_info[K_AN_NUM_LAGS]+1, Analysis_info[K_AN_IMGS_NUM], Analysis_info[K_AN_ROI_SIZE][1], Analysis_info[K_AN_ROI_SIZE][0]])
-    
-    mask    = np.pad(np.ones([Analysis_info[K_AN_ROI_SIZE][1], Analysis_info[K_AN_ROI_SIZE][0]]), pad_width, 'constant')
-    I_mean  = np.empty_like(ROIs)
-    norm    = np.empty_like(ROIs[0])
-    
-    for t in range(Analysis_info[K_AN_IMGS_NUM]):  
-        temp = Load_single_img(InputFolder+MIfile_name, Analysis_info[K_AN_IMAGE_SIZE], data_format='B', pix_depth = 1,\
-                           header_size = 0, image_pos = Analysis_info[K_AN_FIRST_IMG]+t, gap = 0)
-    
-        temp_crop = temp[Analysis_info[K_AN_ROI][1]:Analysis_info[K_AN_ROI][3], Analysis_info[K_AN_ROI][0]:Analysis_info[K_AN_ROI][2]]
-        ROIs_pad[t]      = np.pad(temp_crop, pad_width, 'constant')  
-        I_pad[0][t]      = np.square(ROIs_pad[t])
+        Parameters
+        ----------
+        MIin : input multi image file (MIfile class)
+        outFolder : output folder path. If the directory doesn't exist, it will be created
+        lagList : list of lagtimes (in image units)
+        KernelSpecs : dictionary with kernel specifications 
+                    for Gaussian kernels: {'type':'Gauss', 'sigma':std_dev, 'cutoff':sigma_cutoff, 'padding':true/false}
+                    if 'padding' is True the output will have same shape as image (or cropped ROI)
+                    otherwise it will have trimmed boundaries with thickness given by kernel cutoff
+        imgRange : range of images to be analyzed [start_idx, end_idx, step_idx]
+                    if None, all images will be analyzed
+        cropROI : ROI to be analyzed: [topleftx, toplefty, width, height]
+                    if None, full images will be analyzed
+        """
+        self.MIinput = MIin
+        self.outFolder = outFolder
+        self.lagList = lagList
+        self.numLags = len(self.lagList)
+        if (imgRange is None):
+            self.imgRange = [0, -1, 1]
+        else:
+            self.imgRange = imgRange
+        if (self.imgRange[1] < 0):
+            self.imgRange[1] = self.MIinput.ImageNumber()
+        if (len(self.imgRange) < 2):
+            self.imgRange.append(1)
+        self.imgNumber = sf.CountRange(self.imgRange)
+        self.cropROI = self.MIinput.ValidateROI(cropROI)
+        self.Kernel = KernelSpecs
+        if (self.cropROI is None):
+            self.inputShape = [self.imgNumber, self.MIinput.ImageHeight(), self.MIinput.ImageWidth()]
+        else:
+            self.inputShape = [self.imgNumber, self.cropROI[3],self.cropROI[2]]
+        self.Kernel['size'] = int(self.Kernel['sigma']*self.Kernel['cutoff'])
+        if (self.Kernel['padding']):
+            self.Kernel['padw'] = self.Kernel['size']
+            self.trimMargin = 0
+        else:
+            self.Kernel['padw'] = 0
+            self.trimMargin = self.Kernel['size']
+        self.outputShape = [self.inputShape[0], self.inputShape[1] - 2*self.trimMargin, self.inputShape[2] - 2*self.trimMargin]
+        self.outMetaData = {
+                'hdr_len' : self.MIinput.HeaderSize(),
+                'shape' : self.outputShape,
+                'px_format' : 'f',
+                'fps' : self.MIinput.GetFPS(),
+                'px_size' : self.MIinput.GetPixelSize()
+                }
+
+    def Compute(self, silent=True):
         
-    
-    for n in range(Analysis_info[K_AN_NUM_LAGS]):
-        for t in range(Analysis_info[K_AN_IMGS_NUM]-Analysis_info[K_AN_LAG_LIST][n]):
-    
-                    I_pad[n+1][t] = np.multiply(ROIs_pad[t], ROIs_pad[t+Analysis_info[K_AN_LAG_LIST][n]])
-            
+        if not silent:
+            print('Computing correlation maps:')
+        sf.CheckCreateFolder(self.outFolder)
+        dict_config = {'mi_input' : self.MIinput.GetMetadata(),
+                       'mi_output' : self.outMetaData,
+                       'parameters' : {'out_folder' : self.outFolder,
+                                   'lags' : self.lagList,
+                                   'img_range' : self.imgRange,
+                                   'crop_roi' : self.cropROI
+                                   },
+                        'kernel' : self.Kernel
+                       }
+        conf = cf.Config()
+        conf.Import(dict_config, section_name=None)
+        conf.Export(sf.JoinPath(self.outFolder, 'CorrMapsConfig.ini'))
         
-    
-    x = np.asarray(range(-pad_width, pad_width+1))
-    y = np.asarray(range(-pad_width, pad_width+1))
-    
-    grid    = np.meshgrid(x,y)
-    weights = np.exp(np.divide(np.square(grid[0])+np.square(grid[1]),-np.square(Analysis_info[K_AN_SIGMA])))    
-    
-    
-    
-    for i in range(Analysis_info[K_AN_ROI_SIZE][1]):
-        for j in range(Analysis_info[K_AN_ROI_SIZE][0]):
-    
-            norm[i][j] = np.sum(np.multiply(weights, mask[i:i+2*pad_width+1, j:j+2*pad_width+1]))
-    
-    print('tau = 0...')
-    for t in range(Analysis_info[K_AN_IMGS_NUM]):
-        for i in range(Analysis_info[K_AN_ROI_SIZE][1]):
-            for j in range(Analysis_info[K_AN_ROI_SIZE][0]):
-                    
-                temp_num = np.sum(np.multiply(weights, I_pad[0][t][i:i+2*pad_width+1, j:j+2*pad_width+1]))/norm[i][j]
-                I_mean[t][i][j] = np.sum(np.multiply(weights, ROIs_pad[t][i:i+2*pad_width+1, j:j+2*pad_width+1]))/norm[i][j]
+        if not silent:
+            print('  STEP 1: Preparing memory...')
+        # This will contain image data, eventually zero-padded
+        Intensity = np.empty([self.inputShape[0], self.inputShape[1] + 2*self.Kernel['padw'], self.inputShape[2] + 2*self.Kernel['padw']])
+        # This contains ones eventually padded with zeros to properly average correlations
+        # Without padding it is just ones
+        IntensityMask = np.pad(np.ones(self.inputShape[1:]), self.Kernel['padw'], 'constant')
+        # This will contain kernel-averaged mask values
+        # Without padding it is just ones
+        MaskNorm = np.empty([self.outputShape[1],self.outputShape[2]])
+        # This will contain cross product of image intensities:
+        # CrossProducts[i,j,k,l] = Intensity[j,k,l]*Intensity[j+lag[i],k,l]
+        CrossProducts = np.empty([self.numLags+1, self.inputShape[0], self.inputShape[1] + 2*self.Kernel['padw'], self.inputShape[2] + 2*self.Kernel['padw']])
+        # This will contain autocorrelation data ("d0")
+        AutoCorr = np.empty(self.outputShape)
+        # This will contain kernel-averaged intensity data
+        AvgIntensity = np.empty_like(AutoCorr)
+        
+        if not silent:
+            print('  STEP 2: Loading images...')
+        self.MIinput.OpenForReading()
+        t_list = sf.RangeToList(*self.imgRange)
+        for tidx in range(self.imgNumber):  
+            temp = self.MIinput.GetImage(img_idx=t_list[tidx], cropROI=self.cropROI)
+            Intensity[tidx] = np.pad(temp, self.Kernel['padw'], 'constant')  
+            CrossProducts[0][tidx] = np.square(Intensity[tidx])
+        for lidx in range(self.numLags):
+            for tidx in range(self.imgNumber-self.lagList[lidx]):
+                CrossProducts[lidx+1][tidx] = np.multiply(Intensity[tidx], Intensity[tidx+self.lagList[lidx]])
+        self.MIinput.Close()
                 
-                G[0][t][i][j]   = temp_num/np.square(I_mean[t][i][j])-1 
-                    
-            
-    filename = ('mv_corr_map_d0.dat') 
+        if not silent:
+            print('  STEP 3: Calculating raw correlations...')
+        x = np.asarray(range(-self.Kernel['size'], self.Kernel['size']+1))
+        y = np.asarray(range(-self.Kernel['size'], self.Kernel['size']+1))
+        grid = np.meshgrid(x,y)
+        if (self.Kernel['type']=='Gauss'):
+            weights = np.exp(np.divide(np.square(grid[0])+np.square(grid[1]),-np.square(self.Kernel['sigma'])))    
+        else:
+            raise ValueError('Kernel type "' + str(self.Kernel['type']) + '" not supported')
+        for i in range(self.outputShape[1]):
+            for j in range(self.outputShape[2]):
+                MaskNorm[i][j] = np.sum(np.multiply(weights, IntensityMask[i:i+2*self.Kernel['size']+1, j:j+2*self.Kernel['size']+1]))
         
-    WriteFile(G[0], 'f', OutFolder, filename, overwrite=True)
-    
-    for n in range(Analysis_info[K_AN_NUM_LAGS]):
-        print('tau = ' + str(Analysis_info[K_AN_LAG_LIST][n]) + '...')
-        for t in range(Analysis_info[K_AN_IMGS_NUM]-Analysis_info[K_AN_LAG_LIST][n]):
-            I_pad[n+1][t] = np.multiply(ROIs_pad[t], ROIs_pad[t+Analysis_info[K_AN_LAG_LIST][n]])
-            for i in range(Analysis_info[K_AN_ROI_SIZE][1]):
-                for j in range(Analysis_info[K_AN_ROI_SIZE][0]):
-                    
-                    temp_num    = np.sum(np.multiply(weights, I_pad[n+1][t][i:i+2*pad_width+1, j:j+2*pad_width+1]))/norm[i][j]
-                    
-                
-                    G[n+1][t][i][j]      = (temp_num/(I_mean[t][i][j]*I_mean[t+Analysis_info[K_AN_LAG_LIST][n]][i][j])-1)/G[0][t][i][j]
-                    
-            
-        filename = ('mv_corr_map_d%s.dat') % Analysis_info[K_AN_LAG_LIST][n]   
+        if not silent:
+            print('  STEP 4: Calculating and saving contrast...')
+        for tidx in range(self.outputShape[0]):
+            for ridx in range(self.outputShape[1]):
+                for cidx in range(self.outputShape[2]):
+                    temp_num = np.true_divide(np.sum(np.multiply(weights, CrossProducts[0][tidx][ridx:ridx+2*self.Kernel['size']+1,\
+                                                                                        cidx:cidx+2*self.Kernel['size']+1])),\
+                                              MaskNorm[ridx][cidx])
+                    AvgIntensity[tidx][ridx][cidx] = np.true_divide(np.sum(np.multiply(weights, Intensity[tidx][ridx:ridx+2*self.Kernel['size']+1,\
+                                                                                                         cidx:cidx+2*self.Kernel['size']+1])),\
+                                                              MaskNorm[ridx][cidx])
+                    AutoCorr[tidx][ridx][cidx]   = temp_num/np.square(AvgIntensity[tidx][ridx][cidx])-1 
+        MI.MIfile(sf.JoinPath(self.outFolder, 'CorrMap_d0.dat'), self.outMetaData).WriteData(AutoCorr)
         
-        WriteFile(G[n+1], 'f', OutFolder, filename, overwrite=True)
-    
-    
-
-            
-    
-
-    
-
+        if not silent:
+            print('  STEP 5: Normalizing and saving correlations...')
+        for lidx in range(self.numLags):
+            cur_corr = np.empty_like(AutoCorr)
+            for tidx in range(self.imgNumber-self.lagList[lidx]):
+                for ridx in range(self.outputShape[1]):
+                    for cidx in range(self.outputShape[2]):
+                        temp_num = np.true_divide(np.sum(np.multiply(weights, CrossProducts[lidx+1][tidx][ridx:ridx+2*self.Kernel['size']+1,\
+                                                                                                cidx:cidx+2*self.Kernel['size']+1])),\
+                                                    MaskNorm[ridx][cidx])
+                        cur_corr[tidx][ridx][cidx] = (temp_num/(AvgIntensity[tidx][ridx][cidx]*AvgIntensity[tidx+self.lagList[lidx]][ridx][cidx])-1)/AutoCorr[tidx][ridx][cidx]
+            MI.MIfile(sf.JoinPath(self.outFolder, 'CorrMap_d%s.dat' % self.lagList[lidx]), self.outMetaData).WriteData(cur_corr)        
