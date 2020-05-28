@@ -1,10 +1,12 @@
 import numpy as np
-import SharedFunctions as sf
-import Config as cf
-import MIfile as MI
-#from DSH import SharedFunctions as sf
-#from DSH import Config as cf
-#from DSH import MIfile as MI
+if False:
+    import SharedFunctions as sf
+    import Config as cf
+    import MIfile as MI
+else:
+    from DSH import SharedFunctions as sf
+    from DSH import Config as cf
+    from DSH import MIfile as MI
 
 class CorrMaps():
     """ Class to compute correlation maps from a MIfile """
