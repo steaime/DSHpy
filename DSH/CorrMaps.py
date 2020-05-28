@@ -67,7 +67,20 @@ class CorrMaps():
                 'px_size' : self.MIinput.GetPixelSize()
                 }
 
-    def Compute(self, silent=True):
+    def Compute(self, silent=True, return_maps=False):
+        """Computes correlation maps
+        
+        Parameters
+        ----------
+        silent : bool. If set to False, procedure will print to output every time steps it goes through. 
+                otherwise, it will run silently
+        return_maps : bool. If set to True, procedure will return the array with correlation maps.
+                Warning: no memory check is done when this happens, so be aware of memory consumption
+                
+        Returns
+        -------
+        res_4D : list of correlation maps (np.float32), if return_maps==True
+        """
         
         if not silent:
             start_time = time.time()
@@ -90,12 +103,13 @@ class CorrMaps():
             print('  STEP 1: Preparing memory...')
         # This will contain image data, eventually zero-padded
         Intensity = np.empty([self.inputShape[0], self.inputShape[1] + 2*self.Kernel['padw'], self.inputShape[2] + 2*self.Kernel['padw']])
-        # This contains ones eventually padded with zeros to properly average correlations
-        # Without padding it is just ones
-        IntensityMask = np.pad(np.ones(self.inputShape[1:]), self.Kernel['padw'], 'constant')
-        # This will contain kernel-averaged mask values
-        # Without padding it is just ones
-        MaskNorm = np.empty([self.outputShape[1],self.outputShape[2]])
+        if (self.Kernel['padding']):
+            # This contains ones eventually padded with zeros to properly average correlations
+            # Without padding it would be just ones
+            IntensityMask = np.pad(np.ones(self.inputShape[1:]), self.Kernel['padw'], 'constant')
+            # This will contain kernel-averaged mask values
+            # Without padding it would be just ones
+            MaskNorm = np.empty([self.outputShape[1],self.outputShape[2]])
         # This will contain cross product of image intensities:
         # CrossProducts[i,j,k,l] = Intensity[j,k,l]*Intensity[j+lag[i],k,l]
         CrossProducts = np.empty([self.numLags+1, self.inputShape[0], self.inputShape[1] + 2*self.Kernel['padw'], self.inputShape[2] + 2*self.Kernel['padw']])
@@ -126,37 +140,46 @@ class CorrMaps():
             weights = np.exp(np.divide(np.square(grid[0])+np.square(grid[1]),-np.square(self.Kernel['sigma'])))    
         else:
             raise ValueError('Kernel type "' + str(self.Kernel['type']) + '" not supported')
-        for i in range(self.outputShape[1]):
-            for j in range(self.outputShape[2]):
-                MaskNorm[i][j] = np.sum(np.multiply(weights, IntensityMask[i:i+2*self.Kernel['size']+1, j:j+2*self.Kernel['size']+1]))
+        if (self.Kernel['padding']):
+            for i in range(self.outputShape[1]):
+                for j in range(self.outputShape[2]):
+                    MaskNorm[i][j] = np.sum(np.multiply(weights, IntensityMask[i:i+2*self.Kernel['size']+1, j:j+2*self.Kernel['size']+1]))
         
         if not silent:
             print('  STEP 4: Calculating and saving contrast...')
         for tidx in range(self.outputShape[0]):
             for ridx in range(self.outputShape[1]):
                 for cidx in range(self.outputShape[2]):
-                    temp_num = np.true_divide(np.sum(np.multiply(weights, CrossProducts[0][tidx][ridx:ridx+2*self.Kernel['size']+1,\
-                                                                                        cidx:cidx+2*self.Kernel['size']+1])),\
-                                              MaskNorm[ridx][cidx])
-                    AvgIntensity[tidx][ridx][cidx] = np.true_divide(np.sum(np.multiply(weights, Intensity[tidx][ridx:ridx+2*self.Kernel['size']+1,\
-                                                                                                         cidx:cidx+2*self.Kernel['size']+1])),\
-                                                              MaskNorm[ridx][cidx])
+                    temp_num = np.sum(np.multiply(weights, CrossProducts[0][tidx][ridx:ridx+2*self.Kernel['size']+1, cidx:cidx+2*self.Kernel['size']+1]))
+                    AvgIntensity[tidx][ridx][cidx] = np.sum(np.multiply(weights, Intensity[tidx][ridx:ridx+2*self.Kernel['size']+1, cidx:cidx+2*self.Kernel['size']+1]))
+                    if (self.Kernel['padding']):
+                        temp_num = np.true_divide(temp_num, MaskNorm[ridx][cidx])
+                        AvgIntensity[tidx][ridx][cidx] = np.true_divide(AvgIntensity[tidx][ridx][cidx], MaskNorm[ridx][cidx])
                     AutoCorr[tidx][ridx][cidx]   = temp_num/np.square(AvgIntensity[tidx][ridx][cidx])-1 
         MI.MIfile(sf.JoinPath(self.outFolder, 'CorrMap_d0.dat'), self.outMetaData).WriteData(AutoCorr)
         
         if not silent:
             print('  STEP 5: Normalizing and saving correlations...')
+        if return_maps:
+            res_4D = [np.asarray(AutoCorr, dtype=np.float32)]
         for lidx in range(self.numLags):
             cur_corr = np.empty_like(AutoCorr)
             for tidx in range(self.imgNumber-self.lagList[lidx]):
                 for ridx in range(self.outputShape[1]):
                     for cidx in range(self.outputShape[2]):
-                        temp_num = np.true_divide(np.sum(np.multiply(weights, CrossProducts[lidx+1][tidx][ridx:ridx+2*self.Kernel['size']+1,\
-                                                                                                cidx:cidx+2*self.Kernel['size']+1])),\
-                                                    MaskNorm[ridx][cidx])
+                        temp_num = np.sum(np.multiply(weights, CrossProducts[lidx+1][tidx][ridx:ridx+2*self.Kernel['size']+1, cidx:cidx+2*self.Kernel['size']+1]))
+                        if (self.Kernel['padding']):
+                            temp_num = np.true_divide(temp_num, MaskNorm[ridx][cidx])
                         cur_corr[tidx][ridx][cidx] = np.true_divide(temp_num/(AvgIntensity[tidx][ridx][cidx]*AvgIntensity[tidx+self.lagList[lidx]][ridx][cidx])-1,\
                                                                     AutoCorr[tidx][ridx][cidx])
             MI.MIfile(sf.JoinPath(self.outFolder, 'CorrMap_d%s.dat' % self.lagList[lidx]), self.outMetaData).WriteData(cur_corr)        
+            if return_maps:
+                res_4D.append(np.asarray(cur_corr, dtype=np.float32))
 
         if not silent:
             print('Procedure completed in {0:.1f} seconds!'.format(time.time()-start_time))
+
+        if return_maps:
+            return res_4D
+        else:
+            return None
