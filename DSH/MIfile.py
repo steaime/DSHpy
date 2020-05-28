@@ -151,7 +151,7 @@ class MIfile():
         if (self.FileName is None):
             self.FileName = sf.ConfigGet(self.MetaData, 'MIfile', 'filename', None)
         self.HeaderSize = sf.ConfigGet(self.MetaData, 'MIfile', 'hdr_len', 0, int)
-        self.Shape = sf.ConfigGet(self.MetaData, 'MIfile', 'hdr_len', [0,0,0], int)
+        self.Shape = sf.ConfigGet(self.MetaData, 'MIfile', 'shape', [0,0,0], int)
         self.ImgNumber = self.Shape[0]
         self.ImgHeight = self.Shape[1]
         self.ImgWidth = self.Shape[2]
