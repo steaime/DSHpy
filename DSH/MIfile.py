@@ -205,10 +205,10 @@ class MIfile():
         """
         default_settings = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'config_MIfile.ini')
         if (type(MetaData) is dict):
-            self.MetaData = cf.Config(None, config_defaults=[default_settings])
+            self.MetaData = cf.Config(None, defaultConfigFiles=[default_settings])
             self.MetaData.Import(MetaData, section_name='MIfile')
         else:
-            self.MetaData = cf.Config(MetaData, config_defaults=[default_settings])
+            self.MetaData = cf.Config(MetaData, defaultConfigFiles=[default_settings])
         self.MaxBufferSize = self.MetaData.Get('settings', 'max_buffer_size', 100000000, int)
         if (self.FileName is None):
             self.FileName = self.MetaData.Get('MIfile', 'filename', None)
