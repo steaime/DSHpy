@@ -116,7 +116,7 @@ class Config():
             return default
         
     def Set(self, sect, key, value):
-        self.config.set(sect, key, value)
+        self.config.set(sect, key, str(value))
         
     def ToDict(self, section=None):
         """Export to dictionary
