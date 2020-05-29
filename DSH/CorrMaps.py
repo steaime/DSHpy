@@ -81,7 +81,7 @@ class CorrMaps():
                 str_res += str(key) + '=' + str(self.Kernel[key]) + ', '
         str_res += '\n| Kernel size     : ' + str(self.Kernel['size']) + ' '
         if (self.Kernel['padding']):
-            str_res += 'PADDING (width=' + str(self.Kernel['padw']) + ')'
+            str_res += 'PADDING (width=' + str(self.Kernel['size']) + ')'
         else:
             str_res += 'NO PADDING (trimming margin=' + str(self.trimMargin) + ')'
         str_res += '\n|------------------------------'
