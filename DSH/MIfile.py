@@ -130,7 +130,7 @@ class MIfile():
         mi_chunk = self.Read(zRange, cropROI)
         exp_meta = self.GetMetadata()
         exp_meta['hdr_len'] = 0
-        exp_meta['shape'] = mi_chunk.shape
+        exp_meta['shape'] = mi_chunk.shape.tolist()
         exp_config = cf.Config()
         exp_config.Import(exp_meta, section_name='MIfile')
         exp_config.Export(metadata_filename)
