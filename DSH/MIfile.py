@@ -63,8 +63,7 @@ class MIfile():
         res_3D : 3D numpy array
         """
         self.OpenForReading()
-        if zRange==None:
-            zRange = [0, self.ImgNumber, 1]
+        zRange = self.Validate_zRange(zRange)
         if (zRange[2] == 1 and cropROI is None):
             res_3D = self.GetStack(start_idx=zRange[0], imgs_num=zRange[1]-zRange[0])
         else:
@@ -230,6 +229,15 @@ class MIfile():
             elif (ROI[3] + ROI[1] > self.ImgHeight):
                 raise ValueError('ROI ' + str(ROI) + ' incompatible with image shape ' + str([self.ImgWidth, self.ImgHeight]))
             return ROI
+    
+    def Validate_zRange(self, zRange):
+        if zRange==None:
+            zRange = [0, self.ImgNumber, 1]
+        if (zRange[1] < 0):
+            zRange[1] = self.ImgNumber
+        if (len(zRange) < 3):
+            zRange.append(1)
+        return zRange
     
     def _load_metadata(self, MetaData):
         """Reads metadata file
