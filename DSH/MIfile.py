@@ -21,7 +21,8 @@ class MIfile():
                     if dict: dictionary with metadata
         """
         self.FileName = FileName
-        self.FileHandle = None
+        self.ReadFileHandle = None
+        self.WriteFileHandle = None
         self._load_metadata(MetaData)
     
     def __repr__(self):
@@ -41,9 +42,11 @@ class MIfile():
     def __del__(self):
         self.Close()
 
-    def OpenForReading(self):
-        if (self.FileHandle is None):
-            self.FileHandle = open(self.FileName, 'rb')
+    def OpenForReading(self, fName=None):
+        if (self.ReadFileHandle is None):
+            if (fName is None):
+                fName = self.FileName
+            self.ReadFileHandle = open(fName, 'rb')
         
     def Read(self, zRange=None, cropROI=None, closeAfter=False):
         """Read data from MIfile
@@ -113,21 +116,44 @@ class MIfile():
         res_arr = self._read_pixels(px_num=imgs_num * self.PxPerImg, seek_pos=self._get_offset(img_idx=start_idx))
         return res_arr.reshape(imgs_num, self.ImgHeight, self.ImgWidth)
     
-    def OpenForWriting(self, WriteHeader=None):
+    def Export(self, mi_filename, metadata_filename, zRange=None, cropROI=None):
+        """Export a chunk of MIfile to a second file
+        
+        Parameters
+        ----------
+        mi_filename : filename of the exported MIfile
+        metadata_filename : filename of the exported metadata
+        zRange : range of images to be exported. if None, all images will be exported
+        cropROI : ROI to be exported. if None, full images will be exported
+        """
+        self.OpenForWriting(mi_filename)
+        mi_chunk = self.Read(zRange, cropROI)
+        exp_meta = self.GetMetadata()
+        exp_meta['hdr_len'] = 0
+        exp_meta['shape'] = mi_chunk.shape
+        exp_config = cf.Config()
+        exp_config.Import(exp_meta, section_name='MIfile')
+        exp_config.Export(metadata_filename)
+        self.WriteData(mi_chunk)
+    
+    def OpenForWriting(self, fName=None, WriteHeader=None):
         """Open image for writing
         
         Parameters
         ----------
+        fName : filename. If None, self.FileName will be used
         WriteHeader : list of dictionnaries each one with two entries: format and value
             if None, no header will be written (obsolete, for backward compatibility)
         """
-        if (self.FileHandle is None):
-            self.FileHandle = open(self.FileName, 'wb')
+        if (self.WriteFileHandle is None):
+            if (fName is None):
+                fName = self.FileName
+            self.WriteFileHandle = open(fName, 'wb')
         if (WriteHeader is not None):
             buf = bytes()
             for elem_hdr in WriteHeader:
                 buf += struct.pack(elem_hdr['format'], elem_hdr['value'])
-            self.FileHandle.write(buf)
+            self.WriteFileHandle.write(buf)
     
     def WriteData(self, data_arr, closeAfter=True):
         self.OpenForWriting()        
@@ -138,16 +164,19 @@ class MIfile():
                 n_elem_xsec = len(data_arr[0].flatten())
                 xsec_per_buffer = max(1, self.MaxBufferSize//n_elem_xsec)
                 for i in range(0, len(data_arr), xsec_per_buffer):
-                    self.FileHandle.write(self._imgs_to_bytes(data_arr[i:min(i+xsec_per_buffer, len(data_arr))], self.PixelFormat, do_flatten=True))
+                    self.WriteFileHandle.write(self._imgs_to_bytes(data_arr[i:min(i+xsec_per_buffer, len(data_arr))], self.PixelFormat, do_flatten=True))
         else:
-            self.FileHandle.write(self._imgs_to_bytes(data_arr, self.PixelFormat, do_flatten=True))
+            self.WriteFileHandle.write(self._imgs_to_bytes(data_arr, self.PixelFormat, do_flatten=True))
         if (closeAfter):
             self.Close()
 
-    def Close(self):
-        if (self.FileHandle is not None):
-            self.FileHandle.close()
-            self.FileHandle = None
+    def Close(self, read=True, write=True):
+        if (read and self.WriteFileHandle is not None):
+            self.WriteFileHandle.close()
+            self.WriteFileHandle = None
+        if (write and self.ReadFileHandle is not None):
+            self.ReadFileHandle.close()
+            self.ReadFileHandle = None
     
     def GetMetadata(self):
         """Returns dictionary with metadata
@@ -253,9 +282,9 @@ class MIfile():
         1D numpy array of pixel values
         """
         if (seek_pos is not None):
-            self.FileHandle.seek(seek_pos)
+            self.ReadFileHandle.seek(seek_pos)
         bytes_to_read = px_num * self.PixelDepth
-        fileContent = self.FileHandle.read(bytes_to_read)
+        fileContent = self.ReadFileHandle.read(bytes_to_read)
         if len(fileContent) < bytes_to_read:
             raise IOError('MI file read error: EOF encountered when reading image stack starting from seek offset ' + str(seek_pos) +\
                           ': ' + str(len(fileContent)) + ' instead of ' + str(bytes_to_read) + ' bytes (' + str(px_num) + ' pixels) returned')
