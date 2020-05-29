@@ -189,7 +189,7 @@ class CorrMaps():
                                                ker2D, mode=self.convolveMode, boundary='fill', fillvalue=0)
             if (self.Kernel['padding']):
                 AutoCorr[tidx] = np.true_divide(AutoCorr[tidx], ConvNorm)
-        AutoCorr = np.subtract(np.true_divide(AutoCorr, np.square(AvgIntensity)),1)
+            AutoCorr[tidx] = np.subtract(np.true_divide(AutoCorr[tidx], np.square(AvgIntensity[tidx])),1)
         MI.MIfile(os.path.join(self.outFolder, 'CorrMap_d0.dat'), self.outMetaData).WriteData(AutoCorr)
         
         if not silent:
