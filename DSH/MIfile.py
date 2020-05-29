@@ -31,12 +31,12 @@ class MIfile():
     def __str__(self):
         str_res  = '\n|---------------|'
         str_res += '\n| MIfile class: |'
-        str_res += '\n|---------------+------------'
+        str_res += '\n|---------------+---------------'
         str_res += '\n| Filename      : ' + str(self.FileName)
-        str_res += '\n| Header        : ' + str(self.hdrSize) + 'bytes'
-        str_res += '\n| Shape         : ' + str(self.Shape) + 'px'
+        str_res += '\n| Header        : ' + str(self.hdrSize) + ' bytes'
+        str_res += '\n| Shape         : ' + str(self.Shape) + ' px'
         str_res += '\n| Pixel format  : ' + str(self.PixelFormat) + ' (' + str(self.PixelDepth) + ' bytes/px)'
-        str_res += '\n|----------------------------'
+        str_res += '\n|---------------+---------------'
         return str_res
 
     def __del__(self):
@@ -127,7 +127,7 @@ class MIfile():
         """
         self.OpenForWriting(mi_filename)
         mi_chunk = self.Read(zRange, cropROI)
-        exp_meta = self.GetMetadata()
+        exp_meta = self.GetMetadata().copy()
         exp_meta['hdr_len'] = 0
         exp_meta['shape'] = list(mi_chunk.shape)
         exp_config = cf.Config()

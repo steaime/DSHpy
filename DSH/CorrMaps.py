@@ -69,7 +69,7 @@ class CorrMaps():
     def __str__(self):
         str_res  = '\n|-----------------|'
         str_res += '\n| CorrMaps class: |'
-        str_res += '\n|-----------------+------------'
+        str_res += '\n|-----------------+---------------'
         str_res += '\n| MI Filename     : ' + str(self.MIinput.GetFilename())
         str_res += '\n| output folder   : ' + str(self.outFolder)
         str_res += '\n| lag times (' + str(self.numLags).zfill(2) + ')  : ' + str(self.lagList)
@@ -84,7 +84,7 @@ class CorrMaps():
             str_res += 'PADDING (width=' + str(self.Kernel['size']) + ')'
         else:
             str_res += 'NO PADDING (trimming margin=' + str(self.Kernel['size']) + ')'
-        str_res += '\n|------------------------------'
+        str_res += '\n|-----------------+---------------'
         return str_res
 
     def CalcImageIndexes(self):
@@ -159,21 +159,18 @@ class CorrMaps():
         self.ExportConfiguration()
         
         if not silent:
-            print('  STEP 1: Preparing memory...')
+            print('  STEP 1: Loading images and computing average intensity...')
         # This will contain image data, eventually zero-padded
         Intensity = np.empty(self.inputShape)
         # This will contain kernel-averaged intensity data
         AvgIntensity = np.empty([self.inputShape[0], self.outputShape[1], self.outputShape[2]])
         # This will contain autocorrelation data ("d0")
         AutoCorr = np.empty(self.outputShape)
-                
+        # 2D Kernel to convolve to spatially average images
         ker2D = self.LoadKernel(self.Kernel)
         # This is to properly normalize correlations at the edges
         ConvNorm = signal.convolve2d(np.ones_like(Intensity[0]), ker2D, mode=self.convolveMode, boundary='fill', fillvalue=0)
-
-        
-        if not silent:
-            print('  STEP 2: Loading images and computing average intensities...')
+        # Now load all images we need
         self.MIinput.OpenForReading()
         for utidx in range(len(self.UniqueIdx)):  
             Intensity[utidx] = self.MIinput.GetImage(img_idx=self.UniqueIdx[utidx], cropROI=self.cropROI)
@@ -183,7 +180,7 @@ class CorrMaps():
         self.MIinput.Close()
         
         if not silent:
-            print('  STEP 3: Calculating and saving contrast...')
+            print('  STEP 2: Computing contrast...')
         for tidx in range(self.outputShape[0]):
             AutoCorr[tidx] = signal.convolve2d(np.square(Intensity[self.imgIdx[tidx,0,0]]),\
                                                ker2D, mode=self.convolveMode, boundary='fill', fillvalue=0)
@@ -193,7 +190,7 @@ class CorrMaps():
         MI.MIfile(os.path.join(self.outFolder, 'CorrMap_d0.dat'), self.outMetaData).WriteData(AutoCorr)
         
         if not silent:
-            print('  STEP 4: Normalizing and saving correlations...')
+            print('  STEP 3: Computing correlations...')
         if return_maps:
             res_4D = [np.asarray(AutoCorr, dtype=np.float32)]
         for lidx in range(self.numLags):
