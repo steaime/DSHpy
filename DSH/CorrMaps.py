@@ -163,7 +163,7 @@ class CorrMaps():
         # This will contain image data, eventually zero-padded
         Intensity = np.empty(self.inputShape)
         # This will contain kernel-averaged intensity data
-        AvgIntensity = np.empty(self.inputShape)
+        AvgIntensity = np.empty([self.inputShape[0], self.outputShape[1], self.outputShape[2]])
         # This will contain autocorrelation data ("d0")
         AutoCorr = np.empty(self.outputShape)
                 
