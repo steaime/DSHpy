@@ -50,9 +50,10 @@ class CorrMaps():
             raise ValueError('Kernel type "' + str(self.Kernel['type']) + '" not supported')
         if (self.Kernel['padding']):
             self.convolveMode = 'same'
+            self.outputShape = self.inputShape
         else:
             self.convolveMode = 'valid'
-        self.outputShape = [self.inputShape[0], self.inputShape[1] - 2*self.trimMargin, self.inputShape[2] - 2*self.trimMargin]
+            self.outputShape = [self.inputShape[0], self.inputShape[1] - 2*self.Kernel['size'], self.inputShape[2] - 2*self.Kernel['size']]
         self.outMetaData = {
                 'hdr_len' : 0,
                 'shape' : self.outputShape,
