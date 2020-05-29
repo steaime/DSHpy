@@ -173,7 +173,7 @@ class CorrMaps():
             print('  STEP 2: Loading images and computing average intensities...')
         self.MIinput.OpenForReading()
         for utidx in range(len(unique_t_list)):  
-            Intensity[utidx] = np.pad(self.MIinput.GetImage(img_idx=unique_t_list[utidx], cropROI=self.cropROI), self.Kernel['padw'], 'constant')  
+            Intensity[utidx] = self.MIinput.GetImage(img_idx=unique_t_list[utidx], cropROI=self.cropROI)
             AvgIntensity[utidx] = signal.convolve2d(Intensity[utidx], ker2D, mode=self.convolveMode, boundary='fill', fillvalue=0)
             if (self.convolveMode=='same'):
                 AvgIntensity[utidx] = np.true_divide(AvgIntensity[utidx], ConvNorm)
