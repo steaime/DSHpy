@@ -101,7 +101,7 @@ class CorrMaps():
         for tidx in range(self.imgNumber):
             cur_t1 = t1_list[tidx]
             for lidx in range(self.numLags):
-                self.imgIdx[tidx, lidx, 0] = self.UniqueIdx[tidx]
+                self.imgIdx[tidx, lidx, 0] = tidx
                 cur_t2 = cur_t1 + self.lagList[lidx]
                 if cur_t2 < self.MIinput.ImageNumber():
                     if cur_t2 not in self.UniqueIdx:
