@@ -38,22 +38,23 @@ class CorrMaps():
         if (len(self.imgRange) < 2):
             self.imgRange.append(1)
         self.imgNumber = len(list(range(*self.imgRange)))
+        self.CalcImageIndexes()
         self.cropROI = self.MIinput.ValidateROI(cropROI)
-        self.Kernel = KernelSpecs
         if (self.cropROI is None):
-            self.inputShape = [self.imgNumber, self.MIinput.ImageHeight(), self.MIinput.ImageWidth()]
+            self.inputShape = [len(self.UniqueIdx), self.MIinput.ImageHeight(), self.MIinput.ImageWidth()]
         else:
-            self.inputShape = [self.imgNumber, self.cropROI[3],self.cropROI[2]]
+            self.inputShape = [len(self.UniqueIdx), self.cropROI[3],self.cropROI[2]]
+        self.Kernel = KernelSpecs
         if (self.Kernel['type']=='Gauss'):
             self.Kernel['size'] = int(self.Kernel['sigma']*self.Kernel['cutoff'])
         else:
             raise ValueError('Kernel type "' + str(self.Kernel['type']) + '" not supported')
         if (self.Kernel['padding']):
             self.convolveMode = 'same'
-            self.outputShape = self.inputShape
+            self.outputShape = [self.imgNumber, self.inputShape[1], self.inputShape[2]]
         else:
             self.convolveMode = 'valid'
-            self.outputShape = [self.inputShape[0], self.inputShape[1] - 2*self.Kernel['size'], self.inputShape[2] - 2*self.Kernel['size']]
+            self.outputShape = [self.imgNumber, self.inputShape[1] - 2*self.Kernel['size'], self.inputShape[2] - 2*self.Kernel['size']]
         self.outMetaData = {
                 'hdr_len' : 0,
                 'shape' : self.outputShape,
@@ -85,6 +86,29 @@ class CorrMaps():
             str_res += 'NO PADDING (trimming margin=' + str(self.trimMargin) + ')'
         str_res += '\n|------------------------------'
         return str_res
+
+    def CalcImageIndexes(self):
+        # This will contain the image positions in Intensity that need to be correlated at time t and lagtime tau
+        self.imgIdx = np.empty([self.imgNumber, self.numLags, 2], dtype=np.int32)
+        # This is the list of "reference" images
+        t1_list = list(range(*self.imgRange))
+        # This is the list of unique image times that will populate the Intensity array
+        self.UniqueIdx = []
+        # Let's set the first self.imgNumber elements of this list with t1 image indexes:
+        for cur_t in t1_list:
+            self.UniqueIdx.append(cur_t)
+        # Now let's populate it with eventual t2 image indexes that are not already in there:
+        for tidx in range(self.imgNumber):
+            cur_t1 = t1_list[tidx]
+            for lidx in range(self.numLags):
+                self.imgIdx[tidx, lidx, 0] = self.UniqueIdx[tidx]
+                cur_t2 = cur_t1 + self.lagList[lidx]
+                if cur_t2 < self.MIinput.ImageNumber():
+                    if cur_t2 not in self.UniqueIdx:
+                        self.UniqueIdx.append(cur_t2)
+                    self.imgIdx[tidx, lidx, 1] = self.UniqueIdx.index(cur_t2)
+                else:
+                    self.imgIdx[tidx, lidx, 1] = -1
     
     def ExportConfiguration(self):
         dict_config = {'mi_input' : self.MIinput.GetMetadata(),
@@ -136,31 +160,10 @@ class CorrMaps():
         
         if not silent:
             print('  STEP 1: Preparing memory...')
-        # This will contain the image positions in Intensity that need to be correlated at time t and lagtime tau
-        imgIdx = np.empty([self.imgNumber, self.numLags, 2], dtype=np.int32)
-        # This is the list of "reference" images
-        t1_list = list(range(*self.imgRange))
-        # This is the list of unique image times that will populate the Intensity array
-        unique_t_list = []
-        # Let's set the first self.imgNumber elements of this list with t1 image indexes:
-        for cur_t in t1_list:
-            unique_t_list.append(cur_t)
-        # Now let's populate it with eventual t2 image indexes that are not already in there:
-        for tidx in range(self.imgNumber):
-            cur_t1 = t1_list[tidx]
-            for lidx in range(self.numLags):
-                imgIdx[tidx, lidx, 0] = unique_t_list[tidx]
-                cur_t2 = cur_t1 + self.lagList[lidx]
-                if cur_t2 < self.MIinput.ImageNumber():
-                    if cur_t2 not in unique_t_list:
-                        unique_t_list.append(cur_t2)
-                    imgIdx[tidx, lidx, 1] = unique_t_list.index(cur_t2)
-                else:
-                    imgIdx[tidx, lidx, 1] = -1
         # This will contain image data, eventually zero-padded
-        Intensity = np.empty([len(unique_t_list), self.inputShape[1], self.inputShape[2]])
+        Intensity = np.empty(self.inputShape)
         # This will contain kernel-averaged intensity data
-        AvgIntensity = np.empty([len(unique_t_list),self.outputShape[1],self.outputShape[2]])
+        AvgIntensity = np.empty(self.inputShape)
         # This will contain autocorrelation data ("d0")
         AutoCorr = np.empty(self.outputShape)
                 
@@ -172,8 +175,8 @@ class CorrMaps():
         if not silent:
             print('  STEP 2: Loading images and computing average intensities...')
         self.MIinput.OpenForReading()
-        for utidx in range(len(unique_t_list)):  
-            Intensity[utidx] = self.MIinput.GetImage(img_idx=unique_t_list[utidx], cropROI=self.cropROI)
+        for utidx in range(len(self.UniqueIdx)):  
+            Intensity[utidx] = self.MIinput.GetImage(img_idx=self.UniqueIdx[utidx], cropROI=self.cropROI)
             AvgIntensity[utidx] = signal.convolve2d(Intensity[utidx], ker2D, mode=self.convolveMode, boundary='fill', fillvalue=0)
             if (self.convolveMode=='same'):
                 AvgIntensity[utidx] = np.true_divide(AvgIntensity[utidx], ConvNorm)
@@ -182,7 +185,7 @@ class CorrMaps():
         if not silent:
             print('  STEP 3: Calculating and saving contrast...')
         for tidx in range(self.outputShape[0]):
-            AutoCorr[tidx] = signal.convolve2d(np.square(Intensity[imgIdx[tidx,0,0]]),\
+            AutoCorr[tidx] = signal.convolve2d(np.square(Intensity[self.imgIdx[tidx,0,0]]),\
                                                ker2D, mode=self.convolveMode, boundary='fill', fillvalue=0)
             if (self.Kernel['padding']):
                 AutoCorr[tidx] = np.true_divide(AutoCorr[tidx], ConvNorm)
@@ -198,13 +201,13 @@ class CorrMaps():
                 print('     ...lag ' + str(self.lagList[lidx]))
             CorrMap = np.empty_like(AutoCorr)
             for tidx in range(self.imgNumber-self.lagList[lidx]):
-                CorrMap[tidx] = signal.convolve2d(np.multiply(Intensity[imgIdx[tidx,lidx,0]], Intensity[imgIdx[tidx,lidx,1]]),\
+                CorrMap[tidx] = signal.convolve2d(np.multiply(Intensity[self.imgIdx[tidx,lidx,0]], Intensity[self.imgIdx[tidx,lidx,1]]),\
                                                   ker2D, mode=self.convolveMode, boundary='fill', fillvalue=0)
                 if (self.Kernel['padding']):
                     CorrMap[tidx] = np.true_divide(CorrMap[tidx], ConvNorm)
                 CorrMap[tidx] = np.true_divide(np.subtract(np.true_divide(CorrMap[tidx],\
-                                                                           np.multiply(AvgIntensity[imgIdx[tidx,lidx,0]],\
-                                                                                       AvgIntensity[imgIdx[tidx,lidx,1]])),\
+                                                                           np.multiply(AvgIntensity[self.imgIdx[tidx,lidx,0]],\
+                                                                                       AvgIntensity[self.imgIdx[tidx,lidx,1]])),\
                                                             1),\
                                                 AutoCorr[tidx])
             MI.MIfile(os.path.join(self.outFolder, 'CorrMap_d%s.dat' % self.lagList[lidx]), self.outMetaData).WriteData(CorrMap)        
