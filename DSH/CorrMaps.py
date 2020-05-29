@@ -83,7 +83,7 @@ class CorrMaps():
         if (self.Kernel['padding']):
             str_res += 'PADDING (width=' + str(self.Kernel['size']) + ')'
         else:
-            str_res += 'NO PADDING (trimming margin=' + str(self.trimMargin) + ')'
+            str_res += 'NO PADDING (trimming margin=' + str(self.Kernel['size']) + ')'
         str_res += '\n|------------------------------'
         return str_res
 
