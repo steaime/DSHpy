@@ -114,7 +114,10 @@ class Config():
             if not silent:
                 print('"' + key + '" not found in section "' + sect + '": default value ' + str(default) + ' returned.')
             return default
-        
+    
+    def GetSections(self):
+        return self.config.sections()
+    
     def Set(self, sect, key, value):
         self.config.set(sect, key, str(value))
         
