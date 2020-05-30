@@ -132,4 +132,8 @@ class Config():
         if (section is None):
             return self.config._sections
         else:
-            return self.config._sections[section]
+            if (self.config.has_section(section)):
+                return self.config._sections[section]
+            else:
+                print('WARNING: section not found in current configuration. Available sections are: ' + str(self.GetSections()))
+                return {}
