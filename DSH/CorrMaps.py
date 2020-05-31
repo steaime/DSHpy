@@ -1,9 +1,13 @@
 import os
 import numpy as np
+import scipy as sp
+import scipy.special as ssp
+from scipy import stats, signal
 import time
-from scipy import signal
+import bisect
 from DSH import Config as cf
 from DSH import MIfile as MI
+from DSH import SharedFunctions as sf
 
 class CorrMaps():
     """ Class to compute correlation maps from a MIfile """
@@ -88,6 +92,9 @@ class CorrMaps():
         return str_res
 
     def CalcImageIndexes(self):
+        """Populates the array of image indexes to be loaded (based on self.imgRange e self.lagList)
+            and the array that associates each couple of image (t, t+tau) to a couple of indexes (i, j) in self.UniqueIdx
+        """
         # This will contain the image positions in Intensity that need to be correlated at time t and lagtime tau
         self.imgIdx = np.empty([self.imgNumber, self.numLags, 2], dtype=np.int32)
         # This is the list of "reference" images
@@ -125,6 +132,8 @@ class CorrMaps():
         conf.Export(os.path.join(self.outFolder, 'CorrMapsConfig.ini'))
 
     def LoadKernel(self, KernelSpecs):
+        """Computes the convolution kernel for ROI computation
+        """
         x = np.asarray(range(-KernelSpecs['size'], KernelSpecs['size']+1))
         y = np.asarray(range(-KernelSpecs['size'], KernelSpecs['size']+1))
         grid = np.meshgrid(x,y)
@@ -154,8 +163,7 @@ class CorrMaps():
         if not silent:
             start_time = time.time()
             print('Computing correlation maps:')
-        if (not os.path.isdir(self.outFolder)):
-            os.makedirs(self.outFolder)
+        sf.CheckCreateFolder(self.outFolder)
         self.ExportConfiguration()
         
         if not silent:
@@ -207,7 +215,7 @@ class CorrMaps():
                                                                                        AvgIntensity[self.imgIdx[tidx,lidx,1]])),\
                                                             1),\
                                                 AutoCorr[tidx])
-            MI.MIfile(os.path.join(self.outFolder, 'CorrMap_d%s.dat' % self.lagList[lidx]), self.outMetaData).WriteData(CorrMap)        
+            MI.MIfile(os.path.join(self.outFolder, 'CorrMap_d' + str(self.lagList[lidx]).zfill(4) + '.dat'), self.outMetaData).WriteData(CorrMap)
             if return_maps:
                 res_4D.append(np.asarray(CorrMap, dtype=np.float32))
 
@@ -218,3 +226,115 @@ class CorrMaps():
             return res_4D
         else:
             return None
+
+    def _dr_g_relation(zProfile='Parabolic'):
+        """Generate a lookup table for inverting correlation function
+        """
+        if (zProfile=='Parabolic'):
+            dr_g = np.zeros([2,4500])
+            dr_g[0] = np.linspace(4.5, 0.001, num=4500)
+            norm = 4/np.pi
+            dr_g[1] = (np.square(abs(ssp.erf(sp.sqrt(-dr_g[0]*1j))))/dr_g[0])/norm
+            dr_g[1][4499] = 1 #to prevent correlation to be higher than highest value in array
+            return dr_g
+        else:
+            raise ValueError(str(zProfile) + 'z profile not implemented yet')
+
+    def _invert_monotonic(data, _lut):
+        """Invert monotonic function based on a lookup table
+        """
+        res = np.zeros(len(data))
+        for i in range(len(data)):
+            index = bisect.bisect_left(_lut[1], data[i])
+            res[i] = _lut[0][index]
+        return res
+
+    def ComputeVelocities(self, zProfile='Parabolic', useBuffer=True, silent=True):
+        """Converts correlation data into velocity data assuming a given velocity profile along z
+        
+        Parameters
+        ----------
+        zProfile : 'Parabolic'|'Linear'. For the moment, only parabolic has been developed
+        useBuffer : if True, first load all correlation data (not implemented yet)
+                    otherwise, read images that you need one at a time
+        """
+        if (os.path.isdir(self.outFolder)):
+            config_fname = os.path.join(self.outFolder, 'CorrMapsConfig.ini')
+            if (os.path.isfile(config_fname)):
+                conf_cmaps = cf.Config(config_fname)
+            else:
+                raise IOError('Configuration file CorrMapsConfig.ini not found in folder ' + str(self.outFolder))
+        else:
+            raise IOError('Correlation map folder ' + str(self.outFolder) + ' not found.')
+
+        if not silent:
+            start_time = time.time()
+            print('Computing velocity maps:')
+            cur_progperc = 0
+            prog_update = 10
+            
+        all_cmap_fnames = sf.FindFileNames(self.outFolder, Prefix='CorrMap_d', Ext='.dat', Sort='ASC')
+        cmap_mifiles = []
+        for i in range(len(all_cmap_fnames)):
+            cmap_mifiles.append(MI.MIfile(all_cmap_fnames[i], conf_cmaps.ToDict(section='mi_output')))
+
+        # Check lagtimes for consistency
+        all_lagtimes = sf.ExtractIndexFromStrings(all_cmap_fnames, index_pos=-1)
+        print('These are all lagtimes. They should be already sorted:')
+        print(all_lagtimes)
+        for cur_lag in self.lagList:
+            if (cur_lag not in all_lagtimes):
+                print('WARNING: no correlation map found for lagtime ' + str(cur_lag))
+        
+        # Prepare memory
+        cmap_shape = conf_cmaps.Get('mi_output', 'shape', None, int)
+        dr_g = self._dr_g_relation(zProfile)
+        cutoff_corr = 0.2
+        vmap = np.zeros(cmap_shape)
+        verr = np.zeros(cmap_shape)
+        
+        for tidx in range(cmap_shape[0]):
+            
+            # find compatible lag indexes
+            lag_idxs = []  # index of lag in all_lagtimes list
+            t1_idxs = []   # tidx if tidx is t1, tidx-lag if tidx is t2
+            # From largest to smallest, 0 excluded
+            for lidx in range(len(all_lagtimes)-1, 0, -1):
+                if (all_lagtimes[lidx] <= tidx):
+                    t1_idxs.append(tidx-all_lagtimes[lidx])
+                    lag_idxs.append(lidx)
+            # From smallest to largest, 0 included
+            for lidx in range(len(all_lagtimes)):
+                if (tidx+all_lagtimes[lidx] < cmap_shape[0]):
+                    t1_idxs.append(tidx)
+                    lag_idxs.append(lidx)
+            
+            # Populate arrays and masked arrays
+            cur_cmaps = np.zeros([len(lag_idxs), cmap_shape[1], cmap_shape[2]])
+            cur_lags = np.zeros([len(lag_idxs), cmap_shape[1], cmap_shape[2]])
+            for lidx in range(len(lag_idxs)):
+                cur_cmaps[lidx] = cmap_mifiles[lag_idxs[lidx]].GetImage(t1_idxs[lidx])
+                cur_lags[lidx] = np.ones([cmap_shape[1], cmap_shape[2]])*all_lagtimes[lidx]
+            cur_cmaps = np.ma.masked_less(cur_cmaps, cutoff_corr)
+            cur_lags = np.ma.masked_array(cur_lags, cur_cmaps.mask)
+            
+            for ridx in range(cmap_shape[1]):
+                for cidx in range(cmap_shape[2]):
+                    dr = self._invert_monotonic(cur_cmaps[:,ridx,cidx].compressed(), dr_g)
+                    slope, intercept, r_value, p_value, std_err = stats.linregress(cur_lags[:,ridx,cidx].compressed(), dr)
+                    vmap[tidx,ridx,cidx] = slope
+                    verr[tidx,ridx,cidx] = std_err
+
+            if not silent:
+                cur_p = (tidx+1)*100/cmap_shape[0]
+                if (cur_p > cur_progperc+prog_update):
+                    cur_progperc = cur_progperc+prog_update
+                    print('   {0}% completed...'.format(cur_progperc))
+
+        if not silent:
+            print('   ...done! Now exporting files'.format(cur_progperc))
+        MI.MIfile(os.path.join(self.outFolder, '_vMap.dat'), self.outMetaData).WriteData(vmap)
+        MI.MIfile(os.path.join(self.outFolder, '_vErr.dat'), self.outMetaData).WriteData(verr)
+        
+        if not silent:
+            print('Procedure completed in {0:.1f} seconds!'.format(time.time()-start_time))

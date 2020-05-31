@@ -34,9 +34,10 @@ class Config():
         Parameters
         ----------
         dict_config : dictionary to be imported
-        section_name : section name (string)
+        section_name : section name (string). 
+                            keys in dict_config will become options of section section_name
                     if None, keys in dict_config will be interpreted as section names
-                    entries in dict_config must be dictionaries
+                            entries in dict_config must be dictionaries
         """
         if (section_name is None):
             for key in dict_config.keys():

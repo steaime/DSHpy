@@ -18,7 +18,8 @@ class MIfile():
         FileName : filename of multi image file (full path, including folder)
         MetaData : string or dict. 
                     if string: filename of metadata file
-                    if dict: dictionary with metadata
+                    if dict: dictionary with metadata. 
+                             dict keys will become options of the 'MIfile' section of the metadata
         """
         self.FileName = FileName
         self.ReadFileHandle = None
@@ -76,7 +77,7 @@ class MIfile():
         return res_3D
 
     def GetImage(self, img_idx, cropROI=None):
-        """Read image from MIfile
+        """Read single image from MIfile
         
         Parameters
         ----------
