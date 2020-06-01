@@ -381,6 +381,7 @@ class CorrMaps():
                 for cidx in range(cmap_shape[2]):
                     if consecutive_only:
                         cur_use_mask = np.zeros(len(lag_idxs), dtype=bool)
+                        cur_hole = 0
                         for ilag_pos in range(zero_lidx+1, len(lag_idxs)):
                             if cur_mask[ilag_pos,ridx,cidx]:
                                 cur_use_mask[ilag_pos] = True
@@ -389,6 +390,7 @@ class CorrMaps():
                                 cur_hole = cur_hole + 1
                             if (cur_hole > allow_max_holes):
                                 break
+                        cur_hole = 0
                         for ilag_neg in range(zero_lidx, -1, -1):
                             if cur_mask[ilag_neg,ridx,cidx]:
                                 cur_use_mask[ilag_neg] = True
@@ -434,10 +436,20 @@ class CorrMaps():
                             cur_signs_1d = cur_signs[:,ridx,cidx][cur_use_mask]
                             cur_dt = np.multiply(cur_lags[:,ridx,cidx][cur_use_mask], cur_signs_1d)
                             cur_dr = np.multiply(np.true_divide(self._invert_monotonic(cur_data, qdr_g), qValue), cur_signs_1d)
+                            slope, intercept, r_value, p_value, std_err = stats.linregress(cur_dt, cur_dr)
                         else:
                             cur_dt = cur_lags[:,ridx,cidx][cur_use_mask]
                             cur_dr = np.true_divide(self._invert_monotonic(cur_data, qdr_g), qValue)
-                        slope, intercept, r_value, p_value, std_err = stats.linregress(cur_dt, cur_dr)
+                            # Here there is the possibility to have only 2 datapoints with the same dt. We need to address that case
+                            if (num_nonmasked == 2):
+                                if (np.max(cur_dt)==np.min(cur_dt)):
+                                    slope = np.mean(cur_dr) * 1.0 / cur_dt[0]
+                                    intercept = np.nan
+                                    r_value = np.nan
+                                    p_value = np.nan
+                                    std_err = np.nan
+                                else:
+                                    slope, intercept, r_value, p_value, std_err = stats.linregress(cur_dt, cur_dr)
                     else:
                         slope, std_err = np.nan, np.nan
                         if debug:
