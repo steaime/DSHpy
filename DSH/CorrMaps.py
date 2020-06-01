@@ -249,7 +249,7 @@ class CorrMaps():
             res[i] = _lut[0][min(index, len(_lut[0])-1)]
         return res
 
-    def ComputeVelocities(self, zProfile='Parabolic', qValue=1.0, lagRange=None, useBuffer=True, silent=True, return_err=False, debug=False):
+    def ComputeVelocities(self, zProfile='Parabolic', qValue=1.0, lagRange=None, signed_lags=False, silent=True, return_err=False, debug=False):
         """Converts correlation data into velocity data assuming a given velocity profile along z
         
         Parameters
@@ -260,8 +260,13 @@ class CorrMaps():
         lagRange : restrict analysis to correlation maps with lagtimes in a given range (in image units)
                     if None, all available correlation maps will be used
                     if int, lagtimes in [-lagRange, lagRange] will be used
-        useBuffer : if True, first load all correlation data (not implemented yet)
-                    otherwise, read images that you need one at a time
+        signed_lags : if True, lagtimes will have a positive or negative sign according to whether
+                    the current time is the first one or the second one correlated
+                    In this case, displacements will also be assigned the same sign as the lag
+                    otherwise, we will work with absolute values only
+                    This will "flatten" the linear fits, reducing slopes and increasing intercepts
+                    if signed_lags==False, the artificial correlation value at lag==0 will not be processed
+                    (it is highly recommended to set signed_lags to False)
         """
         if (os.path.isdir(self.outFolder)):
             config_fname = os.path.join(self.outFolder, 'CorrMapsConfig.ini')
@@ -358,8 +363,7 @@ class CorrMaps():
             for ridx in range(cmap_shape[1]):
                 for cidx in range(cmap_shape[2]):
                     cur_mask_connected = np.zeros(len(lag_idxs), dtype=bool)
-                    cur_mask_connected[zero_lidx] = True
-                    for ilag_pos in range(zero_lidx, len(lag_idxs)):
+                    for ilag_pos in range(zero_lidx+1, len(lag_idxs)):
                         if cur_mask[ilag_pos,ridx,cidx]:
                             cur_mask_connected[ilag_pos] = True
                         else:
@@ -369,6 +373,9 @@ class CorrMaps():
                             cur_mask_connected[ilag_neg] = True
                         else:
                             break
+                    # Only use zero lag correlation when dealing with signed lagtimes
+                    cur_mask_connected[zero_lidx] = signed_lags
+                        
                     num_nonmasked = np.count_nonzero(cur_mask_connected)
                     if (num_nonmasked <= 1):
                         cur_mask_connected[zero_lidx] = True
@@ -385,9 +392,13 @@ class CorrMaps():
                         
                     if (num_nonmasked > 1):
                         cur_data = cur_cmaps[:,ridx,cidx][cur_mask_connected]
-                        cur_signs_1d = cur_signs[:,ridx,cidx][cur_mask_connected]
-                        cur_dt = np.multiply(cur_lags[:,ridx,cidx][cur_mask_connected], cur_signs_1d)
-                        cur_dr = np.multiply(np.true_divide(self._invert_monotonic(cur_data, qdr_g), qValue), cur_signs_1d)
+                        if signed_lags:
+                            cur_signs_1d = cur_signs[:,ridx,cidx][cur_mask_connected]
+                            cur_dt = np.multiply(cur_lags[:,ridx,cidx][cur_mask_connected], cur_signs_1d)
+                            cur_dr = np.multiply(np.true_divide(self._invert_monotonic(cur_data, qdr_g), qValue), cur_signs_1d)
+                        else:
+                            cur_dt = cur_lags[:,ridx,cidx][cur_mask_connected]
+                            cur_dr = np.true_divide(self._invert_monotonic(cur_data, qdr_g), qValue)
                         slope, intercept, r_value, p_value, std_err = stats.linregress(cur_dt, cur_dr)
                     else:
                         slope, std_err = np.nan, np.nan
@@ -422,3 +433,8 @@ class CorrMaps():
             print('Procedure completed in {0:.1f} seconds!'.format(time.time()-start_time))
             
         return vmap, verr
+
+    def ComputeDisplacements(self, silent=True):
+        """Integrate velocities to compute total displacements since the beginning of the experiment
+        """
+        return None

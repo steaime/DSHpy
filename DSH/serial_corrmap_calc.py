@@ -34,4 +34,4 @@ if __name__ == '__main__':
                 if ('-skip_cmap' not in cmd_list):
                     corr_maps.Compute(silent=True, return_maps=False)
                 if ('-skip_vmap' not in cmd_list):
-                    corr_maps.ComputeVelocities(qValue=4.25, silent=True)
+                    corr_maps.ComputeVelocities(qValue=4.25, lagRange=None, silent=True, debug=False)
