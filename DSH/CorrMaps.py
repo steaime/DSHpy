@@ -335,8 +335,15 @@ class CorrMaps():
             
             for ridx in range(cmap_shape[1]):
                 for cidx in range(cmap_shape[2]):
-                    dr = np.true_divide(self._invert_monotonic(cur_cmaps[:,ridx,cidx].compressed(), qdr_g), qValue)
-                    slope, intercept, r_value, p_value, std_err = stats.linregress(cur_lags[:,ridx,cidx].compressed(), dr)
+                    cur_data = cur_cmaps[:,ridx,cidx].compressed()
+                    if (len(cur_data) > 1):
+                        dr = np.true_divide(self._invert_monotonic(cur_data, qdr_g), qValue)
+                        slope, intercept, r_value, p_value, std_err = stats.linregress(cur_lags[:,ridx,cidx].compressed(), dr)
+                    else:
+                        slope, std_err = np.nan, np.nan
+                        if debug:
+                            intercept, p_value = np.nan, np.nan
+                        
                     vmap[tidx,ridx,cidx] = slope
                     verr[tidx,ridx,cidx] = std_err
                     if debug:
