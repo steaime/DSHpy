@@ -290,7 +290,7 @@ class CorrMaps():
         
         # Prepare memory
         cmap_shape = conf_cmaps.Get('mi_output', 'shape', None, int)
-        qdr_g = self._qdr_g_relation(zProfile)
+        qdr_g = self._qdr_g_relation(zProfile=zProfile)
         cutoff_corr = 0.2
         vmap = np.zeros(cmap_shape)
         verr = np.zeros(cmap_shape)
