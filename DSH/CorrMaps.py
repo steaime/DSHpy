@@ -249,7 +249,7 @@ class CorrMaps():
             res[i] = _lut[0][min(index, len(_lut[0])-1)]
         return res
 
-    def ComputeVelocities(self, zProfile='Parabolic', qValue=1.0, useBuffer=True, silent=True, debug=False):
+    def ComputeVelocities(self, zProfile='Parabolic', qValue=1.0, useBuffer=True, silent=True, return_err=False, debug=False):
         """Converts correlation data into velocity data assuming a given velocity profile along z
         
         Parameters
@@ -294,10 +294,10 @@ class CorrMaps():
         qdr_g = self._qdr_g_relation(zProfile=zProfile)
         cutoff_corr = 0.2
         vmap = np.zeros(cmap_shape)
-        verr = np.zeros(cmap_shape)
-        
         write_vmap = MI.MIfile(os.path.join(self.outFolder, '_vMap.dat'), self.outMetaData)
-        write_verr = MI.MIfile(os.path.join(self.outFolder, '_vErr.dat'), self.outMetaData)
+        if return_err:
+            verr = np.zeros(cmap_shape)
+            write_verr = MI.MIfile(os.path.join(self.outFolder, '_vErr.dat'), self.outMetaData)
         if debug:
             write_interc = MI.MIfile(os.path.join(self.outFolder, '_interc.dat'), self.outMetaData)
             write_pval = MI.MIfile(os.path.join(self.outFolder, '_pval.dat'), self.outMetaData)
@@ -345,20 +345,22 @@ class CorrMaps():
                             intercept, p_value = np.nan, np.nan
                         
                     vmap[tidx,ridx,cidx] = slope
-                    verr[tidx,ridx,cidx] = std_err
+                    if return_err:
+                        verr[tidx,ridx,cidx] = std_err
                     if debug:
                         cur_nvals[ridx,cidx] = len(dr)
                         cur_interc[ridx,cidx] = intercept
                         cur_pval[ridx,cidx] = p_value
 
             write_vmap.WriteData(vmap[tidx], closeAfter=False)
-            write_verr.WriteData(verr[tidx], closeAfter=False)
+            if return_err:
+                write_verr.WriteData(verr[tidx], closeAfter=False)
             if debug:
                 write_interc.WriteData(cur_interc, closeAfter=False)
                 write_pval.WriteData(cur_pval, closeAfter=False)
                 write_nvals.WriteData(cur_nvals, closeAfter=False)
-                print('t={0} -- slope range:[{1},{2}], interc range:[{3},{4}], elapsed: {5:.1f}s'.format(tidx, np.min(vmap[tidx]), np.max(vmap[tidx]),\
-                                                                                      np.min(cur_interc), np.max(cur_interc), time.time()-start_time))
+                print('t={0} -- slope range:[{1},{2}], interc range:[{3},{4}], elapsed: {5:.1f}s'.format(tidx, np.nanmin(vmap[tidx]), np.nanmax(vmap[tidx]),\
+                                                                                      np.nanmin(cur_interc), np.nanmax(cur_interc), time.time()-start_time))
 
             if not silent:
                 cur_p = (tidx+1)*100/cmap_shape[0]
