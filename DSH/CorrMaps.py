@@ -250,17 +250,19 @@ class CorrMaps():
             res[i] = _lut[0][min(index, len(_lut[0])-1)]
         return res
 
-    def ComputeVelocities(self, zProfile='Parabolic', qValue=1.0, lagRange=None, signed_lags=False, consecutive_only=False,\
+    def ComputeVelocities(self, zProfile='Parabolic', qValue=1.0, tRange=None, lagRange=None, signed_lags=False, consecutive_only=False,\
                           allow_max_holes=0, mask_opening_range=None, conservative_cutoff=0.3, generous_cutoff=0.15,\
-                          silent=True, return_err=False, debug=False):
+                          silent=True, return_err=False, debug=False, file_suffix=''):
         """Converts correlation data into velocity data assuming a given velocity profile along z
         
         Parameters
         ----------
-        zProfile : 'Parabolic'|'Linear'. For the moment, only parabolic has been developed
-        qValue : Scattering vector projected along the sample plane. Used to express velocities in meaningful dimensions
+        zProfile :  'Parabolic'|'Linear'. For the moment, only parabolic has been developed
+        qValue :    Scattering vector projected along the sample plane. Used to express velocities in meaningful dimensions
                     NOTE by Stefano : 4.25 1/um
-        lagRange : restrict analysis to correlation maps with lagtimes in a given range (in image units)
+        tRange :    restrict analysis to given time range [min, max, step].
+                    if None, analyze full correlation maps
+        lagRange :  restrict analysis to correlation maps with lagtimes in a given range (in image units)
                     if None, all available correlation maps will be used
                     if int, lagtimes in [-lagRange, lagRange] will be used
         signed_lags : if True, lagtimes will have a positive or negative sign according to whether
@@ -281,6 +283,7 @@ class CorrMaps():
         generous_cutoff : when correlations above conservative_cutoff are not enough for linear fitting,
                     include first lagtimes provided correlation data is above this more generous threshold
                     Note: for parabolic profiles, the first correlation minimum is 0.145. Don't go below that!
+        file_suffix : suffix to be appended to filename to differentiate output from multiple processes
         """
         if (os.path.isdir(self.outFolder)):
             config_fname = os.path.join(self.outFolder, 'CorrMapsConfig.ini')
@@ -318,21 +321,36 @@ class CorrMaps():
             if (cur_lag not in all_lagtimes):
                 print('WARNING: no correlation map found for lagtime ' + str(cur_lag))
         
-        # Prepare memory
-        cmap_shape = conf_cmaps.Get('mi_output', 'shape', None, int)
-        qdr_g = self._qdr_g_relation(zProfile=zProfile)
+        cmap_metadata = cmap_mifiles[1].GetMetadata()
+        vmap_metadata = cmap_metadata.copy()
+        if (tRange is not None):
+            tRange = cmap_mifiles[1].Validate_zRange(tRange)
+            vmap_shape = cmap_mifiles[1].Shape()
+            corrframe_idx_list = list(range(*tRange))
+            vmap_shape[0] = len(corrframe_idx_list)
+            vmap_metadata['shape'] = vmap_shape
+            if ('fps' in vmap_metadata):
+                vmap_metadata['fps'] = vmap_metadata['fps'] * 1.0/tRange[2]
         
+        # Prepare memory
+        qdr_g = self._qdr_g_relation(zProfile=zProfile)
+        cmap_shape = vmap_metadata['shape']
         vmap = np.zeros(cmap_shape)
-        write_vmap = MI.MIfile(os.path.join(self.outFolder, '_vMap.dat'), self.outMetaData)
+        write_vmap = MI.MIfile(os.path.join(self.outFolder, '_vMap.dat'), vmap_metadata)
         if return_err:
             verr = np.zeros(cmap_shape)
-            write_verr = MI.MIfile(os.path.join(self.outFolder, '_vErr.dat'), self.outMetaData)
+            write_verr = MI.MIfile(os.path.join(self.outFolder, '_vErr.dat'), vmap_metadata)
         if debug:
-            write_interc = MI.MIfile(os.path.join(self.outFolder, '_interc.dat'), self.outMetaData)
-            write_pval = MI.MIfile(os.path.join(self.outFolder, '_pval.dat'), self.outMetaData)
-            write_nvals = MI.MIfile(os.path.join(self.outFolder, '_nvals.dat'), self.outMetaData)
+            write_interc = MI.MIfile(os.path.join(self.outFolder, '_interc.dat'), vmap_metadata)
+            write_pval = MI.MIfile(os.path.join(self.outFolder, '_pval.dat'), vmap_metadata)
+            write_nvals = MI.MIfile(os.path.join(self.outFolder, '_nvals.dat'), vmap_metadata)
             
         for tidx in range(cmap_shape[0]):
+            
+            if (tRange is None):
+                corrframe_idx = tidx
+            else:
+                corrframe_idx = corrframe_idx_list[tidx]
             
             # find compatible lag indexes
             lag_idxs = []  # index of lag in all_lagtimes list
@@ -340,22 +358,22 @@ class CorrMaps():
             sign_list = [] # +1 if tidx is t1, -1 if tidx is t2
             # From largest to smallest, 0 excluded
             for lidx in range(len(all_lagtimes)-1, 0, -1):
-                if (all_lagtimes[lidx] <= tidx):
+                if (all_lagtimes[lidx] <= corrframe_idx):
                     bln_add = True
                     if (lagRange is not None):
                         bln_add = (-1.0*all_lagtimes[lidx] >= lagRange[0])
                     if bln_add:
-                        t1_idxs.append(tidx-all_lagtimes[lidx])
+                        t1_idxs.append(corrframe_idx-all_lagtimes[lidx])
                         lag_idxs.append(lidx)
                         sign_list.append(-1)
             # From smallest to largest, 0 included
             for lidx in range(len(all_lagtimes)):
-                if (tidx+all_lagtimes[lidx] < cmap_shape[0]):
+                if (corrframe_idx+all_lagtimes[lidx] < cmap_shape[0]):
                     bln_add = True
                     if (lagRange is not None):
                         bln_add = (all_lagtimes[lidx] <= lagRange[1])
                     if bln_add:
-                        t1_idxs.append(tidx)
+                        t1_idxs.append(corrframe_idx)
                         lag_idxs.append(lidx)
                         sign_list.append(1)
             
