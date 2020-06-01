@@ -298,7 +298,7 @@ class CorrMaps():
         cmap_shape = conf_cmaps.Get('mi_output', 'shape', None, int)
         qdr_g = self._qdr_g_relation(zProfile=zProfile)
         conservative_cutoff = 0.25
-        generous_cutoff = 0.1
+        generous_cutoff = 0.15 # The first minimum is 0.145. Don't go below that!
         
         vmap = np.zeros(cmap_shape)
         write_vmap = MI.MIfile(os.path.join(self.outFolder, '_vMap.dat'), self.outMetaData)
