@@ -227,7 +227,7 @@ class CorrMaps():
         else:
             return None
 
-    def _qdr_g_relation(zProfile='Parabolic'):
+    def _qdr_g_relation(self, zProfile='Parabolic'):
         """Generate a lookup table for inverting correlation function
         """
         if (zProfile=='Parabolic'):
@@ -290,6 +290,7 @@ class CorrMaps():
         
         # Prepare memory
         cmap_shape = conf_cmaps.Get('mi_output', 'shape', None, int)
+        print(zProfile)
         qdr_g = self._qdr_g_relation(zProfile=zProfile)
         cutoff_corr = 0.2
         vmap = np.zeros(cmap_shape)
