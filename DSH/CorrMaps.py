@@ -289,6 +289,27 @@ class CorrMaps():
             config_fname = os.path.join(self.outFolder, 'CorrMapsConfig.ini')
             if (os.path.isfile(config_fname)):
                 conf_cmaps = cf.Config(config_fname)
+                vmap_options = {
+                        'zProfile' : zProfile,
+                        'qValue' : qValue,
+                        'signed_lags' : signed_lags,
+                        'consecutive_only' : consecutive_only,
+                        'allow_max_holes' : allow_max_holes,
+                        'conservative_cutoff' : conservative_cutoff,
+                        'generous_cutoff' : generous_cutoff,
+                        'silent' : silent,
+                        'return_err' : return_err,
+                        'debug' : debug,
+                        'file_suffix' : file_suffix,
+                        }
+                if (tRange is not None):
+                    vmap_options['tRange'] = tRange
+                if (lagRange is not None):
+                    vmap_options['lagRange'] = lagRange
+                if (mask_opening_range is not None):
+                    vmap_options['mask_opening_range'] = mask_opening_range
+                conf_cmaps.Import(vmap_options, section_name='vmap')
+                conf_cmaps.Export(os.path.join(self.outFolder, 'VelMapsConfig' + str(file_suffix) + '.ini'))
             else:
                 raise IOError('Configuration file CorrMapsConfig.ini not found in folder ' + str(self.outFolder))
         else:
@@ -336,14 +357,14 @@ class CorrMaps():
         qdr_g = self._qdr_g_relation(zProfile=zProfile)
         cmap_shape = vmap_metadata['shape']
         vmap = np.zeros(cmap_shape)
-        write_vmap = MI.MIfile(os.path.join(self.outFolder, '_vMap.dat'), vmap_metadata)
+        write_vmap = MI.MIfile(os.path.join(self.outFolder, '_vMap' + str(file_suffix) + '.dat'), vmap_metadata)
         if return_err:
             verr = np.zeros(cmap_shape)
-            write_verr = MI.MIfile(os.path.join(self.outFolder, '_vErr.dat'), vmap_metadata)
+            write_verr = MI.MIfile(os.path.join(self.outFolder, '_vErr' + str(file_suffix) + '.dat'), vmap_metadata)
         if debug:
-            write_interc = MI.MIfile(os.path.join(self.outFolder, '_interc.dat'), vmap_metadata)
-            write_pval = MI.MIfile(os.path.join(self.outFolder, '_pval.dat'), vmap_metadata)
-            write_nvals = MI.MIfile(os.path.join(self.outFolder, '_nvals.dat'), vmap_metadata)
+            write_interc = MI.MIfile(os.path.join(self.outFolder, '_interc' + str(file_suffix) + '.dat'), vmap_metadata)
+            write_pval = MI.MIfile(os.path.join(self.outFolder, '_pval' + str(file_suffix) + '.dat'), vmap_metadata)
+            write_nvals = MI.MIfile(os.path.join(self.outFolder, '_nvals' + str(file_suffix) + '.dat'), vmap_metadata)
             
         for tidx in range(cmap_shape[0]):
             
