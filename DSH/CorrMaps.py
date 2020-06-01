@@ -336,11 +336,12 @@ class CorrMaps():
                 cmap_mifiles[-1].OpenForReading()
 
         # Check lagtimes for consistency
-        print('These are all lagtimes. They should be already sorted and not contain 0:')
-        print(all_lagtimes)
-        for cur_lag in self.lagList:
-            if (cur_lag not in all_lagtimes):
-                print('WARNING: no correlation map found for lagtime ' + str(cur_lag))
+        if (silent==False or debug==True):
+            print('These are all lagtimes. They should be already sorted and not contain 0:')
+            print(all_lagtimes)
+            for cur_lag in self.lagList:
+                if (cur_lag not in all_lagtimes):
+                    print('WARNING: no correlation map found for lagtime ' + str(cur_lag))
         
         cmap_metadata = cmap_mifiles[1].GetMetadata()
         vmap_metadata = cmap_metadata.copy()
@@ -351,7 +352,7 @@ class CorrMaps():
             vmap_shape[0] = len(corrframe_idx_list)
             vmap_metadata['shape'] = vmap_shape
             if ('fps' in vmap_metadata):
-                vmap_metadata['fps'] = vmap_metadata['fps'] * 1.0/tRange[2]
+                vmap_metadata['fps'] = float(vmap_metadata['fps']) * 1.0/tRange[2]
         
         # Prepare memory
         qdr_g = self._qdr_g_relation(zProfile=zProfile)
