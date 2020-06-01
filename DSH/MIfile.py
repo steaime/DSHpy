@@ -198,7 +198,7 @@ class MIfile():
         return int(self.ImgHeight)
     def ImageWidth(self):
         return int(self.ImgWidth)
-    def Shape(self):
+    def GetShape(self):
         return np.asarray(self.Shape.copy())
     def HeaderSize(self):
         return int(self.hdrSize)

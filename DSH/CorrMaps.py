@@ -346,7 +346,7 @@ class CorrMaps():
         vmap_metadata = cmap_metadata.copy()
         if (tRange is not None):
             tRange = cmap_mifiles[1].Validate_zRange(tRange)
-            vmap_shape = cmap_mifiles[1].Shape()
+            vmap_shape = cmap_mifiles[1].GetShape()
             corrframe_idx_list = list(range(*tRange))
             vmap_shape[0] = len(corrframe_idx_list)
             vmap_metadata['shape'] = vmap_shape
