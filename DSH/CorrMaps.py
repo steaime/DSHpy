@@ -274,7 +274,7 @@ class CorrMaps():
         consecutive_only : only select sorrelation chunk with consecutive True value of the mask around tau=0
         allow_max_holes : integer, only used if consecutive_only==True.
                     Largest hole to be ignored before chunk is considered as discontinued
-        mask_opening_range : integer > 1, only used if consecutive_only==False.
+        mask_opening_range : None or integer > 1.
                     if not None, apply binary_opening to the mask for a given pixel as a function of lagtime
                     This removes thresholding noise by removing N-lag-wide unmasked domains where N=mask_opening_range
         conservative_cutoff : only consider correlation data above this threshold value
@@ -382,11 +382,19 @@ class CorrMaps():
             
             for ridx in range(cmap_shape[1]):
                 for cidx in range(cmap_shape[2]):
+                    cur_try_mask = cur_mask[:,ridx,cidx]
+                    if (mask_opening_range is not None and np.count_nonzero(cur_try_mask) > 2):
+                        for cur_open_range in range(mask_opening_range, 2, -1):
+                            # remove thresholding noise by removing N-lag-wide unmasked domains
+                            cur_mask_denoise = binary_opening(cur_try_mask, structure=np.ones(cur_open_range))
+                            if (np.count_nonzero(cur_try_mask) > 2):
+                                cur_use_mask = cur_mask_denoise
+                                break
                     if consecutive_only:
                         cur_use_mask = np.zeros(len(lag_idxs), dtype=bool)
                         cur_hole = 0
                         for ilag_pos in range(zero_lidx+1, len(lag_idxs)):
-                            if cur_mask[ilag_pos,ridx,cidx]:
+                            if cur_try_mask[ilag_pos]:
                                 cur_use_mask[ilag_pos] = True
                                 cur_hole = 0
                             else:
@@ -395,7 +403,7 @@ class CorrMaps():
                                 break
                         cur_hole = 0
                         for ilag_neg in range(zero_lidx, -1, -1):
-                            if cur_mask[ilag_neg,ridx,cidx]:
+                            if cur_try_mask[ilag_neg]:
                                 cur_use_mask[ilag_neg] = True
                                 cur_hole = 0
                             else:
@@ -403,18 +411,7 @@ class CorrMaps():
                             if (cur_hole > allow_max_holes):
                                 break
                     else:
-                        cur_use_mask = cur_mask[:,ridx,cidx]
-                        if (mask_opening_range is not None and np.count_nonzero(cur_use_mask) > 2):
-                            sel_open_range = None
-                            for cur_open_range in range(mask_opening_range, 2, -1):
-                                # remove thresholding noise by removing N-lag-wide unmasked domains
-                                cur_mask_denoise = binary_opening(cur_use_mask, structure=np.ones(cur_open_range))
-                                if (np.count_nonzero(cur_use_mask) > 2):
-                                    cur_use_mask = cur_mask_denoise
-                                    sel_open_range = cur_open_range
-                                    break
-                            if (sel_open_range is None):
-                                cur_use_mask = binary_opening(cur_use_mask, structure=np.ones(2))
+                        cur_use_mask = cur_try_mask
 
                     # Only use zero lag correlation when dealing with signed lagtimes
                     cur_use_mask[zero_lidx] = signed_lags
