@@ -250,7 +250,8 @@ class CorrMaps():
             res[i] = _lut[0][min(index, len(_lut[0])-1)]
         return res
 
-    def ComputeVelocities(self, zProfile='Parabolic', qValue=1.0, lagRange=None, signed_lags=False, consecutive_only=False, mask_opening_range=None, silent=True, return_err=False, debug=False):
+    def ComputeVelocities(self, zProfile='Parabolic', qValue=1.0, lagRange=None, signed_lags=False, consecutive_only=False,\
+                          allow_max_holes=0, mask_opening_range=None, silent=True, return_err=False, debug=False):
         """Converts correlation data into velocity data assuming a given velocity profile along z
         
         Parameters
@@ -270,6 +271,8 @@ class CorrMaps():
                     if signed_lags==False, the artificial correlation value at lag==0 will not be processed
                     (it is highly recommended to set signed_lags to False)
         consecutive_only : only select sorrelation chunk with consecutive True value of the mask around tau=0
+        allow_max_holes : integer, only used if consecutive_only==True.
+                    Largest hole to be ignored before chunk is considered as discontinued
         mask_opening_range : integer > 1, only used if consecutive_only==False.
                     if not None, apply binary_opening to the mask for a given pixel as a function of lagtime
                     This removes thresholding noise by removing N-lag-wide unmasked domains where N=mask_opening_range
@@ -313,7 +316,7 @@ class CorrMaps():
         # Prepare memory
         cmap_shape = conf_cmaps.Get('mi_output', 'shape', None, int)
         qdr_g = self._qdr_g_relation(zProfile=zProfile)
-        conservative_cutoff = 0.25
+        conservative_cutoff = 0.3
         generous_cutoff = 0.15 # The first minimum is 0.145. Don't go below that!
         
         vmap = np.zeros(cmap_shape)
@@ -381,12 +384,18 @@ class CorrMaps():
                         for ilag_pos in range(zero_lidx+1, len(lag_idxs)):
                             if cur_mask[ilag_pos,ridx,cidx]:
                                 cur_use_mask[ilag_pos] = True
+                                cur_hole = 0
                             else:
+                                cur_hole = cur_hole + 1
+                            if (cur_hole > allow_max_holes):
                                 break
                         for ilag_neg in range(zero_lidx, -1, -1):
                             if cur_mask[ilag_neg,ridx,cidx]:
                                 cur_use_mask[ilag_neg] = True
+                                cur_hole = 0
                             else:
+                                cur_hole = cur_hole + 1
+                            if (cur_hole > allow_max_holes):
                                 break
                     else:
                         cur_use_mask = cur_mask[:,ridx,cidx]
