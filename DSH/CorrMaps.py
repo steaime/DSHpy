@@ -328,16 +328,24 @@ class CorrMaps():
             sign_list = [] # +1 if tidx is t1, -1 if tidx is t2
             # From largest to smallest, 0 excluded
             for lidx in range(len(all_lagtimes)-1, 0, -1):
-                if (all_lagtimes[lidx] <= tidx and -1.0*all_lagtimes[lidx] >= lagRange[0]):
-                    t1_idxs.append(tidx-all_lagtimes[lidx])
-                    lag_idxs.append(lidx)
-                    sign_list.append(-1)
+                if (all_lagtimes[lidx] <= tidx):
+                    bln_add = True
+                    if (lagRange is not None):
+                        bln_add = (-1.0*all_lagtimes[lidx] >= lagRange[0])
+                    if bln_add:
+                        t1_idxs.append(tidx-all_lagtimes[lidx])
+                        lag_idxs.append(lidx)
+                        sign_list.append(-1)
             # From smallest to largest, 0 included
             for lidx in range(len(all_lagtimes)):
                 if (tidx+all_lagtimes[lidx] < cmap_shape[0] and all_lagtimes[lidx] <= lagRange[1]):
-                    t1_idxs.append(tidx)
-                    lag_idxs.append(lidx)
-                    sign_list.append(1)
+                    bln_add = True
+                    if (lagRange is not None):
+                        bln_add = (all_lagtimes[lidx] <= lagRange[1])
+                    if bln_add:
+                        t1_idxs.append(tidx)
+                        lag_idxs.append(lidx)
+                        sign_list.append(1)
             
             # Populate arrays
             cur_cmaps = np.ones([len(lag_idxs), cmap_shape[1], cmap_shape[2]])
