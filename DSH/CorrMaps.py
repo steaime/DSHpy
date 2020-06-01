@@ -324,7 +324,7 @@ class CorrMaps():
             cur_lags = np.zeros([len(lag_idxs), cmap_shape[1], cmap_shape[2]])
             for lidx in range(len(lag_idxs)):
                 cur_cmaps[lidx] = cmap_mifiles[lag_idxs[lidx]].GetImage(t1_idxs[lidx])
-                cur_lags[lidx] = np.ones([cmap_shape[1], cmap_shape[2]])*all_lagtimes[lidx]*1.0/self.outMetaData['fps']
+                cur_lags[lidx] = np.ones([cmap_shape[1], cmap_shape[2]])*all_lagtimes[lag_idxs[lidx]]*1.0/self.outMetaData['fps']
             cur_cmaps = np.ma.masked_less(cur_cmaps, cutoff_corr)
             cur_lags = np.ma.masked_array(cur_lags, cur_cmaps.mask)
             
