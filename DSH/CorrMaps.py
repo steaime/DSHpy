@@ -63,7 +63,7 @@ class CorrMaps():
                 'hdr_len' : 0,
                 'shape' : self.outputShape,
                 'px_format' : 'f',
-                'fps' : self.MIinput.GetFPS(),
+                'fps' : self.MIinput.GetFPS()*1.0/self.imgRange[2],
                 'px_size' : self.MIinput.GetPixelSize()
                 }
 
@@ -227,7 +227,7 @@ class CorrMaps():
         else:
             return None
 
-    def _dr_g_relation(zProfile='Parabolic'):
+    def _qdr_g_relation(zProfile='Parabolic'):
         """Generate a lookup table for inverting correlation function
         """
         if (zProfile=='Parabolic'):
@@ -249,12 +249,14 @@ class CorrMaps():
             res[i] = _lut[0][index]
         return res
 
-    def ComputeVelocities(self, zProfile='Parabolic', useBuffer=True, silent=True):
+    def ComputeVelocities(self, zProfile='Parabolic', qValue=1.0, useBuffer=True, silent=True):
         """Converts correlation data into velocity data assuming a given velocity profile along z
         
         Parameters
         ----------
         zProfile : 'Parabolic'|'Linear'. For the moment, only parabolic has been developed
+        qValue : Scattering vector projected along the sample plane. Used to express velocities in meaningful dimensions
+                    NOTE by Stefano : 4.25 1/um
         useBuffer : if True, first load all correlation data (not implemented yet)
                     otherwise, read images that you need one at a time
         """
@@ -288,11 +290,13 @@ class CorrMaps():
         
         # Prepare memory
         cmap_shape = conf_cmaps.Get('mi_output', 'shape', None, int)
-        dr_g = self._dr_g_relation(zProfile)
+        qdr_g = self._qdr_g_relation(zProfile)
         cutoff_corr = 0.2
         vmap = np.zeros(cmap_shape)
         verr = np.zeros(cmap_shape)
         
+        write_vmap = MI.MIfile(os.path.join(self.outFolder, '_vMap.dat'), self.outMetaData).WriteData(vmap)
+        write_verr = MI.MIfile(os.path.join(self.outFolder, '_vErr.dat'), self.outMetaData).WriteData(verr)
         for tidx in range(cmap_shape[0]):
             
             # find compatible lag indexes
@@ -314,27 +318,27 @@ class CorrMaps():
             cur_lags = np.zeros([len(lag_idxs), cmap_shape[1], cmap_shape[2]])
             for lidx in range(len(lag_idxs)):
                 cur_cmaps[lidx] = cmap_mifiles[lag_idxs[lidx]].GetImage(t1_idxs[lidx])
-                cur_lags[lidx] = np.ones([cmap_shape[1], cmap_shape[2]])*all_lagtimes[lidx]
+                cur_lags[lidx] = np.ones([cmap_shape[1], cmap_shape[2]])*all_lagtimes[lidx]*1.0/self.outMetaData['fps']
             cur_cmaps = np.ma.masked_less(cur_cmaps, cutoff_corr)
             cur_lags = np.ma.masked_array(cur_lags, cur_cmaps.mask)
             
             for ridx in range(cmap_shape[1]):
                 for cidx in range(cmap_shape[2]):
-                    dr = self._invert_monotonic(cur_cmaps[:,ridx,cidx].compressed(), dr_g)
+                    dr = np.true_divide(self._invert_monotonic(cur_cmaps[:,ridx,cidx].compressed(), qdr_g), qValue)
                     slope, intercept, r_value, p_value, std_err = stats.linregress(cur_lags[:,ridx,cidx].compressed(), dr)
                     vmap[tidx,ridx,cidx] = slope
                     verr[tidx,ridx,cidx] = std_err
+
+            write_vmap.WriteData(vmap[tidx])
+            write_verr.WriteData(verr[tidx])
 
             if not silent:
                 cur_p = (tidx+1)*100/cmap_shape[0]
                 if (cur_p > cur_progperc+prog_update):
                     cur_progperc = cur_progperc+prog_update
                     print('   {0}% completed...'.format(cur_progperc))
-
-        if not silent:
-            print('   ...done! Now exporting files'.format(cur_progperc))
-        MI.MIfile(os.path.join(self.outFolder, '_vMap.dat'), self.outMetaData).WriteData(vmap)
-        MI.MIfile(os.path.join(self.outFolder, '_vErr.dat'), self.outMetaData).WriteData(verr)
         
         if not silent:
             print('Procedure completed in {0:.1f} seconds!'.format(time.time()-start_time))
+            
+        return vmap, verr

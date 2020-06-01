@@ -131,6 +131,9 @@ class MIfile():
         exp_meta = self.GetMetadata().copy()
         exp_meta['hdr_len'] = 0
         exp_meta['shape'] = list(mi_chunk.shape)
+        if ('fps' in exp_meta):
+            val_zRange = self.Validate_zRange(zRange)
+            exp_meta['fps'] = exp_meta['fps'] * 1.0 / val_zRange[2]
         exp_config = cf.Config()
         exp_config.Import(exp_meta, section_name='MIfile')
         exp_config.Export(metadata_filename)
@@ -169,6 +172,8 @@ class MIfile():
             self.WriteFileHandle.write(self._imgs_to_bytes(data_arr, self.PixelFormat, do_flatten=True))
         if (closeAfter):
             self.Close()
+        else:
+            self.WriteFileHandle.flush()
 
     def Close(self, read=True, write=True):
         if (read and self.WriteFileHandle is not None):
