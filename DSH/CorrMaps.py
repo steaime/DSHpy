@@ -333,7 +333,7 @@ class CorrMaps():
             if (cur_lag > 0):
                 all_lagtimes.append(cur_lag)
                 cmap_mifiles.append(MI.MIfile(all_cmap_fnames[i], conf_cmaps.ToDict(section='mi_output')))
-                cmap_mifiles[i].OpenForReading()
+                cmap_mifiles[-1].OpenForReading()
 
         # Check lagtimes for consistency
         print('These are all lagtimes. They should be already sorted and not contain 0:')
