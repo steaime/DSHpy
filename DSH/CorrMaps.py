@@ -246,7 +246,7 @@ class CorrMaps():
         res = np.zeros(len(data))
         for i in range(len(data)):
             index = bisect.bisect_left(_lut[1], data[i])
-            res[i] = _lut[0][index]
+            res[i] = _lut[0][min(index, len(_lut[0])-1)]
         return res
 
     def ComputeVelocities(self, zProfile='Parabolic', qValue=1.0, useBuffer=True, silent=True):
@@ -296,8 +296,8 @@ class CorrMaps():
         vmap = np.zeros(cmap_shape)
         verr = np.zeros(cmap_shape)
         
-        write_vmap = MI.MIfile(os.path.join(self.outFolder, '_vMap.dat'), self.outMetaData).WriteData(vmap)
-        write_verr = MI.MIfile(os.path.join(self.outFolder, '_vErr.dat'), self.outMetaData).WriteData(verr)
+        write_vmap = MI.MIfile(os.path.join(self.outFolder, '_vMap.dat'), self.outMetaData)
+        write_verr = MI.MIfile(os.path.join(self.outFolder, '_vErr.dat'), self.outMetaData)
         for tidx in range(cmap_shape[0]):
             
             # find compatible lag indexes
@@ -330,8 +330,8 @@ class CorrMaps():
                     vmap[tidx,ridx,cidx] = slope
                     verr[tidx,ridx,cidx] = std_err
 
-            write_vmap.WriteData(vmap[tidx])
-            write_verr.WriteData(verr[tidx])
+            write_vmap.WriteData(vmap[tidx], closeAfter=False)
+            write_verr.WriteData(verr[tidx], closeAfter=False)
 
             if not silent:
                 cur_p = (tidx+1)*100/cmap_shape[0]
