@@ -250,7 +250,7 @@ class CorrMaps():
             res[i] = _lut[0][min(index, len(_lut[0])-1)]
         return res
 
-    def ComputeVelocities(self, zProfile='Parabolic', qValue=1.0, useBuffer=True, silent=True, return_err=False, debug=False):
+    def ComputeVelocities(self, zProfile='Parabolic', qValue=1.0, lagRange=None, useBuffer=True, silent=True, return_err=False, debug=False):
         """Converts correlation data into velocity data assuming a given velocity profile along z
         
         Parameters
@@ -258,6 +258,9 @@ class CorrMaps():
         zProfile : 'Parabolic'|'Linear'. For the moment, only parabolic has been developed
         qValue : Scattering vector projected along the sample plane. Used to express velocities in meaningful dimensions
                     NOTE by Stefano : 4.25 1/um
+        lagRange : restrict analysis to correlation maps with lagtimes in a given range (in image units)
+                    if None, all available correlation maps will be used
+                    if int, lagtimes in [-lagRange, lagRange] will be used
         useBuffer : if True, first load all correlation data (not implemented yet)
                     otherwise, read images that you need one at a time
         """
@@ -275,7 +278,10 @@ class CorrMaps():
             print('Computing velocity maps:')
             cur_progperc = 0
             prog_update = 10
-            
+        
+        if (lagRange is not None):
+            if (isinstance(lagRange, int) or isinstance(lagRange, float)):
+                lagRange = [-lagRange, lagRange]
         all_cmap_fnames = sf.FindFileNames(self.outFolder, Prefix='CorrMap_d', Ext='.dat', Sort='ASC', AppendFolder=True)
         cmap_mifiles = [None]
         all_lagtimes = [0]
@@ -317,12 +323,12 @@ class CorrMaps():
             t1_idxs = []   # tidx if tidx is t1, tidx-lag if tidx is t2
             # From largest to smallest, 0 excluded
             for lidx in range(len(all_lagtimes)-1, 0, -1):
-                if (all_lagtimes[lidx] <= tidx):
+                if (all_lagtimes[lidx] <= tidx and -1.0*all_lagtimes[lidx] >= lagRange[0]):
                     t1_idxs.append(tidx-all_lagtimes[lidx])
                     lag_idxs.append(lidx)
             # From smallest to largest, 0 included
             for lidx in range(len(all_lagtimes)):
-                if (tidx+all_lagtimes[lidx] < cmap_shape[0]):
+                if (tidx+all_lagtimes[lidx] < cmap_shape[0] and all_lagtimes[lidx] <= lagRange[1]):
                     t1_idxs.append(tidx)
                     lag_idxs.append(lidx)
             
