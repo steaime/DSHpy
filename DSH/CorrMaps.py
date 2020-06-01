@@ -249,7 +249,7 @@ class CorrMaps():
             res[i] = _lut[0][min(index, len(_lut[0])-1)]
         return res
 
-    def ComputeVelocities(self, zProfile='Parabolic', qValue=1.0, useBuffer=True, silent=True):
+    def ComputeVelocities(self, zProfile='Parabolic', qValue=1.0, useBuffer=True, silent=True, debug=False):
         """Converts correlation data into velocity data assuming a given velocity profile along z
         
         Parameters
@@ -269,7 +269,7 @@ class CorrMaps():
         else:
             raise IOError('Correlation map folder ' + str(self.outFolder) + ' not found.')
 
-        if not silent:
+        if (silent==False or debug==True):
             start_time = time.time()
             print('Computing velocity maps:')
             cur_progperc = 0
@@ -298,6 +298,11 @@ class CorrMaps():
         
         write_vmap = MI.MIfile(os.path.join(self.outFolder, '_vMap.dat'), self.outMetaData)
         write_verr = MI.MIfile(os.path.join(self.outFolder, '_vErr.dat'), self.outMetaData)
+        if debug:
+            write_interc = MI.MIfile(os.path.join(self.outFolder, '_interc.dat'), self.outMetaData)
+            write_pval = MI.MIfile(os.path.join(self.outFolder, '_pval.dat'), self.outMetaData)
+            write_nvals = MI.MIfile(os.path.join(self.outFolder, '_nvals.dat'), self.outMetaData)
+            
         for tidx in range(cmap_shape[0]):
             
             # find compatible lag indexes
@@ -323,15 +328,30 @@ class CorrMaps():
             cur_cmaps = np.ma.masked_less(cur_cmaps, cutoff_corr)
             cur_lags = np.ma.masked_array(cur_lags, cur_cmaps.mask)
             
+            if debug:
+                cur_nvals = np.empty([cmap_shape[1],cmap_shape[2]])
+                cur_interc = np.empty([cmap_shape[1],cmap_shape[2]])
+                cur_pval = np.empty([cmap_shape[1],cmap_shape[2]])
+            
             for ridx in range(cmap_shape[1]):
                 for cidx in range(cmap_shape[2]):
                     dr = np.true_divide(self._invert_monotonic(cur_cmaps[:,ridx,cidx].compressed(), qdr_g), qValue)
                     slope, intercept, r_value, p_value, std_err = stats.linregress(cur_lags[:,ridx,cidx].compressed(), dr)
                     vmap[tidx,ridx,cidx] = slope
                     verr[tidx,ridx,cidx] = std_err
+                    if debug:
+                        cur_nvals[ridx,cidx] = len(dr)
+                        cur_interc[ridx,cidx] = intercept
+                        cur_pval[ridx,cidx] = p_value
 
             write_vmap.WriteData(vmap[tidx], closeAfter=False)
             write_verr.WriteData(verr[tidx], closeAfter=False)
+            if debug:
+                write_interc.WriteData(cur_interc, closeAfter=False)
+                write_pval.WriteData(cur_pval, closeAfter=False)
+                write_nvals.WriteData(cur_nvals, closeAfter=False)
+                print('t={0} -- slope range:[{1},{2}], interc range:[{3},{4}], elapsed: {5:.1f}s'.format(tidx, np.min(vmap[tidx]), np.max(vmap[tidx]),\
+                                                                                      np.min(cur_interc), np.max(cur_interc), time.time()-start_time))
 
             if not silent:
                 cur_p = (tidx+1)*100/cmap_shape[0]
