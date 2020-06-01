@@ -251,7 +251,8 @@ class CorrMaps():
         return res
 
     def ComputeVelocities(self, zProfile='Parabolic', qValue=1.0, lagRange=None, signed_lags=False, consecutive_only=False,\
-                          allow_max_holes=0, mask_opening_range=None, silent=True, return_err=False, debug=False):
+                          allow_max_holes=0, mask_opening_range=None, conservative_cutoff=0.3, generous_cutoff=0.15,\
+                          silent=True, return_err=False, debug=False):
         """Converts correlation data into velocity data assuming a given velocity profile along z
         
         Parameters
@@ -276,6 +277,10 @@ class CorrMaps():
         mask_opening_range : integer > 1, only used if consecutive_only==False.
                     if not None, apply binary_opening to the mask for a given pixel as a function of lagtime
                     This removes thresholding noise by removing N-lag-wide unmasked domains where N=mask_opening_range
+        conservative_cutoff : only consider correlation data above this threshold value
+        generous_cutoff : when correlations above conservative_cutoff are not enough for linear fitting,
+                    include first lagtimes provided correlation data is above this more generous threshold
+                    Note: for parabolic profiles, the first correlation minimum is 0.145. Don't go below that!
         """
         if (os.path.isdir(self.outFolder)):
             config_fname = os.path.join(self.outFolder, 'CorrMapsConfig.ini')
@@ -316,8 +321,6 @@ class CorrMaps():
         # Prepare memory
         cmap_shape = conf_cmaps.Get('mi_output', 'shape', None, int)
         qdr_g = self._qdr_g_relation(zProfile=zProfile)
-        conservative_cutoff = 0.3
-        generous_cutoff = 0.15 # The first minimum is 0.145. Don't go below that!
         
         vmap = np.zeros(cmap_shape)
         write_vmap = MI.MIfile(os.path.join(self.outFolder, '_vMap.dat'), self.outMetaData)
@@ -370,7 +373,7 @@ class CorrMaps():
                     # if lag_idxs[lidx]==0, keep correlations equal to ones and lags equal to zero
                     # just memorize what this index is
                     zero_lidx = lidx
-            cur_mask = cur_cmaps < conservative_cutoff
+            cur_mask = cur_cmaps > conservative_cutoff
             
             if debug:
                 cur_nvals = np.empty([cmap_shape[1],cmap_shape[2]])
