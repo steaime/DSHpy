@@ -398,7 +398,7 @@ class CorrMaps():
                     if return_err:
                         verr[tidx,ridx,cidx] = std_err
                     if debug:
-                        cur_nvals[ridx,cidx] = len(dr)
+                        cur_nvals[ridx,cidx] = len(cur_dr)
                         cur_interc[ridx,cidx] = intercept
                         cur_pval[ridx,cidx] = p_value
 
