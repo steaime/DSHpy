@@ -240,7 +240,7 @@ class CorrMaps():
         else:
             raise ValueError(str(zProfile) + 'z profile not implemented yet')
 
-    def _invert_monotonic(data, _lut):
+    def _invert_monotonic(self, data, _lut):
         """Invert monotonic function based on a lookup table
         """
         res = np.zeros(len(data))
@@ -279,6 +279,7 @@ class CorrMaps():
         cmap_mifiles = []
         for i in range(len(all_cmap_fnames)):
             cmap_mifiles.append(MI.MIfile(all_cmap_fnames[i], conf_cmaps.ToDict(section='mi_output')))
+            cmap_mifiles[i].OpenForReading()
 
         # Check lagtimes for consistency
         all_lagtimes = sf.ExtractIndexFromStrings(all_cmap_fnames, index_pos=-1)
@@ -290,7 +291,6 @@ class CorrMaps():
         
         # Prepare memory
         cmap_shape = conf_cmaps.Get('mi_output', 'shape', None, int)
-        print(zProfile)
         qdr_g = self._qdr_g_relation(zProfile=zProfile)
         cutoff_corr = 0.2
         vmap = np.zeros(cmap_shape)
