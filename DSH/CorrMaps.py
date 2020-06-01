@@ -3,6 +3,7 @@ import numpy as np
 import scipy as sp
 import scipy.special as ssp
 from scipy import stats, signal
+from scipy.ndimage import binary_opening
 import time
 import bisect
 from DSH import Config as cf
@@ -276,14 +277,18 @@ class CorrMaps():
             prog_update = 10
             
         all_cmap_fnames = sf.FindFileNames(self.outFolder, Prefix='CorrMap_d', Ext='.dat', Sort='ASC', AppendFolder=True)
-        cmap_mifiles = []
+        cmap_mifiles = [None]
+        all_lagtimes = [0]
         for i in range(len(all_cmap_fnames)):
-            cmap_mifiles.append(MI.MIfile(all_cmap_fnames[i], conf_cmaps.ToDict(section='mi_output')))
-            cmap_mifiles[i].OpenForReading()
+            # Let's not load lagtime 0: lagtime 0 will be ones by definition
+            cur_lag = sf.LastIntInStr(all_cmap_fnames[i])
+            if (cur_lag > 0):
+                all_lagtimes.append(cur_lag)
+                cmap_mifiles.append(MI.MIfile(all_cmap_fnames[i], conf_cmaps.ToDict(section='mi_output')))
+                cmap_mifiles[i].OpenForReading()
 
         # Check lagtimes for consistency
-        all_lagtimes = sf.ExtractIndexFromStrings(all_cmap_fnames, index_pos=-1)
-        print('These are all lagtimes. They should be already sorted:')
+        print('These are all lagtimes. They should be already sorted and not contain 0:')
         print(all_lagtimes)
         for cur_lag in self.lagList:
             if (cur_lag not in all_lagtimes):
@@ -292,7 +297,9 @@ class CorrMaps():
         # Prepare memory
         cmap_shape = conf_cmaps.Get('mi_output', 'shape', None, int)
         qdr_g = self._qdr_g_relation(zProfile=zProfile)
-        cutoff_corr = 0.2
+        conservative_cutoff = 0.25
+        generous_cutoff = 0.1
+        
         vmap = np.zeros(cmap_shape)
         write_vmap = MI.MIfile(os.path.join(self.outFolder, '_vMap.dat'), self.outMetaData)
         if return_err:
@@ -320,13 +327,20 @@ class CorrMaps():
                     lag_idxs.append(lidx)
             
             # Populate arrays and masked arrays
-            cur_cmaps = np.zeros([len(lag_idxs), cmap_shape[1], cmap_shape[2]])
+            cur_cmaps = np.ones([len(lag_idxs), cmap_shape[1], cmap_shape[2]])
             cur_lags = np.zeros([len(lag_idxs), cmap_shape[1], cmap_shape[2]])
+            zero_lidx = -1
             for lidx in range(len(lag_idxs)):
-                cur_cmaps[lidx] = cmap_mifiles[lag_idxs[lidx]].GetImage(t1_idxs[lidx])
-                cur_lags[lidx] = np.ones([cmap_shape[1], cmap_shape[2]])*all_lagtimes[lag_idxs[lidx]]*1.0/self.outMetaData['fps']
-            cur_cmaps = np.ma.masked_less(cur_cmaps, cutoff_corr)
-            cur_lags = np.ma.masked_array(cur_lags, cur_cmaps.mask)
+                if (lag_idxs[lidx] > 0):
+                    cur_cmaps[lidx] = cmap_mifiles[lag_idxs[lidx]].GetImage(t1_idxs[lidx])
+                    cur_lags[lidx] = np.ones([cmap_shape[1], cmap_shape[2]])*all_lagtimes[lag_idxs[lidx]]*1.0/self.outMetaData['fps']
+                else:
+                    # if lag_idxs[lidx]==0, keep correlations equal to ones and lags equal to zero
+                    # just memorize what this index is
+                    zero_lidx = lidx
+            cur_mask = cur_cmaps < conservative_cutoff
+            #cur_cmaps = np.ma.masked_less(cur_cmaps, conservative_cutoff)
+            #cur_lags = np.ma.masked_array(cur_lags, cur_cmaps.mask)
             
             if debug:
                 cur_nvals = np.empty([cmap_shape[1],cmap_shape[2]])
@@ -335,10 +349,29 @@ class CorrMaps():
             
             for ridx in range(cmap_shape[1]):
                 for cidx in range(cmap_shape[2]):
-                    cur_data = cur_cmaps[:,ridx,cidx].compressed()
-                    if (len(cur_data) > 1):
+                    # remove thresholding noise by removing 1 or 2-lag-wide unmasked domains
+                    # this would be to unmask 1 or 2-lag-wide masked domains (not recommended):
+                    # cur_mask_denoise = binary_closing(cur_mask[:,ridx,cidx], structure=np.ones(2))
+                    cur_mask_denoise = binary_opening(cur_mask[:,ridx,cidx], structure=np.ones(3))
+                    num_nonmasked = np.count_nonzero(cur_mask_denoise)
+                    if (num_nonmasked <= 1):
+                        cur_mask_denoise[zero_lidx] = True
+                        # If there are not enough useful correlation values, 
+                        # check if the first available lagtimes can be used at least with a generous cutoff
+                        # If they are, use them, otherwise just set that cell to nan
+                        if (zero_lidx+1 < len(lag_idxs)):
+                            if (cur_cmaps[zero_lidx+1,ridx,cidx] > generous_cutoff):
+                                cur_mask_denoise[zero_lidx+1] = True
+                        if (zero_lidx > 0):
+                            if (cur_cmaps[zero_lidx-1,ridx,cidx] > generous_cutoff):
+                                cur_mask_denoise[zero_lidx-1] = True
+                        num_nonmasked = np.count_nonzero(cur_mask_denoise)
+                        
+                    if (num_nonmasked > 1):
+                        cur_data = cur_cmaps[:,ridx,cidx][cur_mask_denoise]
+                        cur_x = cur_lags[:,ridx,cidx][cur_mask_denoise]
                         dr = np.true_divide(self._invert_monotonic(cur_data, qdr_g), qValue)
-                        slope, intercept, r_value, p_value, std_err = stats.linregress(cur_lags[:,ridx,cidx].compressed(), dr)
+                        slope, intercept, r_value, p_value, std_err = stats.linregress(cur_x, dr)
                     else:
                         slope, std_err = np.nan, np.nan
                         if debug:
