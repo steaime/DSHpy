@@ -444,12 +444,11 @@ class CorrMaps():
                             if (num_nonmasked == 2):
                                 if (np.max(cur_dt)==np.min(cur_dt)):
                                     slope = np.mean(cur_dr) * 1.0 / cur_dt[0]
-                                    intercept = np.nan
-                                    r_value = np.nan
-                                    p_value = np.nan
-                                    std_err = np.nan
+                                    intercept, r_value, p_value, std_err = np.nan, np.nan, np.nan, np.nan
                                 else:
                                     slope, intercept, r_value, p_value, std_err = stats.linregress(cur_dt, cur_dr)
+                            else:
+                                slope, intercept, r_value, p_value, std_err = stats.linregress(cur_dt, cur_dr)
                     else:
                         slope, std_err = np.nan, np.nan
                         if debug:
