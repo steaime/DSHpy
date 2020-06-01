@@ -3,6 +3,7 @@ import numpy as np
 import scipy as sp
 import scipy.special as ssp
 from scipy import stats, signal
+from scipy.ndimage import binary_opening
 import time
 import bisect
 from DSH import Config as cf
@@ -249,7 +250,7 @@ class CorrMaps():
             res[i] = _lut[0][min(index, len(_lut[0])-1)]
         return res
 
-    def ComputeVelocities(self, zProfile='Parabolic', qValue=1.0, lagRange=None, signed_lags=False, silent=True, return_err=False, debug=False):
+    def ComputeVelocities(self, zProfile='Parabolic', qValue=1.0, lagRange=None, signed_lags=False, consecutive_only=False, mask_opening_range=None, silent=True, return_err=False, debug=False):
         """Converts correlation data into velocity data assuming a given velocity profile along z
         
         Parameters
@@ -265,8 +266,13 @@ class CorrMaps():
                     In this case, displacements will also be assigned the same sign as the lag
                     otherwise, we will work with absolute values only
                     This will "flatten" the linear fits, reducing slopes and increasing intercepts
+                    It does a much better job accounting for noise contributions to corr(tau->0)
                     if signed_lags==False, the artificial correlation value at lag==0 will not be processed
                     (it is highly recommended to set signed_lags to False)
+        consecutive_only : only select sorrelation chunk with consecutive True value of the mask around tau=0
+        mask_opening_range : integer > 1, only used if consecutive_only==False.
+                    if not None, apply binary_opening to the mask for a given pixel as a function of lagtime
+                    This removes thresholding noise by removing N-lag-wide unmasked domains where N=mask_opening_range
         """
         if (os.path.isdir(self.outFolder)):
             config_fname = os.path.join(self.outFolder, 'CorrMapsConfig.ini')
@@ -338,7 +344,7 @@ class CorrMaps():
                         sign_list.append(-1)
             # From smallest to largest, 0 included
             for lidx in range(len(all_lagtimes)):
-                if (tidx+all_lagtimes[lidx] < cmap_shape[0] and all_lagtimes[lidx] <= lagRange[1]):
+                if (tidx+all_lagtimes[lidx] < cmap_shape[0]):
                     bln_add = True
                     if (lagRange is not None):
                         bln_add = (all_lagtimes[lidx] <= lagRange[1])
@@ -370,42 +376,57 @@ class CorrMaps():
             
             for ridx in range(cmap_shape[1]):
                 for cidx in range(cmap_shape[2]):
-                    cur_mask_connected = np.zeros(len(lag_idxs), dtype=bool)
-                    for ilag_pos in range(zero_lidx+1, len(lag_idxs)):
-                        if cur_mask[ilag_pos,ridx,cidx]:
-                            cur_mask_connected[ilag_pos] = True
-                        else:
-                            break
-                    for ilag_neg in range(zero_lidx, -1, -1):
-                        if cur_mask[ilag_neg,ridx,cidx]:
-                            cur_mask_connected[ilag_neg] = True
-                        else:
-                            break
+                    if consecutive_only:
+                        cur_use_mask = np.zeros(len(lag_idxs), dtype=bool)
+                        for ilag_pos in range(zero_lidx+1, len(lag_idxs)):
+                            if cur_mask[ilag_pos,ridx,cidx]:
+                                cur_use_mask[ilag_pos] = True
+                            else:
+                                break
+                        for ilag_neg in range(zero_lidx, -1, -1):
+                            if cur_mask[ilag_neg,ridx,cidx]:
+                                cur_use_mask[ilag_neg] = True
+                            else:
+                                break
+                    else:
+                        cur_use_mask = cur_mask[:,ridx,cidx]
+                        if (mask_opening_range is not None and np.count_nonzero(cur_use_mask) > 2):
+                            sel_open_range = None
+                            for cur_open_range in range(mask_opening_range, 2, -1):
+                                # remove thresholding noise by removing N-lag-wide unmasked domains
+                                cur_mask_denoise = binary_opening(cur_use_mask, structure=np.ones(cur_open_range))
+                                if (np.count_nonzero(cur_use_mask) > 2):
+                                    cur_use_mask = cur_mask_denoise
+                                    sel_open_range = cur_open_range
+                                    break
+                            if (sel_open_range is None):
+                                cur_use_mask = binary_opening(cur_use_mask, structure=np.ones(2))
+
                     # Only use zero lag correlation when dealing with signed lagtimes
-                    cur_mask_connected[zero_lidx] = signed_lags
+                    cur_use_mask[zero_lidx] = signed_lags
                         
-                    num_nonmasked = np.count_nonzero(cur_mask_connected)
+                    num_nonmasked = np.count_nonzero(cur_use_mask)
                     if (num_nonmasked <= 1):
-                        cur_mask_connected[zero_lidx] = True
+                        cur_use_mask[zero_lidx] = True
                         # If there are not enough useful correlation values, 
                         # check if the first available lagtimes can be used at least with a generous cutoff
                         # If they are, use them, otherwise just set that cell to nan
                         if (zero_lidx+1 < len(lag_idxs)):
                             if (cur_cmaps[zero_lidx+1,ridx,cidx] > generous_cutoff):
-                                cur_mask_connected[zero_lidx+1] = True
+                                cur_use_mask[zero_lidx+1] = True
                         if (zero_lidx > 0):
                             if (cur_cmaps[zero_lidx-1,ridx,cidx] > generous_cutoff):
-                                cur_mask_connected[zero_lidx-1] = True
-                        num_nonmasked = np.count_nonzero(cur_mask_connected)
+                                cur_use_mask[zero_lidx-1] = True
+                        num_nonmasked = np.count_nonzero(cur_use_mask)
                         
                     if (num_nonmasked > 1):
-                        cur_data = cur_cmaps[:,ridx,cidx][cur_mask_connected]
+                        cur_data = cur_cmaps[:,ridx,cidx][cur_use_mask]
                         if signed_lags:
-                            cur_signs_1d = cur_signs[:,ridx,cidx][cur_mask_connected]
-                            cur_dt = np.multiply(cur_lags[:,ridx,cidx][cur_mask_connected], cur_signs_1d)
+                            cur_signs_1d = cur_signs[:,ridx,cidx][cur_use_mask]
+                            cur_dt = np.multiply(cur_lags[:,ridx,cidx][cur_use_mask], cur_signs_1d)
                             cur_dr = np.multiply(np.true_divide(self._invert_monotonic(cur_data, qdr_g), qValue), cur_signs_1d)
                         else:
-                            cur_dt = cur_lags[:,ridx,cidx][cur_mask_connected]
+                            cur_dt = cur_lags[:,ridx,cidx][cur_use_mask]
                             cur_dr = np.true_divide(self._invert_monotonic(cur_data, qdr_g), qValue)
                         slope, intercept, r_value, p_value, std_err = stats.linregress(cur_dt, cur_dr)
                     else:
