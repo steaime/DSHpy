@@ -275,7 +275,7 @@ class CorrMaps():
             cur_progperc = 0
             prog_update = 10
             
-        all_cmap_fnames = sf.FindFileNames(self.outFolder, Prefix='CorrMap_d', Ext='.dat', Sort='ASC')
+        all_cmap_fnames = sf.FindFileNames(self.outFolder, Prefix='CorrMap_d', Ext='.dat', Sort='ASC', AppendFolder=True)
         cmap_mifiles = []
         for i in range(len(all_cmap_fnames)):
             cmap_mifiles.append(MI.MIfile(all_cmap_fnames[i], conf_cmaps.ToDict(section='mi_output')))
