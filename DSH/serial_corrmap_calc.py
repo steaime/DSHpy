@@ -31,4 +31,7 @@ if __name__ == '__main__':
                 crop_roi = conf.Get(cur_sec, 'crop_roi', None, int)
                 mi_file = MIfile.MIfile(mi_fname, meta_fname)
                 corr_maps = CorrMaps.CorrMaps(mi_file, out_folder, lag_list, kernel_specs, img_range, crop_roi)
-                corr_maps.Compute(silent=True, return_maps=False)
+                if ('-skip_cmap' not in cmd_list):
+                    corr_maps.Compute(silent=True, return_maps=False)
+                if ('-skip_vmap' not in cmd_list):
+                    corr_maps.ComputeVelocities(qValue=4.25, silent=True, return_maps=False)
