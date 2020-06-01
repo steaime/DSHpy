@@ -71,6 +71,7 @@ if __name__ == '__main__':
                         all_tranges = []
                         for pid in range(num_proc):
                             all_tranges.append([start_t, start_t+num_t, step_t])
+                            start_t = start_t + num_t
                         all_tranges[-1][1] = end_t
                         proc_list = []
                         for pid in range(num_proc):

@@ -285,6 +285,16 @@ class CorrMaps():
                     Note: for parabolic profiles, the first correlation minimum is 0.145. Don't go below that!
         file_suffix : suffix to be appended to filename to differentiate output from multiple processes
         """
+        if (silent==False or debug==True):
+            start_time = time.time()
+            print('Computing velocity maps:')
+            cur_progperc = 0
+            prog_update = 10
+
+        if (lagRange is not None):
+            if (isinstance(lagRange, int) or isinstance(lagRange, float)):
+                lagRange = [-lagRange, lagRange]
+
         if (os.path.isdir(self.outFolder)):
             config_fname = os.path.join(self.outFolder, 'CorrMapsConfig.ini')
             if (os.path.isfile(config_fname)):
@@ -303,9 +313,9 @@ class CorrMaps():
                         'file_suffix' : file_suffix,
                         }
                 if (tRange is not None):
-                    vmap_options['tRange'] = tRange
+                    vmap_options['tRange'] = list(tRange)
                 if (lagRange is not None):
-                    vmap_options['lagRange'] = lagRange
+                    vmap_options['lagRange'] = list(lagRange)
                 if (mask_opening_range is not None):
                     vmap_options['mask_opening_range'] = mask_opening_range
                 conf_cmaps.Import(vmap_options, section_name='vmap')
@@ -315,15 +325,6 @@ class CorrMaps():
         else:
             raise IOError('Correlation map folder ' + str(self.outFolder) + ' not found.')
 
-        if (silent==False or debug==True):
-            start_time = time.time()
-            print('Computing velocity maps:')
-            cur_progperc = 0
-            prog_update = 10
-        
-        if (lagRange is not None):
-            if (isinstance(lagRange, int) or isinstance(lagRange, float)):
-                lagRange = [-lagRange, lagRange]
         all_cmap_fnames = sf.FindFileNames(self.outFolder, Prefix='CorrMap_d', Ext='.dat', Sort='ASC', AppendFolder=True)
         cmap_mifiles = [None]
         all_lagtimes = [0]
@@ -350,7 +351,7 @@ class CorrMaps():
             vmap_shape = cmap_mifiles[1].GetShape()
             corrframe_idx_list = list(range(*tRange))
             vmap_shape[0] = len(corrframe_idx_list)
-            vmap_metadata['shape'] = vmap_shape
+            vmap_metadata['shape'] = list(vmap_shape)
             if ('fps' in vmap_metadata):
                 vmap_metadata['fps'] = float(vmap_metadata['fps']) * 1.0/tRange[2]
         
@@ -390,14 +391,16 @@ class CorrMaps():
                         sign_list.append(-1)
             # From smallest to largest, 0 included
             for lidx in range(len(all_lagtimes)):
-                if (corrframe_idx+all_lagtimes[lidx] < cmap_shape[0]):
-                    bln_add = True
-                    if (lagRange is not None):
-                        bln_add = (all_lagtimes[lidx] <= lagRange[1])
-                    if bln_add:
-                        t1_idxs.append(corrframe_idx)
-                        lag_idxs.append(lidx)
-                        sign_list.append(1)
+                # old conservative version: 
+                #if (corrframe_idx+all_lagtimes[lidx] < cmap_shape[0]):
+                # useless: worst case scenario we add a bunch of zeros from missing cmaps, but zeros will be masked anyways
+                bln_add = True
+                if (lagRange is not None):
+                    bln_add = (all_lagtimes[lidx] <= lagRange[1])
+                if bln_add:
+                    t1_idxs.append(corrframe_idx)
+                    lag_idxs.append(lidx)
+                    sign_list.append(1)
             
             # Populate arrays
             cur_cmaps = np.ones([len(lag_idxs), cmap_shape[1], cmap_shape[2]])
