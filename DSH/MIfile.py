@@ -25,7 +25,7 @@ def MergeMIfiles(MergedFileName, MIfileList, MergedMetadataFile=None):
     # Load all MIfiles and generate output metadata
     mi_in_list = []
     out_meta = {
-        'hdr_len' : None,
+        'hdr_len' : 0,
         'shape' : [0, 0, 0],
         'px_format' : None,
         'fps' : 0.0,
