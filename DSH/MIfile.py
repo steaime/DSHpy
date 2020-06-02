@@ -7,6 +7,58 @@ from DSH import Config as cf
 _data_depth = {'b':1, 'B':1, '?':1, 'h':2, 'H':2, 'i':4, 'I':4, 'f':4, 'd':8}
 _data_types = {'b':np.int8, 'B':np.uint8, '?':bool, 'h':np.int16, 'H':np.uint16, 'i':np.int32, 'I':np.uint32, 'f':np.float32, 'd':np.float64}
 
+def MergeMIfiles(MergedFileName, MIfileList, MergedMetadataFile=None):
+    """Merge multiple image files into one image file
+    
+    Parameters
+    ----------
+    MergedFileName : full path of the destination merged MIfile
+    MIfileList : list of MIfile objects or of 2-element list [MIfilename, MedatData]
+                 Image shape and pixel format must be the same for all MIfiles
+    MergedMetadataFile : if not None, export metadata of merged file
+                 
+    Returns
+    -------
+    outMIfile : merged MIfile 
+    """
+    
+    # Load all MIfiles and generate output metadata
+    mi_in_list = []
+    out_meta = {
+        'hdr_len' : None,
+        'shape' : [0, 0, 0],
+        'px_format' : None,
+        'fps' : 0.0,
+        'px_size' : 0.0
+        }
+    for cur_mifile in MIfileList:
+        if (type(cur_mifile) is list):
+            add_mi = MIfile(cur_mifile[0], cur_mifile[1])
+        else:
+            add_mi = cur_mifile
+        mi_in_list.append(add_mi)
+        out_meta['shape'][0] += add_mi.ImageNumber()
+        cur_shape = add_mi.ImageShape()
+        cur_format = add_mi.DataFormat()
+        if (out_meta['shape'][1] == 0):
+            out_meta['shape'][1], out_meta['shape'][2] = cur_shape[0], cur_shape[1]
+            out_meta['px_format'] = cur_format
+            out_meta['fps'] = add_mi.GetFPS()
+            out_meta['px_size'] = add_mi.GetPixelSize()
+        elif (out_meta['shape'][1] != cur_shape[0] or out_meta['shape'][2] != cur_shape[1] and out_meta['px_format'] != cur_format):
+            raise IOError('MIfiles should all have the same image shape and format')
+    
+    if (MergedMetadataFile is not None):
+        conf = cf.Config()
+        conf.Import(out_meta, section_name='MIfile')
+        conf.Export(MergedMetadataFile)
+
+    
+    outMIfile = MIfile(MergedFileName, out_meta)
+    for cur_mifile in mi_in_list:
+        outMIfile.WriteData(cur_mifile.Read(closeAfter=True), closeAfter=False)
+    outMIfile.Close()
+
 class MIfile():
     """ Class to read/write multi image file (MIfile) """
     

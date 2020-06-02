@@ -119,13 +119,13 @@ class CorrMaps():
                     self.imgIdx[tidx, lidx, 1] = -1
     
     def ExportConfiguration(self):
-        dict_config = {'mi_input' : self.MIinput.GetMetadata(),
-                       'mi_output' : self.outMetaData,
-                       'parameters' : {'out_folder' : self.outFolder,
-                                   'lags' : self.lagList,
-                                   'img_range' : self.imgRange,
-                                   'crop_roi' : self.cropROI
-                                   },
+        dict_config = {'imgs_metadata' : self.MIinput.GetMetadata(),
+                       'corrmap_metadata' : self.outMetaData,
+                       'corrmap_parameters' : {'out_folder' : self.outFolder,
+                                               'lags' : self.lagList,
+                                               'img_range' : self.imgRange,
+                                               'crop_roi' : self.cropROI
+                                               },
                         'kernel' : self.Kernel
                        }
         conf = cf.Config()
@@ -299,29 +299,8 @@ class CorrMaps():
             config_fname = os.path.join(self.outFolder, 'CorrMapsConfig.ini')
             if (os.path.isfile(config_fname)):
                 conf_cmaps = cf.Config(config_fname)
-                vmap_options = {
-                        'zProfile' : zProfile,
-                        'qValue' : qValue,
-                        'signed_lags' : signed_lags,
-                        'consecutive_only' : consecutive_only,
-                        'allow_max_holes' : allow_max_holes,
-                        'conservative_cutoff' : conservative_cutoff,
-                        'generous_cutoff' : generous_cutoff,
-                        'silent' : silent,
-                        'return_err' : return_err,
-                        'debug' : debug,
-                        'file_suffix' : file_suffix,
-                        }
-                if (tRange is not None):
-                    vmap_options['tRange'] = list(tRange)
-                if (lagRange is not None):
-                    vmap_options['lagRange'] = list(lagRange)
-                if (mask_opening_range is not None):
-                    vmap_options['mask_opening_range'] = mask_opening_range
-                conf_cmaps.Import(vmap_options, section_name='vmap')
-                conf_cmaps.Export(os.path.join(self.outFolder, 'VelMapsConfig' + str(file_suffix) + '.ini'))
             else:
-                raise IOError('Configuration file CorrMapsConfig.ini not found in folder ' + str(self.outFolder))
+                raise IOError('Configuration file ' + str(config_fname) + ' not found')
         else:
             raise IOError('Correlation map folder ' + str(self.outFolder) + ' not found.')
 
@@ -333,7 +312,7 @@ class CorrMaps():
             cur_lag = sf.LastIntInStr(all_cmap_fnames[i])
             if (cur_lag > 0):
                 all_lagtimes.append(cur_lag)
-                cmap_mifiles.append(MI.MIfile(all_cmap_fnames[i], conf_cmaps.ToDict(section='mi_output')))
+                cmap_mifiles.append(MI.MIfile(all_cmap_fnames[i], conf_cmaps.ToDict(section='corrmap_metadata')))
                 cmap_mifiles[-1].OpenForReading()
 
         # Check lagtimes for consistency
@@ -354,6 +333,31 @@ class CorrMaps():
             vmap_metadata['shape'] = list(vmap_shape)
             if ('fps' in vmap_metadata):
                 vmap_metadata['fps'] = float(vmap_metadata['fps']) * 1.0/tRange[2]
+
+        # Export configuration
+        vmap_options = {
+                        'zProfile' : zProfile,
+                        'qValue' : qValue,
+                        'signed_lags' : signed_lags,
+                        'consecutive_only' : consecutive_only,
+                        'allow_max_holes' : allow_max_holes,
+                        'conservative_cutoff' : conservative_cutoff,
+                        'generous_cutoff' : generous_cutoff,
+                        'silent' : silent,
+                        'return_err' : return_err,
+                        'debug' : debug,
+                        'file_suffix' : file_suffix,
+                        }
+        if (tRange is not None):
+            vmap_options['tRange'] = list(tRange)
+        if (lagRange is not None):
+            vmap_options['lagRange'] = list(lagRange)
+        if (mask_opening_range is not None):
+            vmap_options['mask_opening_range'] = mask_opening_range
+        conf_cmaps.Import(vmap_options, section_name='velmap_parameters')
+        conf_cmaps.Import(vmap_metadata, section_name='velmap_metadata')
+        conf_cmaps.Export(os.path.join(self.outFolder, 'VelMapsConfig' + str(file_suffix) + '.ini'))
+
         
         # Prepare memory
         qdr_g = self._qdr_g_relation(zProfile=zProfile)
@@ -524,9 +528,25 @@ class CorrMaps():
         if not silent:
             print('Procedure completed in {0:.1f} seconds!'.format(time.time()-start_time))
             
-        return vmap, verr
+        if return_err:
+            return vmap, verr
+        else:
+            return vmap
 
     def ComputeDisplacements(self, silent=True):
         """Integrate velocities to compute total displacements since the beginning of the experiment
         """
-        return None
+        if (os.path.isdir(self.outFolder)):
+            vmap_fname = os.path.join(self.outFolder, '_vMap.dat')
+            config_fname = os.path.join(self.outFolder, '_vMap_metadata.ini')
+            if (os.path.isfile(config_fname) and os.path.isfile(vmap_fname)):
+                vmap_mifile = MI.MIfile(vmap_fname, config_fname)
+            else:
+                raise IOError('MIfile ' + str(vmap_fname) + ' or metadata file ' + str(config_fname) + ' not found')
+        else:
+            raise IOError('Correlation map folder ' + str(self.outFolder) + ' not found.')
+
+        # Read all velocity map to memory
+        vmap_data = vmap_mifile.Read()
+        displmap_metadata = vmap_mifile.GetMetadata()
+        
