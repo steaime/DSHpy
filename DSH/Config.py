@@ -1,3 +1,4 @@
+import os
 import configparser
 import numpy as np
 import pkg_resources
@@ -24,9 +25,15 @@ class Config():
         """
         self.config = configparser.ConfigParser(allow_no_value=True)
         for conf_f in defaultConfigFiles:
-            self.config.read(conf_f)
+            if (os.path.isfile(conf_f)):
+                self.config.read(conf_f)
+            else:
+                raise IOError('Configuration file ' + str(conf_f) + ' not found')
         if (ConfigFile is not None):
-            self.config.read(ConfigFile)
+            if (os.path.isfile(ConfigFile)):
+                self.config.read(ConfigFile)
+            else:
+                raise IOError('Configuration file ' + str(ConfigFile) + ' not found')
 
     def Import(self, dict_config, section_name='default'):
         """Imports all dictionary entries into a given section
