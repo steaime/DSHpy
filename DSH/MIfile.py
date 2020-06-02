@@ -100,6 +100,7 @@ class MIfile():
             if (fName is None):
                 fName = self.FileName
             self.ReadFileHandle = open(fName, 'rb')
+            self.ReadingFileName = fName
         
     def Read(self, zRange=None, cropROI=None, closeAfter=False):
         """Read data from MIfile
@@ -353,7 +354,8 @@ class MIfile():
         fileContent = self.ReadFileHandle.read(bytes_to_read)
         if len(fileContent) < bytes_to_read:
             raise IOError('MI file read error: EOF encountered when reading image stack starting from seek offset ' + str(seek_pos) +\
-                          ': ' + str(len(fileContent)) + ' instead of ' + str(bytes_to_read) + ' bytes (' + str(px_num) + ' pixels) returned')
+                          ': ' + str(len(fileContent)) + ' instead of ' + str(bytes_to_read) + ' bytes (' + str(px_num) +\
+                          ' pixels) returned from file ' + str(self.ReadingFileName))
         # get data type from the depth in bytes
         struct_format = ('%s' + self.PixelFormat) % px_num
         # unpack data structure in a tuple (than converted into 1D array) of numbers

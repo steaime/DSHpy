@@ -107,6 +107,9 @@ if __name__ == '__main__':
                             if not os.path.isfile(partial_vmap_config_fname):
                                 raise IOError('vMap metadata file ' + str(partial_vmap_config_fname) + ' not found.')
                             vmap_config = Config.Config(partial_vmap_config_fname)
+                            if ('-silent' not in cmd_list):
+                                print('       - Segment {0} ({1}): format={2}, shape={3}'.format(pid, partial_vmap_fnames[fidx],\
+                                      vmap_config.Get('velmap_metadata', 'px_format', 'ERROR'), vmap_config.Get('velmap_metadata', 'shape', None, int)))
                             vmap_mi_files.append(MIfile.MIfile(partial_vmap_fnames[fidx], vmap_config.ToDict(section='velmap_metadata')))
                         combined_corrmap = MIfile.MergeMIfiles(os.path.join(out_folder, '_vMap.dat'), vmap_mi_files, os.path.join(out_folder, '_vMap_metadata.ini'))
                    
