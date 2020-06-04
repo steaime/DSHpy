@@ -1,7 +1,6 @@
 import sys
 import os
-from DSH import Config, MIfile, CorrMaps, SharedFunctions
-from multiprocessing import Process
+from DSH import Config, MIfile, CorrMaps, VelMaps
 
 
 if __name__ == '__main__':
@@ -20,96 +19,76 @@ if __name__ == '__main__':
     
     if ('-silent' not in cmd_list):
         print('\n\nBATCH CORRELATION MAP CALCULATOR\nWorking on {0} input files'.format(len(inp_fnames)))
-        
+    
+    # Loop through all configuration files
     for cur_inp in inp_fnames:
-        print('Current input file: ' + str(cur_inp))
+        if ('-silent' not in cmd_list):
+            print('Current input file: ' + str(cur_inp))
+            
+        # Read global section
         conf = Config.Config(cur_inp)
         num_proc = conf.Get('global', 'n_proc', 1, int)
         kernel_specs = conf.Get('global', 'kernel_specs')
         lag_list = conf.Get('global', 'lag_list', [], int)
         froot = conf.Get('global', 'root', '')
+        
+        # Loop through all 'input_N' sections of the configuration file
         for cur_sec in conf.GetSections():
             if (cur_sec[:len('input_')]=='input_'):
+                
+                # Read current input section
                 mi_fname = os.path.join(froot, conf.Get(cur_sec, 'mi_file'))
                 if ('-silent' not in cmd_list):
-                    print(' - ' + str(cur_sec) + ': working with ' + str(mi_fname))
+                    print(' - ' + str(cur_sec) + ': working with ' + str(mi_fname) + '...')
                 meta_fname = os.path.join(froot, conf.Get(cur_sec, 'meta_file'))
                 out_folder = os.path.join(froot, conf.Get(cur_sec, 'out_folder'))
                 img_range = conf.Get(cur_sec, 'img_range', None, int)
                 crop_roi = conf.Get(cur_sec, 'crop_roi', None, int)
+                
+                # Initialize image and correlation files
                 mi_file = MIfile.MIfile(mi_fname, meta_fname)
                 corr_maps = CorrMaps.CorrMaps(mi_file, out_folder, lag_list, kernel_specs, img_range, crop_roi)
+                
+                # Calculate correlation maps
                 if ('-skip_cmap' not in cmd_list):
                     if ('-silent' not in cmd_list):
                         print('    - Computing correlation maps (multiprocess mode to be implemented)')
                     corr_maps.Compute(silent=True, return_maps=False)
-                if ('-skip_vmap' not in cmd_list):
-                    vmap_trange = conf.Get('vmap', 'tRange', None, int)
+                    
+                # Calculate velocity maps
+                if (('-skip_vmap' not in cmd_list) or (num_proc > 1 and '-skip_vmap_assemble' not in cmd_list)):
+                    
+                    # Read options for velocity calculation
                     vmap_kw = {'qValue':conf.Get('vmap', 'qValue', 1.0, float),\
-                               'tRange':vmap_trange,\
+                               'tRange':conf.Get('vmap', 'tRange', None, int),\
                                'lagRange':conf.Get('vmap', 'lagRange', None, int),\
-                               'signed_lags':conf.Get('vmap', 'signed_lags', False, bool),\
-                               'consecutive_only':conf.Get('vmap', 'consecutive_only', True, bool),\
-                               'allow_max_holes':conf.Get('vmap', 'allow_max_holes', 0, int),\
-                               'mask_opening_range':conf.Get('vmap', 'mask_opening_range', None, int),\
+                               'signedLags':conf.Get('vmap', 'signedLags', False, bool),\
+                               'consecOnly':conf.Get('vmap', 'consecOnly', True, bool),\
+                               'maxHoles':conf.Get('vmap', 'maxHoles', 0, int),\
+                               'maskOpening':conf.Get('vmap', 'maskOpening', None, int),\
                                'conservative_cutoff':conf.Get('vmap', 'conservative_cutoff', 0.3, float),\
-                               'generous_cutoff':conf.Get('vmap', 'generous_cutoff', 0.15, float),\
-                               'silent':conf.Get('vmap', 'silent', True, bool),\
-                               'debug':conf.Get('vmap', 'debug', False, bool)}
+                               'generous_cutoff':conf.Get('vmap', 'generous_cutoff', 0.15, float)}
+                    
+                    # Initialize MelMaps object
+                    vel_maps = VelMaps.VelMaps(corr_maps, **vmap_kw)
+                    
+                if ('-skip_vmap' not in cmd_list):
+                    
                     if (num_proc == 1):
                         if ('-silent' not in cmd_list):
                             print('    - Computing velocity maps (single process)')
-                        corr_maps.ComputeVelocities(**vmap_kw)
+                        vel_maps.Compute()
                     else:
-                        if (vmap_trange is None):
-                            vmap_trange = [0, corr_maps.outputShape[0], 1]
-                        else:
-                            if (vmap_trange[1]<0):
-                                vmap_trange[1] = corr_maps.outputShape[0]
-                            if (len(vmap_trange) < 3):
-                                vmap_trange.append(1)
-                        start_t = vmap_trange[0]
-                        end_t = vmap_trange[1]
-                        num_t = (end_t-start_t) // num_proc
-                        step_t = vmap_trange[2]
                         if ('-silent' not in cmd_list):
-                            print('    - Computing velocity maps (splitting computaton of {0} maps in {1} processes)'.format(end_t-start_t, num_proc))
-                        all_tranges = []
-                        for pid in range(num_proc):
-                            all_tranges.append([start_t, start_t+num_t, step_t])
-                            start_t = start_t + num_t
-                        all_tranges[-1][1] = end_t
-                        proc_list = []
-                        for pid in range(num_proc):
-                            cur_kw = vmap_kw.copy()
-                            cur_kw['tRange'] = all_tranges[pid]
-                            cur_p = Process(target=corr_maps.ComputeVelocities, args=('Parabolic', cur_kw['qValue'], cur_kw['tRange'], cur_kw['lagRange'],\
-                                                                                      cur_kw['signed_lags'], cur_kw['consecutive_only'], cur_kw['allow_max_holes'],\
-                                                                                      cur_kw['mask_opening_range'], cur_kw['conservative_cutoff'], cur_kw['generous_cutoff'],\
-                                                                                      cur_kw['silent'], False, cur_kw['debug'], '_'+str(pid).zfill(2)))
-                            cur_p.start()
-                            if ('-silent' not in cmd_list):
-                                print('       - velmap proc {0} analyzing image range {1}'.format(pid, cur_kw['tRange']))
-                            proc_list.append(cur_p)
-                        for cur_p in proc_list:
-                            cur_p.join()
+                            print('    - Computing velocity maps (splitting computaton in {0} processes)'.format(num_proc))
+                        vel_maps.ComputeMultiproc(num_proc, assemble_after=False)
+                                            
+                if (num_proc > 1 and '-skip_vmap_assemble' not in cmd_list):
+                    
                     if ('-silent' not in cmd_list):
-                        print('      ...done!')
-                if ('-skip_vmap_assemble' not in cmd_list):
-                    if (num_proc > 1):
-                        if ('-silent' not in cmd_list):
-                            print('    - Assembling velocity maps from multiprocess outputs')
-                        partial_vmap_fnames = SharedFunctions.FindFileNames(out_folder, Prefix='_vMap_', Ext='.dat', Sort='ASC', AppendFolder=True)
-                        vmap_mi_files = []
-                        for fidx in range(len(partial_vmap_fnames)):
-                            pid = SharedFunctions.LastIntInStr(partial_vmap_fnames[fidx])
-                            partial_vmap_config_fname = os.path.join(out_folder, 'VelMapsConfig_' + str(pid).zfill(2) + '.ini')
-                            if not os.path.isfile(partial_vmap_config_fname):
-                                raise IOError('vMap metadata file ' + str(partial_vmap_config_fname) + ' not found.')
-                            vmap_config = Config.Config(partial_vmap_config_fname)
-                            if ('-silent' not in cmd_list):
-                                print('       - Segment {0} ({1}): format={2}, shape={3}'.format(pid, partial_vmap_fnames[fidx],\
-                                      vmap_config.Get('velmap_metadata', 'px_format', 'ERROR'), vmap_config.Get('velmap_metadata', 'shape', None, int)))
-                            vmap_mi_files.append(MIfile.MIfile(partial_vmap_fnames[fidx], vmap_config.ToDict(section='velmap_metadata')))
-                        combined_corrmap = MIfile.MergeMIfiles(os.path.join(out_folder, '_vMap.dat'), vmap_mi_files, os.path.join(out_folder, '_vMap_metadata.ini'))
-                   
+                        print('    - Assembling velocity maps from multiprocess outputs')
+                    vel_maps.AssembleMultiproc(os.path.join(out_folder, '_vMap.dat'))
+                
+                
+                if ('-silent' not in cmd_list):
+                    print('   ...all done!')

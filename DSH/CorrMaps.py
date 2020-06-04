@@ -1,11 +1,7 @@
 import os
 import numpy as np
-import scipy as sp
-import scipy.special as ssp
-from scipy import stats, signal
-from scipy.ndimage import binary_opening
 import time
-import bisect
+from scipy import signal
 from DSH import Config as cf
 from DSH import MIfile as MI
 from DSH import SharedFunctions as sf
@@ -14,7 +10,7 @@ class CorrMaps():
     """ Class to compute correlation maps from a MIfile """
     
     def __init__(self, MIin, outFolder, lagList, KernelSpecs, imgRange=None, cropROI=None):
-        """Initialize MIfile
+        """Initialize CorrMaps
         
         Parameters
         ----------
@@ -119,7 +115,7 @@ class CorrMaps():
                     self.imgIdx[tidx, lidx, 1] = -1
     
     def ExportConfiguration(self):
-        dict_config = {'imgs_metadata' : self.MIinput.GetMetadata(),
+        cf.ExportDict({'imgs_metadata' : self.MIinput.GetMetadata(),
                        'corrmap_metadata' : self.outMetaData,
                        'corrmap_parameters' : {'out_folder' : self.outFolder,
                                                'lags' : self.lagList,
@@ -127,10 +123,7 @@ class CorrMaps():
                                                'crop_roi' : self.cropROI
                                                },
                         'kernel' : self.Kernel
-                       }
-        conf = cf.Config()
-        conf.Import(dict_config, section_name=None)
-        conf.Export(os.path.join(self.outFolder, 'CorrMapsConfig.ini'))
+                       }, os.path.join(self.outFolder, 'CorrMapsConfig.ini'))
 
     def LoadKernel(self, KernelSpecs):
         """Computes the convolution kernel for ROI computation
@@ -227,74 +220,21 @@ class CorrMaps():
             return res_4D
         else:
             return None
-
-    def _qdr_g_relation(self, zProfile='Parabolic'):
-        """Generate a lookup table for inverting correlation function
-        """
-        if (zProfile=='Parabolic'):
-            dr_g = np.zeros([2,4500])
-            dr_g[0] = np.linspace(4.5, 0.001, num=4500)
-            norm = 4/np.pi
-            dr_g[1] = (np.square(abs(ssp.erf(sp.sqrt(-dr_g[0]*1j))))/dr_g[0])/norm
-            dr_g[1][4499] = 1 #to prevent correlation to be higher than highest value in array
-            return dr_g
-        else:
-            raise ValueError(str(zProfile) + 'z profile not implemented yet')
-
-    def _invert_monotonic(self, data, _lut):
-        """Invert monotonic function based on a lookup table
-        """
-        res = np.zeros(len(data))
-        for i in range(len(data)):
-            index = bisect.bisect_left(_lut[1], data[i])
-            res[i] = _lut[0][min(index, len(_lut[0])-1)]
-        return res
-
-    def ComputeVelocities(self, zProfile='Parabolic', qValue=1.0, tRange=None, lagRange=None, signed_lags=False, consecutive_only=False,\
-                          allow_max_holes=0, mask_opening_range=None, conservative_cutoff=0.3, generous_cutoff=0.15,\
-                          silent=True, return_err=False, debug=False, file_suffix=''):
-        """Converts correlation data into velocity data assuming a given velocity profile along z
+    
+    def GetCorrMaps(self, openMIfiles=True, check_lagtimes=False):
+        """Searches for MIfile correlation maps
         
         Parameters
         ----------
-        zProfile :  'Parabolic'|'Linear'. For the moment, only parabolic has been developed
-        qValue :    Scattering vector projected along the sample plane. Used to express velocities in meaningful dimensions
-                    NOTE by Stefano : 4.25 1/um
-        tRange :    restrict analysis to given time range [min, max, step].
-                    if None, analyze full correlation maps
-        lagRange :  restrict analysis to correlation maps with lagtimes in a given range (in image units)
-                    if None, all available correlation maps will be used
-                    if int, lagtimes in [-lagRange, lagRange] will be used
-        signed_lags : if True, lagtimes will have a positive or negative sign according to whether
-                    the current time is the first one or the second one correlated
-                    In this case, displacements will also be assigned the same sign as the lag
-                    otherwise, we will work with absolute values only
-                    This will "flatten" the linear fits, reducing slopes and increasing intercepts
-                    It does a much better job accounting for noise contributions to corr(tau->0)
-                    if signed_lags==False, the artificial correlation value at lag==0 will not be processed
-                    (it is highly recommended to set signed_lags to False)
-        consecutive_only : only select sorrelation chunk with consecutive True value of the mask around tau=0
-        allow_max_holes : integer, only used if consecutive_only==True.
-                    Largest hole to be ignored before chunk is considered as discontinued
-        mask_opening_range : None or integer > 1.
-                    if not None, apply binary_opening to the mask for a given pixel as a function of lagtime
-                    This removes thresholding noise by removing N-lag-wide unmasked domains where N=mask_opening_range
-        conservative_cutoff : only consider correlation data above this threshold value
-        generous_cutoff : when correlations above conservative_cutoff are not enough for linear fitting,
-                    include first lagtimes provided correlation data is above this more generous threshold
-                    Note: for parabolic profiles, the first correlation minimum is 0.145. Don't go below that!
-        file_suffix : suffix to be appended to filename to differentiate output from multiple processes
+        openMIfiles: if true, it opens all MIfiles for reading.
+        check_lagtimes: if true, checks that the lagtimes extracted from the filenames match with self.lagList
+        
+        Returns
+        -------
+        corr_config: configuration file for correlation maps
+        corr_mifiles: list of correlation maps, one per time delay
+        lag_list: list of lagtimes
         """
-        if (silent==False or debug==True):
-            start_time = time.time()
-            print('Computing velocity maps:')
-            cur_progperc = 0
-            prog_update = 10
-
-        if (lagRange is not None):
-            if (isinstance(lagRange, int) or isinstance(lagRange, float)):
-                lagRange = [-lagRange, lagRange]
-
         if (os.path.isdir(self.outFolder)):
             config_fname = os.path.join(self.outFolder, 'CorrMapsConfig.ini')
             if (os.path.isfile(config_fname)):
@@ -316,237 +256,11 @@ class CorrMaps():
                 cmap_mifiles[-1].OpenForReading()
 
         # Check lagtimes for consistency
-        if (silent==False or debug==True):
+        if (check_lagtimes):
             print('These are all lagtimes. They should be already sorted and not contain 0:')
             print(all_lagtimes)
             for cur_lag in self.lagList:
                 if (cur_lag not in all_lagtimes):
                     print('WARNING: no correlation map found for lagtime ' + str(cur_lag))
         
-        cmap_metadata = cmap_mifiles[1].GetMetadata()
-        vmap_metadata = cmap_metadata.copy()
-        if (tRange is not None):
-            tRange = cmap_mifiles[1].Validate_zRange(tRange)
-            vmap_shape = cmap_mifiles[1].GetShape()
-            corrframe_idx_list = list(range(*tRange))
-            vmap_shape[0] = len(corrframe_idx_list)
-            vmap_metadata['shape'] = list(vmap_shape)
-            if ('fps' in vmap_metadata):
-                vmap_metadata['fps'] = float(vmap_metadata['fps']) * 1.0/tRange[2]
-
-        # Export configuration
-        vmap_options = {
-                        'zProfile' : zProfile,
-                        'qValue' : qValue,
-                        'signed_lags' : signed_lags,
-                        'consecutive_only' : consecutive_only,
-                        'allow_max_holes' : allow_max_holes,
-                        'conservative_cutoff' : conservative_cutoff,
-                        'generous_cutoff' : generous_cutoff,
-                        'silent' : silent,
-                        'return_err' : return_err,
-                        'debug' : debug,
-                        'file_suffix' : file_suffix,
-                        }
-        if (tRange is not None):
-            vmap_options['tRange'] = list(tRange)
-        if (lagRange is not None):
-            vmap_options['lagRange'] = list(lagRange)
-        if (mask_opening_range is not None):
-            vmap_options['mask_opening_range'] = mask_opening_range
-        conf_cmaps.Import(vmap_options, section_name='velmap_parameters')
-        conf_cmaps.Import(vmap_metadata, section_name='velmap_metadata')
-        conf_cmaps.Export(os.path.join(self.outFolder, 'VelMapsConfig' + str(file_suffix) + '.ini'))
-
-        
-        # Prepare memory
-        qdr_g = self._qdr_g_relation(zProfile=zProfile)
-        cmap_shape = vmap_metadata['shape']
-        vmap = np.zeros(cmap_shape)
-        write_vmap = MI.MIfile(os.path.join(self.outFolder, '_vMap' + str(file_suffix) + '.dat'), vmap_metadata)
-        if return_err:
-            verr = np.zeros(cmap_shape)
-            write_verr = MI.MIfile(os.path.join(self.outFolder, '_vErr' + str(file_suffix) + '.dat'), vmap_metadata)
-        if debug:
-            write_interc = MI.MIfile(os.path.join(self.outFolder, '_interc' + str(file_suffix) + '.dat'), vmap_metadata)
-            write_pval = MI.MIfile(os.path.join(self.outFolder, '_pval' + str(file_suffix) + '.dat'), vmap_metadata)
-            write_nvals = MI.MIfile(os.path.join(self.outFolder, '_nvals' + str(file_suffix) + '.dat'), vmap_metadata)
-            
-        for tidx in range(cmap_shape[0]):
-            
-            if (tRange is None):
-                corrframe_idx = tidx
-            else:
-                corrframe_idx = corrframe_idx_list[tidx]
-            
-            # find compatible lag indexes
-            lag_idxs = []  # index of lag in all_lagtimes list
-            t1_idxs = []   # tidx if tidx is t1, tidx-lag if tidx is t2
-            sign_list = [] # +1 if tidx is t1, -1 if tidx is t2
-            # From largest to smallest, 0 excluded
-            for lidx in range(len(all_lagtimes)-1, 0, -1):
-                if (all_lagtimes[lidx] <= corrframe_idx):
-                    bln_add = True
-                    if (lagRange is not None):
-                        bln_add = (-1.0*all_lagtimes[lidx] >= lagRange[0])
-                    if bln_add:
-                        t1_idxs.append(corrframe_idx-all_lagtimes[lidx])
-                        lag_idxs.append(lidx)
-                        sign_list.append(-1)
-            # From smallest to largest, 0 included
-            for lidx in range(len(all_lagtimes)):
-                # old conservative version: 
-                #if (corrframe_idx+all_lagtimes[lidx] < cmap_shape[0]):
-                # useless: worst case scenario we add a bunch of zeros from missing cmaps, but zeros will be masked anyways
-                bln_add = True
-                if (lagRange is not None):
-                    bln_add = (all_lagtimes[lidx] <= lagRange[1])
-                if bln_add:
-                    t1_idxs.append(corrframe_idx)
-                    lag_idxs.append(lidx)
-                    sign_list.append(1)
-            
-            # Populate arrays
-            cur_cmaps = np.ones([len(lag_idxs), cmap_shape[1], cmap_shape[2]])
-            cur_lags = np.zeros([len(lag_idxs), cmap_shape[1], cmap_shape[2]])
-            cur_signs = np.ones([len(lag_idxs), cmap_shape[1], cmap_shape[2]], dtype=np.int8)
-            zero_lidx = -1
-            for lidx in range(len(lag_idxs)):
-                if (lag_idxs[lidx] > 0):
-                    cur_cmaps[lidx] = cmap_mifiles[lag_idxs[lidx]].GetImage(t1_idxs[lidx])
-                    cur_lags[lidx] = np.ones([cmap_shape[1], cmap_shape[2]])*all_lagtimes[lag_idxs[lidx]]*1.0/self.outMetaData['fps']
-                    cur_signs[lidx] = np.multiply(cur_signs[lidx], sign_list[lidx])
-                else:
-                    # if lag_idxs[lidx]==0, keep correlations equal to ones and lags equal to zero
-                    # just memorize what this index is
-                    zero_lidx = lidx
-            cur_mask = cur_cmaps > conservative_cutoff
-            
-            if debug:
-                cur_nvals = np.empty([cmap_shape[1],cmap_shape[2]])
-                cur_interc = np.empty([cmap_shape[1],cmap_shape[2]])
-                cur_pval = np.empty([cmap_shape[1],cmap_shape[2]])
-            
-            for ridx in range(cmap_shape[1]):
-                for cidx in range(cmap_shape[2]):
-                    cur_try_mask = cur_mask[:,ridx,cidx]
-                    if (mask_opening_range is not None and np.count_nonzero(cur_try_mask) > 2):
-                        for cur_open_range in range(mask_opening_range, 2, -1):
-                            # remove thresholding noise by removing N-lag-wide unmasked domains
-                            cur_mask_denoise = binary_opening(cur_try_mask, structure=np.ones(cur_open_range))
-                            if (np.count_nonzero(cur_try_mask) > 2):
-                                cur_use_mask = cur_mask_denoise
-                                break
-                    if consecutive_only:
-                        cur_use_mask = np.zeros(len(lag_idxs), dtype=bool)
-                        cur_hole = 0
-                        for ilag_pos in range(zero_lidx+1, len(lag_idxs)):
-                            if cur_try_mask[ilag_pos]:
-                                cur_use_mask[ilag_pos] = True
-                                cur_hole = 0
-                            else:
-                                cur_hole = cur_hole + 1
-                            if (cur_hole > allow_max_holes):
-                                break
-                        cur_hole = 0
-                        for ilag_neg in range(zero_lidx, -1, -1):
-                            if cur_try_mask[ilag_neg]:
-                                cur_use_mask[ilag_neg] = True
-                                cur_hole = 0
-                            else:
-                                cur_hole = cur_hole + 1
-                            if (cur_hole > allow_max_holes):
-                                break
-                    else:
-                        cur_use_mask = cur_try_mask
-
-                    # Only use zero lag correlation when dealing with signed lagtimes
-                    cur_use_mask[zero_lidx] = signed_lags
-                        
-                    num_nonmasked = np.count_nonzero(cur_use_mask)
-                    if (num_nonmasked <= 1):
-                        cur_use_mask[zero_lidx] = True
-                        # If there are not enough useful correlation values, 
-                        # check if the first available lagtimes can be used at least with a generous cutoff
-                        # If they are, use them, otherwise just set that cell to nan
-                        if (zero_lidx+1 < len(lag_idxs)):
-                            if (cur_cmaps[zero_lidx+1,ridx,cidx] > generous_cutoff):
-                                cur_use_mask[zero_lidx+1] = True
-                        if (zero_lidx > 0):
-                            if (cur_cmaps[zero_lidx-1,ridx,cidx] > generous_cutoff):
-                                cur_use_mask[zero_lidx-1] = True
-                        num_nonmasked = np.count_nonzero(cur_use_mask)
-                        
-                    if (num_nonmasked > 1):
-                        cur_data = cur_cmaps[:,ridx,cidx][cur_use_mask]
-                        if signed_lags:
-                            cur_signs_1d = cur_signs[:,ridx,cidx][cur_use_mask]
-                            cur_dt = np.multiply(cur_lags[:,ridx,cidx][cur_use_mask], cur_signs_1d)
-                            cur_dr = np.multiply(np.true_divide(self._invert_monotonic(cur_data, qdr_g), qValue), cur_signs_1d)
-                            slope, intercept, r_value, p_value, std_err = stats.linregress(cur_dt, cur_dr)
-                        else:
-                            cur_dt = cur_lags[:,ridx,cidx][cur_use_mask]
-                            cur_dr = np.true_divide(self._invert_monotonic(cur_data, qdr_g), qValue)
-                            # Here there is the possibility to have only 2 datapoints with the same dt. We need to address that case
-                            if (num_nonmasked == 2):
-                                if (np.max(cur_dt)==np.min(cur_dt)):
-                                    slope = np.mean(cur_dr) * 1.0 / cur_dt[0]
-                                    intercept, r_value, p_value, std_err = np.nan, np.nan, np.nan, np.nan
-                                else:
-                                    slope, intercept, r_value, p_value, std_err = stats.linregress(cur_dt, cur_dr)
-                            else:
-                                slope, intercept, r_value, p_value, std_err = stats.linregress(cur_dt, cur_dr)
-                    else:
-                        slope, std_err = np.nan, np.nan
-                        if debug:
-                            intercept, p_value = np.nan, np.nan
-                        
-                    vmap[tidx,ridx,cidx] = slope
-                    if return_err:
-                        verr[tidx,ridx,cidx] = std_err
-                    if debug:
-                        cur_nvals[ridx,cidx] = len(cur_dr)
-                        cur_interc[ridx,cidx] = intercept
-                        cur_pval[ridx,cidx] = p_value
-
-            write_vmap.WriteData(vmap[tidx], closeAfter=False)
-            if return_err:
-                write_verr.WriteData(verr[tidx], closeAfter=False)
-            if debug:
-                write_interc.WriteData(cur_interc, closeAfter=False)
-                write_pval.WriteData(cur_pval, closeAfter=False)
-                write_nvals.WriteData(cur_nvals, closeAfter=False)
-                print('t={0} -- slope range:[{1},{2}], interc range:[{3},{4}], elapsed: {5:.1f}s'.format(tidx, np.nanmin(vmap[tidx]), np.nanmax(vmap[tidx]),\
-                                                                                      np.nanmin(cur_interc), np.nanmax(cur_interc), time.time()-start_time))
-
-            if not silent:
-                cur_p = (tidx+1)*100/cmap_shape[0]
-                if (cur_p > cur_progperc+prog_update):
-                    cur_progperc = cur_progperc+prog_update
-                    print('   {0}% completed...'.format(cur_progperc))
-        
-        if not silent:
-            print('Procedure completed in {0:.1f} seconds!'.format(time.time()-start_time))
-            
-        if return_err:
-            return vmap, verr
-        else:
-            return vmap
-
-    def ComputeDisplacements(self, silent=True):
-        """Integrate velocities to compute total displacements since the beginning of the experiment
-        """
-        if (os.path.isdir(self.outFolder)):
-            vmap_fname = os.path.join(self.outFolder, '_vMap.dat')
-            config_fname = os.path.join(self.outFolder, '_vMap_metadata.ini')
-            if (os.path.isfile(config_fname) and os.path.isfile(vmap_fname)):
-                vmap_mifile = MI.MIfile(vmap_fname, config_fname)
-            else:
-                raise IOError('MIfile ' + str(vmap_fname) + ' or metadata file ' + str(config_fname) + ' not found')
-        else:
-            raise IOError('Correlation map folder ' + str(self.outFolder) + ' not found.')
-
-        # Read all velocity map to memory
-        vmap_data = vmap_mifile.Read()
-        displmap_metadata = vmap_mifile.GetMetadata()
-        
+        return conf_cmaps, cmap_mifiles, all_lagtimes

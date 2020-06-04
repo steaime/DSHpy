@@ -10,6 +10,11 @@ else:
     import ast
     use_json = False
 
+def ExportDict(self, dict_to_export, out_filename, section_name=None):
+    conf = Config()
+    conf.Import(dict_to_export, section_name=section_name)
+    conf.Export(out_filename)
+
 class Config():
     """Class that develops on configparser with customized methods"""
     
@@ -122,6 +127,9 @@ class Config():
             if not silent:
                 print('"' + key + '" not found in section "' + sect + '": default value ' + str(default) + ' returned.')
             return default
+    
+    def HasOption(self, sect, key):
+        return self.config.has_option(sect, key)
     
     def GetSections(self):
         return self.config.sections()
