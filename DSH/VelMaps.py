@@ -130,24 +130,11 @@ class VelMaps():
         self.conservative_cutoff = conservative_cutoff
         self.generous_cutoff = generous_cutoff
         
-        self.confParams, self.cmap_mifiles, self.lagTimes = corr_maps.GetCorrMaps()
-        
         if (lag_range is not None):
             if (isinstance(lag_range, int) or isinstance(lag_range, float)):
                 self.lagRange = [-lag_range, lag_range]
-
-        # NOTE: first element of self.cmap_mifiles will be None instead of d0 (we don't need d0 to compute velocity maps)
-        self.mapMetaData = cf.Config()
-        if (len(self.cmap_mifiles) > 1):
-            self.mapMetaData.Import(self.cmap_mifiles[1].GetMetadata().copy(), section_name='MIfile')
-            self.MapShape = self.cmap_mifiles[1].GetShape()
-            self.mapMetaData.Set('MIfile', 'shape', str(list(self.MapShape)))
-            self.tRange = self.cmap_mifiles[1].Validate_zRange(t_range)
-            if (self.mapMetaData.HasOption('MIfile', 'fps')):
-                self.mapMetaData.Set('MIfile', 'fps', str(self.GetFPS() * 1.0/self.tRange[2]))
-        else:
-            print('WARNING: no correlation maps found in folder ' + str(corr_maps.outFolder))
-
+            
+        self._loaded_metadata = False
 
     def ExportConfig(self, FileName, tRange=None):
         # Export configuration
@@ -214,6 +201,10 @@ class VelMaps():
         -------
         assembled 3D velocity map, if assemble_after==True
         """
+        
+        if not self._loaded_metadata:
+            self._load_metadata_from_corr()
+            
         start_t = self.GetValidFrameRange()[0]
         end_t = self.GetValidFrameRange()[1]
         num_t = (end_t-start_t) // numProcesses
@@ -280,6 +271,9 @@ class VelMaps():
             print('Computing velocity maps:')
             cur_progperc = 0
             prog_update = 10
+        
+        if not self._loaded_metadata:
+            self._load_metadata_from_corr()
         
         _MapShape = self.MapShape
         if (tRange is None):
@@ -474,6 +468,24 @@ class VelMaps():
         return MI.MIfile(MI_fname, config_fname)
 
 
+        
+    def _load_metadata_from_corr(self):
+        
+        self.confParams, self.cmap_mifiles, self.lagTimes = self.corr_maps.GetCorrMaps()
+
+        # NOTE: first element of self.cmap_mifiles will be None instead of d0 (we don't need d0 to compute velocity maps)
+        self.mapMetaData = cf.Config()
+        if (len(self.cmap_mifiles) > 1):
+            self.mapMetaData.Import(self.cmap_mifiles[1].GetMetadata().copy(), section_name='MIfile')
+            self.MapShape = self.cmap_mifiles[1].GetShape()
+            self.mapMetaData.Set('MIfile', 'shape', str(list(self.MapShape)))
+            self.tRange = self.cmap_mifiles[1].Validate_zRange(self.tRange)
+            if (self.mapMetaData.HasOption('MIfile', 'fps')):
+                self.mapMetaData.Set('MIfile', 'fps', str(self.GetFPS() * 1.0/self.tRange[2]))
+        else:
+            print('WARNING: no correlation maps found in folder ' + str(self.corr_maps.outFolder))
+            
+        self._loaded_metadata = True
 
 
 

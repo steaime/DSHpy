@@ -89,6 +89,8 @@ class CorrMaps():
                 'fps' : self.MIinput.GetFPS()*1.0/self.imgRange[2],
                 'px_size' : self.MIinput.GetPixelSize()
                 }
+    
+        self._corrmaps_loaded = False
 
     def __repr__(self):
         return '<CorrMaps class>'
@@ -261,32 +263,66 @@ class CorrMaps():
         corr_mifiles: list of correlation maps, one per time delay
         lag_list: list of lagtimes
         """
-        if (os.path.isdir(self.outFolder)):
-            config_fname = os.path.join(self.outFolder, 'CorrMapsConfig.ini')
-            if (os.path.isfile(config_fname)):
-                conf_cmaps = cf.Config(config_fname)
-            else:
-                raise IOError('Configuration file ' + str(config_fname) + ' not found')
-        else:
-            raise IOError('Correlation map folder ' + str(self.outFolder) + ' not found.')
-
-        all_cmap_fnames = sf.FindFileNames(self.outFolder, Prefix='CorrMap_d', Ext='.dat', Sort='ASC', AppendFolder=True)
-        cmap_mifiles = [None]
-        all_lagtimes = [0]
-        for i in range(len(all_cmap_fnames)):
-            # Let's not load lagtime 0: lagtime 0 will be ones by definition
-            cur_lag = sf.LastIntInStr(all_cmap_fnames[i])
-            if (cur_lag > 0):
-                all_lagtimes.append(cur_lag)
-                cmap_mifiles.append(MI.MIfile(all_cmap_fnames[i], conf_cmaps.ToDict(section='corrmap_metadata')))
-                cmap_mifiles[-1].OpenForReading()
-
-        # Check lagtimes for consistency
-        if (check_lagtimes):
-            print('These are all lagtimes. They should be already sorted and not contain 0:')
-            print(all_lagtimes)
-            for cur_lag in self.lagList:
-                if (cur_lag not in all_lagtimes):
-                    print('WARNING: no correlation map found for lagtime ' + str(cur_lag))
         
-        return conf_cmaps, cmap_mifiles, all_lagtimes
+        if not self._corrmaps_loaded:
+
+            assert os.path.isdir(self.outFolder), 'Correlation map folder ' + str(self.outFolder) + ' not found.'
+            config_fname = os.path.join(self.outFolder, 'CorrMapsConfig.ini')
+            assert os.path.isfile(config_fname), 'Configuration file ' + str(config_fname) + ' not found'
+            self.conf_cmaps = cf.Config(config_fname)
+    
+            all_cmap_fnames = sf.FindFileNames(self.outFolder, Prefix='CorrMap_d', Ext='.dat', Sort='ASC', AppendFolder=True)
+            self.cmap_mifiles = [None]
+            self.all_lagtimes = [0]
+            for i in range(len(all_cmap_fnames)):
+                # Let's not load lagtime 0: lagtime 0 will be ones by definition
+                cur_lag = sf.LastIntInStr(all_cmap_fnames[i])
+                if (cur_lag > 0):
+                    self.all_lagtimes.append(cur_lag)
+                    self.cmap_mifiles.append(MI.MIfile(all_cmap_fnames[i], self.conf_cmaps.ToDict(section='corrmap_metadata')))
+                    self.cmap_mifiles[-1].OpenForReading()
+    
+            # Check lagtimes for consistency
+            if (check_lagtimes):
+                print('These are all lagtimes. They should be already sorted and not contain 0:')
+                print(self.all_lagtimes)
+                for cur_lag in self.lagList:
+                    if (cur_lag not in self.all_lagtimes):
+                        print('WARNING: no correlation map found for lagtime ' + str(cur_lag))
+                        
+            self._corrmaps_loaded = True
+        
+        return self.conf_cmaps, self.cmap_mifiles, self.all_lagtimes
+    
+    def GetCorrTimetrace(self, pxLocs, zRange=None, lagList=None):
+        """Returns (t, tau) correlations for a given set of pixels
+        
+        Parameters
+        ----------
+        pxLocs : list of pixel locations, each location being a tuple (row, col)
+        zRange : range of time (or z) slices to sample
+        lagList : list of lagtimes
+        
+        Returns
+        -------
+        If only one pixel was asked, single 2D array: one row per time delay
+        Otherwise, 3D array, one matrix per pixel
+        """
+        self.GetCorrMaps()
+        list_z = list(range(*self.cmap_mifiles[0].Validate_zRange(zRange)))
+        if (type(pxLocs[0]) not in [list, tuple, np.ndarray]):
+            pxLocs = [pxLocs]
+        if lagList is None:
+            lagList = self.all_lagtimes
+        else:
+            lagList = list(set(lagList) & set(self.all_lagtimes))
+        res = np.empty((len(pxLocs), len(lagList), len(list_z)))
+        for lidx in range(len(lagList)):
+            for zidx in range(len(list_z)):
+                for pidx in range(len(pxLocs)):
+                    res[pidx,lidx,zidx] = self.cmap_mifiles[self.all_lagtimes.index(lagList[lidx])]._read_pixels(px_num=1,\
+                       seek_pos=self._get_offset(img_idx=list_z[zidx], row_idx=pxLocs[pidx][0], col_idx=pxLocs[pidx][1]))
+        if (len(pxLocs) == 1):
+            return res.reshape((len(lagList), len(list_z)))
+        else:
+            return res       
