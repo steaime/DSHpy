@@ -101,7 +101,7 @@ class VelMaps():
             self.mapMetaData.Set('MIfile', 'shape', str(list(self.MapShape)))
             self.tRange = self.cmap_mifiles[1].Validate_zRange(tRange)
             if (self.mapMetaData.HasOption('MIfile', 'fps')):
-                self.mapMetaData.Set('MIfile', 'fps', str(self.mapMetaData.Get('MIfile', 'fps', 1.0, float) * 1.0/self.tRange[2]))
+                self.mapMetaData.Set('MIfile', 'fps', str(self.GetFPS() * 1.0/self.tRange[2]))
         else:
             print('WARNING: no correlation maps found in folder ' + str(corr_maps.outFolder))
 
@@ -141,8 +141,14 @@ class VelMaps():
         return self.MapShape[0]
     def GetMetadata(self):
         return self.mapMetaData.ToDict(section='MIfile').copy()
-    def GetValidFrameRange(self):
-        ret_range = self.tRange
+    def GetFPS(self):
+        return self.mapMetaData.Get('MIfile', 'fps', 1.0, float)
+    def GetValidFrameRange(self, tRange=None):
+        """Gets a valid frame range, eventually converting None into explicit full range
+        """
+        if (tRange is None):
+            tRange = self.tRange
+        ret_range = tRange
         if (ret_range is None):
             ret_range = [0, -1]
         if (ret_range[1] < 0):
@@ -238,7 +244,7 @@ class VelMaps():
         else:
             tRange = self.cmap_mifiles[1].Validate_zRange(tRange)
             if (self.mapMetaData.HasOption('MIfile', 'fps')):
-                self.mapMetaData.Set('MIfile', 'fps', str(self.mapMetaData.Get('MIfile', 'fps', 1.0, float) * 1.0/self.tRange[2]))
+                self.mapMetaData.Set('MIfile', 'fps', str(self.GetFPS() * 1.0/self.tRange[2]))
         if (tRange is None):
             corrFrameIdx_list = list(range(self.MapShape[0]))
         else:
@@ -295,7 +301,7 @@ class VelMaps():
             for lidx in range(len(lag_idxs)):
                 if (lag_idxs[lidx] > 0):
                     cur_cmaps[lidx] = self.cmap_mifiles[lag_idxs[lidx]].GetImage(t1_idxs[lidx])
-                    cur_lags[lidx] = np.ones([self.ImageHeight(), self.ImageWidth()])*self.lagTimes[lag_idxs[lidx]]*1.0/self.outMetaData['fps']
+                    cur_lags[lidx] = np.ones([self.ImageHeight(), self.ImageWidth()])*self.lagTimes[lag_idxs[lidx]]*1.0/self.GetFPS()
                     cur_signs[lidx] = np.multiply(cur_signs[lidx], sign_list[lidx])
                 else:
                     # if lag_idxs[lidx]==0, keep correlations equal to ones and lags equal to zero
