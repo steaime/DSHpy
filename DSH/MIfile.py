@@ -128,7 +128,7 @@ class MIfile():
         if (closeAfter):
             self.Close()
         return res_3D
-
+    
     def GetImage(self, img_idx, cropROI=None):
         """Read single image from MIfile
         
@@ -168,6 +168,29 @@ class MIfile():
             imgs_num = self.ImgNumber - start_idx
         res_arr = self._read_pixels(px_num=imgs_num * self.PxPerImg, seek_pos=self._get_offset(img_idx=start_idx))
         return res_arr.reshape(imgs_num, self.ImgHeight, self.ImgWidth)
+
+    def GetTimetraces(self, pxLocs, zRange=None):
+        """Plot z axis profile for a given set of pixels in the image
+        
+        Parameters
+        ----------
+        pxLocs : list of pixel locations, each location being a tuple (row, col)
+        zRange : range of time (or z) slices to sample
+        
+        Returns
+        -------
+        If only one pixel was asked, single 1D array
+        Otherwise, 2D array, one row per pixel
+        """
+        list_z = list(*self.Validate_zRange(zRange))
+        if (type(pxLocs[0]) in [list, tuple, np.ndarray]):
+            pxLocs = [pxLocs]
+        res = np.empty((len(pxLocs), len(list_z)))
+        for zidx in range(len(list_z)):
+            for pidx in range(len(pxLocs)):
+                res[pidx,zidx] = self._read_pixels(px_num=1, seek_pos=self._get_offset(img_idx=list_z[zidx],\
+                   row_idx=pxLocs[pidx][0], col_idx=pxLocs[pidx][1]))
+        return res
     
     def Export(self, mi_filename, metadata_filename, zRange=None, cropROI=None):
         """Export a chunk of MIfile to a second file
