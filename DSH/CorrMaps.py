@@ -309,7 +309,7 @@ class CorrMaps():
         Otherwise, 3D array, one matrix per pixel
         """
         self.GetCorrMaps()
-        list_z = list(range(*self.cmap_mifiles[0].Validate_zRange(zRange)))
+        list_z = list(range(*self.cmap_mifiles[1].Validate_zRange(zRange)))
         if (type(pxLocs[0]) not in [list, tuple, np.ndarray]):
             pxLocs = [pxLocs]
         if lagList is None:

@@ -173,7 +173,7 @@ class MIfile():
         return res_arr.reshape(imgs_num, self.ImgHeight, self.ImgWidth)
 
     def GetTimetraces(self, pxLocs, zRange=None):
-        """Plot z axis profile for a given set of pixels in the image
+        """Returns z axis profile for a given set of pixels in the image
         
         Parameters
         ----------
