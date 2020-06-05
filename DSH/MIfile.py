@@ -2,6 +2,7 @@ import os
 import numpy as np
 import sys
 import struct
+import collections
 from DSH import Config as cf
 
 _data_depth = {'b':1, 'B':1, '?':1, 'h':2, 'H':2, 'i':4, 'I':4, 'f':4, 'd':8}
@@ -330,9 +331,13 @@ class MIfile():
         """Reads metadata file
         it also reads the default configuration file
         in case of duplicates, information from MetaDataFile is used
+        
+        Parameters
+        ----------
+        MetaData : dict or filename
         """
         default_settings = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'config_MIfile.ini')
-        if (type(MetaData) is dict):
+        if (type(MetaData) in [dict, collections.OrderedDict]):
             self.MetaData = cf.Config(None, defaultConfigFiles=[default_settings])
             self.MetaData.Import(MetaData, section_name='MIfile')
         else:
