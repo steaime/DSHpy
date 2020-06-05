@@ -369,11 +369,11 @@ class VelMaps():
                         if self.signedLags:
                             cur_signs_1d = cur_signs[:,ridx,cidx][cur_use_mask]
                             cur_dt = np.multiply(cur_lags[:,ridx,cidx][cur_use_mask], cur_signs_1d)
-                            cur_dr = np.multiply(np.true_divide(self._invert_monotonic(cur_data, qdr_g), self.qValue), cur_signs_1d)
+                            cur_dr = np.multiply(np.true_divide(_invert_monotonic(cur_data, qdr_g), self.qValue), cur_signs_1d)
                             slope, intercept, r_value, p_value, std_err = stats.linregress(cur_dt, cur_dr)
                         else:
                             cur_dt = cur_lags[:,ridx,cidx][cur_use_mask]
-                            cur_dr = np.true_divide(self._invert_monotonic(cur_data, qdr_g), self.qValue)
+                            cur_dr = np.true_divide(_invert_monotonic(cur_data, qdr_g), self.qValue)
                             # Here there is the possibility to have only 2 datapoints with the same dt. We need to address that case
                             if (num_nonmasked == 2):
                                 if (np.max(cur_dt)==np.min(cur_dt)):
