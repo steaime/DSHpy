@@ -183,7 +183,7 @@ class MIfile():
         Otherwise, 2D array, one row per pixel
         """
         list_z = list(range(*self.Validate_zRange(zRange)))
-        if (type(pxLocs[0]) in [list, tuple, np.ndarray]):
+        if (type(pxLocs[0]) not in [list, tuple, np.ndarray]):
             pxLocs = [pxLocs]
         res = np.empty((len(pxLocs), len(list_z)))
         for zidx in range(len(list_z)):
