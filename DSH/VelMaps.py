@@ -10,6 +10,7 @@ from multiprocessing import Process
 
 from DSH import Config as cf
 from DSH import MIfile as MI
+from DSH import CorrMaps as CM
 from DSH import SharedFunctions as sf
 
 def _qdr_g_relation(zProfile='Parabolic'):
@@ -34,25 +35,67 @@ def _invert_monotonic(data, _lut):
         res[i] = _lut[0][min(index, len(_lut[0])-1)]
     return res
 
+def _get_kw_from_config(conf=None):
+    # Read options for velocity calculation from DSH.Config object
+    def_kw = {'q_value':1.0,\
+               't_range':None,\
+               'lag_range':None,\
+               'signed_lags':False,\
+               'consec_only':True,\
+               'max_holes':0,\
+               'mask_opening':None,\
+               'conservative_cutoff':0.3,\
+               'generous_cutoff':0.15}
+    if (conf is None):
+        return def_kw
+    else:
+        return {'q_value':conf.Get('velmap_parameters', 'q_value', def_kw['q_value'], float),\
+               't_range':conf.Get('velmap_parameters', 't_range', def_kw['t_range'], int),\
+               'lag_range':conf.Get('velmap_parameters', 'lag_range', def_kw['lag_range'], int),\
+               'signed_lags':conf.Get('velmap_parameters', 'signed_lags', def_kw['signed_lags'], bool),\
+               'consec_only':conf.Get('velmap_parameters', 'consec_only', def_kw['consec_only'], bool),\
+               'max_holes':conf.Get('velmap_parameters', 'max_holes', def_kw['max_holes'], int),\
+               'mask_opening':conf.Get('velmap_parameters', 'mask_opening', def_kw['mask_opening'], int),\
+               'conservative_cutoff':conf.Get('velmap_parameters', 'conservative_cutoff', def_kw['conservative_cutoff'], float),\
+               'generous_cutoff':conf.Get('velmap_parameters', 'generous_cutoff', def_kw['generous_cutoff'], float)}
+
+def LoadFromConfig(ConfigFile, outFolder=None):
+    """Loads a VelMaps object from a config file like the one exported with VelMaps.ExportConfig()
+    
+    Parameters
+    ----------
+    ConfigFile : full path of the config file to read
+    outFolder : folder containing velocity and correlation maps. 
+                if None, the value from the config file will be used
+                if not None, the value from the config file will be discarded
+                
+    Returns
+    -------
+    a VelMaps object with an "empty" image MIfile (containing metadata but no actual image data)
+    """
+    config = cf.Config(ConfigFile)
+    vmap_kw = _get_kw_from_config(config)
+    return VelMaps(CM.LoadFromConfig(ConfigFile, outFolder), **vmap_kw)
+
 class VelMaps():
     """ Class to compute velocity maps from correlation maps """
     
-    def __init__(self, corr_maps, zProfile='Parabolic', qValue=1.0, tRange=None, lagRange=None, signedLags=False, consecOnly=False,\
-                          maxHoles=0, maskOpening=None, conservative_cutoff=0.3, generous_cutoff=0.15):
+    def __init__(self, corr_maps, z_profile='Parabolic', q_value=1.0, t_range=None, lag_range=None, signed_lags=False, consec_only=False,\
+                          max_holes=0, mask_opening=None, conservative_cutoff=0.3, generous_cutoff=0.15):
         """Initialize VelMaps
         
         Parameters
         ----------
         corr_maps : CorrMaps object with information on available correlation maps, metadata and lag times
-        zProfile :  'Parabolic'|'Linear'. For the moment, only parabolic has been developed
-        qValue :    Scattering vector projected along the sample plane. Used to express velocities in meaningful dimensions
+        z_profile :  'Parabolic'|'Linear'. For the moment, only parabolic has been developed
+        q_value :    Scattering vector projected along the sample plane. Used to express velocities in meaningful dimensions
                     NOTE by Stefano : 4.25 1/um
-        tRange :    restrict analysis to given time range [min, max, step].
+        t_range :    restrict analysis to given time range [min, max, step].
                     if None, analyze full correlation maps
-        lagRange :  restrict analysis to correlation maps with lagtimes in a given range (in image units)
+        lag_range :  restrict analysis to correlation maps with lagtimes in a given range (in image units)
                     if None, all available correlation maps will be used
                     if int, lagtimes in [-lagRange, lagRange] will be used
-        signedLags : if True, lagtimes will have a positive or negative sign according to whether
+        signed_lags : if True, lagtimes will have a positive or negative sign according to whether
                     the current time is the first one or the second one correlated
                     In this case, displacements will also be assigned the same sign as the lag
                     otherwise, we will work with absolute values only
@@ -60,10 +103,10 @@ class VelMaps():
                     It does a much better job accounting for noise contributions to corr(tau->0)
                     if signed_lags==False, the artificial correlation value at lag==0 will not be processed
                     (it is highly recommended to set signed_lags to False)
-        consecOnly : only select sorrelation chunk with consecutive True value of the mask around tau=0
-        maxHoles : integer, only used if consecutive_only==True.
+        consec_only : only select sorrelation chunk with consecutive True value of the mask around tau=0
+        max_holes : integer, only used if consecutive_only==True.
                     Largest hole to be ignored before chunk is considered as discontinued
-        maskOpening : None or integer > 1.
+        mask_opening : None or integer > 1.
                     if not None, apply binary_opening to the mask for a given pixel as a function of lagtime
                     This removes thresholding noise by removing N-lag-wide unmasked domains where N=mask_opening_range
         conservative_cutoff : only consider correlation data above this threshold value
@@ -76,22 +119,22 @@ class VelMaps():
         self.corr_maps = corr_maps
         self.outFolder = corr_maps.outFolder
         
-        self.zProfile = zProfile
-        self.qValue = qValue
-        self.tRange = tRange
-        self.lagRange = lagRange
-        self.signedLags = signedLags
-        self.consecOnly = consecOnly
-        self.maxHoles = maxHoles
-        self.maskOpening = maskOpening
+        self.zProfile = z_profile
+        self.qValue = q_value
+        self.tRange = t_range
+        self.lagRange = lag_range
+        self.signedLags = signed_lags
+        self.consecOnly = consec_only
+        self.maxHoles = mask_opening
+        self.maskOpening = mask_opening
         self.conservative_cutoff = conservative_cutoff
         self.generous_cutoff = generous_cutoff
         
         self.confParams, self.cmap_mifiles, self.lagTimes = corr_maps.GetCorrMaps()
         
-        if (lagRange is not None):
-            if (isinstance(lagRange, int) or isinstance(lagRange, float)):
-                self.lagRange = [-lagRange, lagRange]
+        if (lag_range is not None):
+            if (isinstance(lag_range, int) or isinstance(lag_range, float)):
+                self.lagRange = [-lag_range, lag_range]
 
         # NOTE: first element of self.cmap_mifiles will be None instead of d0 (we don't need d0 to compute velocity maps)
         self.mapMetaData = cf.Config()
@@ -99,7 +142,7 @@ class VelMaps():
             self.mapMetaData.Import(self.cmap_mifiles[1].GetMetadata().copy(), section_name='MIfile')
             self.MapShape = self.cmap_mifiles[1].GetShape()
             self.mapMetaData.Set('MIfile', 'shape', str(list(self.MapShape)))
-            self.tRange = self.cmap_mifiles[1].Validate_zRange(tRange)
+            self.tRange = self.cmap_mifiles[1].Validate_zRange(t_range)
             if (self.mapMetaData.HasOption('MIfile', 'fps')):
                 self.mapMetaData.Set('MIfile', 'fps', str(self.GetFPS() * 1.0/self.tRange[2]))
         else:
@@ -111,20 +154,20 @@ class VelMaps():
         if (tRange is None):
             tRange = self.tRange
         vmap_options = {
-                        'zProfile' : self.zProfile,
-                        'qValue' : self.qValue,
-                        'signedLags' : self.signedLags,
-                        'consecOnly' : self.consecOnly,
-                        'maxHoles' : self.maxHoles,
+                        'z_profile' : self.zProfile,
+                        'q_value' : self.qValue,
+                        'signed_lags' : self.signedLags,
+                        'consec_only' : self.consecOnly,
+                        'max_holes' : self.maxHoles,
                         'conservative_cutoff' : self.conservative_cutoff,
                         'generous_cutoff' : self.generous_cutoff,
                         }
         if (self.tRange is not None):
-            vmap_options['tRange'] = list(self.tRange)
+            vmap_options['t_range'] = list(self.tRange)
         if (self.lagRange is not None):
-            vmap_options['lagRange'] = list(self.lagRange)
+            vmap_options['lag_range'] = list(self.lagRange)
         if (self.maskOpening is not None):
-            vmap_options['maskOpening'] = self.maskOpening
+            vmap_options['mask_opening'] = self.maskOpening
         self.confParams.Import(vmap_options, section_name='velmap_parameters')
         self.confParams.Import(self.mapMetaData.ToDict(section='MIfile'), section_name='velmap_metadata')
         self.confParams.Export(FileName)

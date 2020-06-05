@@ -6,6 +6,30 @@ from DSH import Config as cf
 from DSH import MIfile as MI
 from DSH import SharedFunctions as sf
 
+def LoadFromConfig(ConfigFile, outFolder=None):
+    """Loads a CorrMaps object from a config file like the one exported with CorrMaps.ExportConfiguration()
+    
+    Parameters
+    ----------
+    ConfigFile : full path of the config file to read
+    outFolder : folder containing correlation maps. 
+                if None, the value from the config file will be used
+                if not None, the value from the config file will be discarded
+                
+    Returns
+    -------
+    a CorrMaps object with an "empty" image MIfile (containing metadata but no actual image data)
+    """
+    config = cf.Config(ConfigFile)
+    if (outFolder is None):
+        outFolder = config.Get('corrmap_parameters', 'out_folder')
+    kernel_specs = config.ToDict(section='kernel')
+    kernel_specs['padding'] = config.Get('kernel', 'padding', True, bool)
+    return CorrMaps(MI.MIfile(None,config.ToDict(section='imgs_metadata')),\
+                            outFolder, config.Get('corrmap_parameters', 'lags', [], int),\
+                            kernel_specs, config.Get('corrmap_parameters', 'img_range', None, int),\
+                            config.Get('corrmap_parameters', 'crop_roi', None, int))
+
 class CorrMaps():
     """ Class to compute correlation maps from a MIfile """
     
@@ -47,6 +71,8 @@ class CorrMaps():
             self.inputShape = [len(self.UniqueIdx), self.cropROI[3],self.cropROI[2]]
         self.Kernel = KernelSpecs
         if (self.Kernel['type']=='Gauss'):
+            self.Kernel['sigma'] = float(self.Kernel['sigma'])
+            self.Kernel['cutoff'] = float(self.Kernel['cutoff'])
             self.Kernel['size'] = int(self.Kernel['sigma']*self.Kernel['cutoff'])
         else:
             raise ValueError('Kernel type "' + str(self.Kernel['type']) + '" not supported')

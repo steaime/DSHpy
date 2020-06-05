@@ -59,15 +59,7 @@ if __name__ == '__main__':
                 if (('-skip_vmap' not in cmd_list) or (num_proc > 1 and '-skip_vmap_assemble' not in cmd_list)):
                     
                     # Read options for velocity calculation
-                    vmap_kw = {'qValue':conf.Get('vmap', 'qValue', 1.0, float),\
-                               'tRange':conf.Get('vmap', 'tRange', None, int),\
-                               'lagRange':conf.Get('vmap', 'lagRange', None, int),\
-                               'signedLags':conf.Get('vmap', 'signedLags', False, bool),\
-                               'consecOnly':conf.Get('vmap', 'consecOnly', True, bool),\
-                               'maxHoles':conf.Get('vmap', 'maxHoles', 0, int),\
-                               'maskOpening':conf.Get('vmap', 'maskOpening', None, int),\
-                               'conservative_cutoff':conf.Get('vmap', 'conservative_cutoff', 0.3, float),\
-                               'generous_cutoff':conf.Get('vmap', 'generous_cutoff', 0.15, float)}
+                    vmap_kw = VelMaps._get_kw_from_config(conf)
                     
                     # Initialize MelMaps object
                     vel_maps = VelMaps.VelMaps(corr_maps, **vmap_kw)

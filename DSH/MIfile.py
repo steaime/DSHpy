@@ -68,6 +68,8 @@ class MIfile():
         Parameters
         ----------
         FileName : filename of multi image file (full path, including folder)
+                    it can be None: in this case Metadata will still be loaded
+                    if the option 'filename' is found in the Metadata, Filename will be updated
         MetaData : string or dict. 
                     if string: filename of metadata file
                     if dict: dictionary with metadata. 
