@@ -99,6 +99,7 @@ class VelMaps():
             self.mapMetaData.Import(self.cmap_mifiles[1].GetMetadata().copy(), section_name='MIfile')
             self.MapShape = self.cmap_mifiles[1].GetShape()
             self.mapMetaData.Set('MIfile', 'shape', str(list(self.MapShape)))
+            self.tRange = self.cmap_mifiles[1].Validate_zRange(tRange)
             if (self.mapMetaData.HasOption('MIfile', 'fps')):
                 self.mapMetaData.Set('MIfile', 'fps', str(self.mapMetaData.Get('MIfile', 'fps', 1.0, float) * 1.0/self.tRange[2]))
         else:

@@ -89,6 +89,5 @@ if __name__ == '__main__':
                         print('    - Assembling velocity maps from multiprocess outputs')
                     vel_maps.AssembleMultiproc(os.path.join(out_folder, '_vMap.dat'))
                 
-                
                 if ('-silent' not in cmd_list):
                     print('   ...all done!')
