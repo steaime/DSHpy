@@ -463,6 +463,23 @@ class VelMaps():
         else:
             return vmap
 
+    def GetMIfile(self):
+        """Returns velocity map as MIfile, if found in folder
+        """
+        assert (os.path.isdir(self.outFolder)), 'Correlation map folder ' + str(self.outFolder) + ' not found.'
+        config_fname = os.path.join(self.outFolder, '_vMap_metadata.ini')
+        MI_fname = os.path.join(self.outFolder, '_vMap.dat')
+        assert os.path.isfile(config_fname), 'Configuration file ' + str(config_fname) + ' not found'
+        assert os.path.isfile(MI_fname), 'MI file ' + str(MI_fname) + ' not found'
+        return MI.MIfile(MI_fname, config_fname)
+
+
+
+
+
+
+
+
 
 
 
