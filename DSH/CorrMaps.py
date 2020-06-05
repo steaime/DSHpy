@@ -317,11 +317,13 @@ class CorrMaps():
         else:
             lagList = list(set(lagList) & set(self.all_lagtimes))
         res = np.empty((len(pxLocs), len(lagList), len(list_z)))
+        print(lagList)
         for lidx in range(len(lagList)):
+            cur_mifile = self.cmap_mifiles[self.all_lagtimes.index(lagList[lidx])]
             for zidx in range(len(list_z)):
                 for pidx in range(len(pxLocs)):
-                    res[pidx,lidx,zidx] = self.cmap_mifiles[self.all_lagtimes.index(lagList[lidx])]._read_pixels(px_num=1,\
-                       seek_pos=self._get_offset(img_idx=list_z[zidx], row_idx=pxLocs[pidx][0], col_idx=pxLocs[pidx][1]))
+                    res[pidx,lidx,zidx] = cur_mifile._read_pixels(px_num=1,\
+                       seek_pos=cur_mifile._get_offset(img_idx=list_z[zidx], row_idx=pxLocs[pidx][0], col_idx=pxLocs[pidx][1]))
         if (len(pxLocs) == 1):
             return res.reshape((len(lagList), len(list_z)))
         else:
