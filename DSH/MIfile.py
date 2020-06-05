@@ -182,7 +182,7 @@ class MIfile():
         If only one pixel was asked, single 1D array
         Otherwise, 2D array, one row per pixel
         """
-        list_z = list(*self.Validate_zRange(zRange))
+        list_z = list(range(*self.Validate_zRange(zRange)))
         if (type(pxLocs[0]) in [list, tuple, np.ndarray]):
             pxLocs = [pxLocs]
         res = np.empty((len(pxLocs), len(list_z)))
@@ -190,7 +190,10 @@ class MIfile():
             for pidx in range(len(pxLocs)):
                 res[pidx,zidx] = self._read_pixels(px_num=1, seek_pos=self._get_offset(img_idx=list_z[zidx],\
                    row_idx=pxLocs[pidx][0], col_idx=pxLocs[pidx][1]))
-        return res
+        if (len(pxLocs) == 1):
+            return res.flatten()
+        else:
+            return res
     
     def Export(self, mi_filename, metadata_filename, zRange=None, cropROI=None):
         """Export a chunk of MIfile to a second file
