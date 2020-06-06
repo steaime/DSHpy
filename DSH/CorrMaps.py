@@ -318,6 +318,9 @@ class CorrMaps():
         else:
             lagList = list(set(lagList) & set(self.all_lagtimes))
         lagList = lagList.sort()
+        print(lagList)
+        print(pxLocs)
+        print(list_z)
         res = np.empty((len(pxLocs), len(lagList), len(list_z)))
         for lidx in range(len(lagList)):
             print(lagList[lidx])
