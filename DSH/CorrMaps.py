@@ -291,6 +291,7 @@ class CorrMaps():
                         print('WARNING: no correlation map found for lagtime ' + str(cur_lag))
                         
             self._corrmaps_loaded = True
+            print(self.all_lagtimes)
         
         return self.conf_cmaps, self.cmap_mifiles, self.all_lagtimes
     
@@ -316,6 +317,7 @@ class CorrMaps():
             lagList = self.all_lagtimes
         else:
             lagList = list(set(lagList) & set(self.all_lagtimes))
+        lagList = lagList.sort()
         res = np.empty((len(pxLocs), len(lagList), len(list_z)))
         for lidx in range(len(lagList)):
             print(lagList[lidx])
