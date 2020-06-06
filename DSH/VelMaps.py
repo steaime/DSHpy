@@ -162,7 +162,7 @@ class VelMaps():
     def GetLagtimes(self):
         if not self._loaded_metadata:
             self._load_metadata_from_corr()
-        return self.lagTimes
+        return self.lagTimes.copy()
     def GetShape(self):
         return self.MapShape
     def ImageShape(self):
