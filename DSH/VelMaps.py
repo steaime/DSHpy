@@ -159,6 +159,10 @@ class VelMaps():
         self.confParams.Import(self.mapMetaData.ToDict(section='MIfile'), section_name='velmap_metadata')
         self.confParams.Export(FileName)
 
+    def GetLagtimes(self):
+        if not self._loaded_metadata:
+            self._load_metadata_from_corr()
+        return self.lagTimes
     def GetShape(self):
         return self.MapShape
     def ImageShape(self):

@@ -317,7 +317,6 @@ class CorrMaps():
         else:
             lagList = list(set(lagList) & set(self.all_lagtimes))
         res = np.empty((len(pxLocs), len(lagList), len(list_z)))
-        print(lagList)
         for lidx in range(len(lagList)):
             cur_mifile = self.cmap_mifiles[self.all_lagtimes.index(lagList[lidx])]
             for zidx in range(len(list_z)):
