@@ -12,7 +12,9 @@ setup(name='DSH',
       install_requires=[
             'numpy',
             'scipy',
-            'configparser'
+            'configparser',
+            'emcee',
+            'pandas'
       ],
       #test_suite='nose.collector',
       #tests_require=['nose'],

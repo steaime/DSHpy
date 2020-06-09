@@ -60,6 +60,44 @@ def MergeMIfiles(MergedFileName, MIfileList, MergedMetadataFile=None):
         outMIfile.WriteData(cur_mifile.Read(closeAfter=True), closeAfter=False)
     outMIfile.Close()
 
+def ValidateROI(ROI, ImageShape, replaceNone=False):
+    """Validates a Region Of Interest (ROI)
+    
+    Parameters
+    ----------
+    ROI : [topleftx (0-based), toplefty (0-based), width, height]
+              width and/or height can be -1 to signify till the end of the image
+    ImageShape : shape of image [row_number, column_number]
+    replaceNone : if True, converts None input into full image range
+    """
+    if (ROI is None):
+        if replaceNone:
+            return [0, 0, ImageShape[1], ImageShape[0]]            
+        else:
+            return None
+    else:
+        assert (ROI[0] >= 0 and ROI[0] < ImageShape[1]), 'Top left coordinate (' + str(ROI[0]) + ') must be in the range [0,' + str(ImageShape[1]-1) + ')'
+        assert (ROI[1] >= 0 and ROI[1] < ImageShape[0]), 'Top left coordinate (' + str(ROI[1]) + ') must be in the range [0,' + str(ImageShape[0]-1) + ')'
+        if (ROI[2] < 0):
+            ROI[2] = ImageShape[1] - ROI[0]
+        if (ROI[3] < 0):
+            ROI[3] = ImageShape[0] - ROI[1]
+        assert (ROI[2] + ROI[0] <= ImageShape[1]), 'ROI ' + str(ROI) + ' incompatible with image shape ' + str(ImageShape)
+        assert (ROI[3] + ROI[1] <= ImageShape[0]), 'ROI ' + str(ROI) + ' incompatible with image shape ' + str(ImageShape)
+        return ROI
+
+def Validate_zRange(zRange, zSize, replaceNone=True):
+    if zRange is None:
+        if replaceNone:
+            return [0, zSize, 1]
+        else:
+            return None
+    if (zRange[1] < 0):
+        zRange[1] = zSize
+    if (len(zRange) < 3):
+        zRange.append(1)
+    return zRange
+        
 class MIfile():
     """ Class to read/write multi image file (MIfile) """
     
@@ -292,40 +330,10 @@ class MIfile():
         return self.PixelDataType
     def DataFormat(self):
         return self.PixelFormat
-    
     def ValidateROI(self, ROI):
-        """Validates a Region Of Interest (ROI)
-        
-        Parameters
-        ----------
-        ROI : [topleftx (0-based), toplefty (0-based), width, height]
-                  width and/or height can be -1 to signify till the end of the image
-        """
-        if (ROI is None):
-            return None
-        else:
-            if (ROI[0] < 0 or ROI[0] >= self.ImgWidth):
-                raise ValueError('Top left coordinate (' + str(ROI[0]) + ') must be in the range [0,' + str(self.ImgWidth-1) + ')')
-            if (ROI[1] < 0 or ROI[1] >= self.ImgHeight):
-                raise ValueError('Top left coordinate (' + str(ROI[1]) + ') must be in the range [0,' + str(self.ImgHeight-1) + ')')
-            if (ROI[2] < 0):
-                ROI[2] = self.ImgWidth - ROI[0]
-            elif (ROI[2] + ROI[0] > self.ImgWidth):
-                raise ValueError('ROI ' + str(ROI) + ' incompatible with image shape ' + str([self.ImgWidth, self.ImgHeight]))
-            if (ROI[3] < 0):
-                ROI[3] = self.ImgHeight - ROI[1]
-            elif (ROI[3] + ROI[1] > self.ImgHeight):
-                raise ValueError('ROI ' + str(ROI) + ' incompatible with image shape ' + str([self.ImgWidth, self.ImgHeight]))
-            return ROI
-    
+        return ValidateROI(ROI, self.ImageShape())
     def Validate_zRange(self, zRange):
-        if zRange==None:
-            zRange = [0, self.ImgNumber, 1]
-        if (zRange[1] < 0):
-            zRange[1] = self.ImgNumber
-        if (len(zRange) < 3):
-            zRange.append(1)
-        return zRange
+        return Validate_zRange(zRange, self.ImgNumber)
     
     def _load_metadata(self, MetaData):
         """Reads metadata file

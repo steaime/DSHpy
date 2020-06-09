@@ -1,26 +1,140 @@
 import os
 import numpy as np
 import bisect
-import scipy as sp
 import scipy.special as ssp
 from scipy import stats
 from scipy.ndimage import binary_opening
 import time
 from multiprocessing import Process
 
+import emcee
+import pandas as pd
+
 from DSH import Config as cf
 from DSH import MIfile as MI
 from DSH import CorrMaps as CM
 from DSH import SharedFunctions as sf
 
+def log_prior_corr(param_guess, prior_avg_params, prior_std_params, reg_param):
+    """
+    returns log of prior probability distribution
+    
+    Parameters:
+        param_guess: guess for parameters (array of length N+2):
+                    param_guess[0] will be the guess for d0
+                    param_guess[1] will be the guess for baseline 
+                    param_guess[2:] will be v(t) (array of length N)
+        prior_avg_params: prior average parameters
+        prior_std_params: prior standard deviation on parameters
+        reg_param : regularization parameter penalizing fluctuations on v(t)
+    """
+    if reg_param<=0:
+        res = 0
+    else:
+        v_grad = np.diff(param_guess[2:])
+        rel_grad = np.true_divide(v_grad, param_guess[2:-1])
+        del_gradgrad = np.diff(rel_grad)
+        res = -reg_param * np.sum(np.square(del_gradgrad))
+    if prior_avg_params is not None:
+        residual = np.square(np.subtract(param_guess, prior_avg_params))
+        chi_square = np.nansum(np.true_divide(residual,np.square(prior_std_params)))
+        constant = np.nansum(np.log(np.true_divide(1.0, np.sqrt(np.multiply(2.0*np.pi,np.square(prior_std_params))))))
+        res += constant - 0.5*chi_square
+    return res
+
+def log_likelihood_corr(param_guess, corr_func, obs_corr, obs_err, lagtimes, q):
+    """
+    returns log of likelihood
+    
+    Parameters:
+        param_guess: guess for parameters (array of length N+2):
+                    param_guess[0] will be the guess for d0
+                    param_guess[1] will be the guess for baseline 
+                    param_guess[2:] will be v(t) (array of length N)
+        corr_func: function to compute correlations from displacements
+        obs_displ: observed g2(t, tau)-1 for M delays tau (matrix M x N)
+        obs_err: uncertainties on correlations (matrix M x N)
+        q: scattering vector (float)
+    """
+    # Displacement matrix
+    cur_corr = corr_func(compute_displ_multilag(param_guess[2:], lagtimes), q, param_guess[0], param_guess[1])
+    # Residual matrix
+    residual = np.square(np.subtract(cur_corr, obs_corr))
+    # Chi square = Residual/Variance (must use nansum, there are NaNs in the displacement matrix)
+    chi_square = np.nansum(np.true_divide(residual,np.square(obs_err)))
+    # This constant is 1/sqrt(2 pi sigma^2), the Gaussian normalization
+    constant = np.nansum(np.log(np.true_divide(1.0, np.sqrt(np.multiply(2.0*np.pi,np.square(obs_err))))))
+    return constant - 0.5*chi_square
+
+def log_posterior_corr(param_guess, corr_func, obs_corr, obs_err, avg_params, std_params, lagtimes, q, reg_param=0):
+    """
+    returns log of posterior probability distribution
+    """
+    return log_prior_corr(param_guess, avg_params, std_params, reg_param) +\
+            log_likelihood_corr(param_guess, corr_func, obs_corr, obs_err, lagtimes, q)
+
+def corr_std_calc(corr, baseline=0.1, rolloff=0.15):
+    """Function calculating uncertainty on correlation values
+        To prevent low correlations (more affected by noise on baseline and
+        spontaneous decorrelation) from dominating the signal, which is 
+        only mildly dependent on low correlations, introduce an exponential
+        increase of uncertainties beyond a rolloff correlation
+    """
+    # Need to clip here and there to avoid numerical overflow and runtime warnings
+    corr_clip = np.clip(corr, a_min=1e-6, a_max=1-1e-6)
+    return baseline*np.exp(np.clip(np.power(np.true_divide(rolloff, corr_clip), 1), a_min=-10, a_max=10))
+
+def compute_displ_multilag(v, lagtimes, dt=1.0):
+    """Compute discrete displacements from a velocity array and a list of lagtimes
+    
+    Parameters
+    ----------
+    v: array of instantaneous velocities (n timepoints, spaced by dt)
+    lagtimes: (int) list of (positive) time delays, in units of dt (m delays)
+    dt: time lag between points
+    
+    Returns
+    -------
+    dx: m x n matrix of finite displacements
+    element [i,j] will be integral of v between j and j+lagtimes[i]
+    if j+lagtimes[i]<len(v), it will be np.nan
+    """
+    res = np.ones((len(lagtimes), len(v)))*np.nan
+    csums = np.cumsum(v)
+    assert lagtimes.ndim==1
+    for i in range(len(lagtimes)):
+        res[i,:-lagtimes[i]] = dt*np.subtract(csums[lagtimes[i]:], csums[:-lagtimes[i]])
+    return res
+
+def g2m1_parab(displ, q, d0=1.0, baseline=0):
+    """Simulates correlation data from given displacements
+        under the assumption of parabolic velocity profile
+    
+    Parameters
+    ----------
+    q: scattering vector (float), in units of inverse displacements
+    d0: correlation value limit at zero delay. Lower than 1.0 because of camera noise
+    baseline: baseline for correlation function. Larger than 0.0 because of stray light
+    """
+    if (q == 1.0):
+        dotpr = displ
+    else:
+        dotpr = np.multiply(q, displ)
+    return (np.pi/4)*np.true_divide(np.square(np.abs(ssp.erf(np.sqrt(-1j*dotpr)))),np.abs(dotpr))
+
 def _qdr_g_relation(zProfile='Parabolic'):
     """Generate a lookup table for inverting correlation function
+        to give the dot product q*dr, where q is the scattering vector 
+        and dt is the displacement cumulated over time delay tau and
+        projected along q
+        NOTE: displacements are sorted in descending order, and truncated so that
+            correlations are increasing monotonically, to use _invert_monotonic
     """
     if (zProfile=='Parabolic'):
         dr_g = np.zeros([2,4500])
         dr_g[0] = np.linspace(4.5, 0.001, num=4500)
-        norm = 4/np.pi
-        dr_g[1] = (np.square(abs(ssp.erf(sp.sqrt(-dr_g[0]*1j))))/dr_g[0])/norm
+        dr_g[1] = g2m1_parab(dr_g[0], q=1.0, d0=1.0, baseline=0.0)
+        #(np.pi/4)*np.true_divide(np.square(np.abs(ssp.erf(np.sqrt(-dr_g[0]*1j)))), np.abs(dr_g[0]))
         dr_g[1][4499] = 1 #to prevent correlation to be higher than highest value in array
         return dr_g
     else:
@@ -28,6 +142,8 @@ def _qdr_g_relation(zProfile='Parabolic'):
 
 def _invert_monotonic(data, _lut):
     """Invert monotonic function based on a lookup table
+        NOTE: data in the lookup table are supposed to be sorted such that
+        the second column (the y axis) is sorted in ascending order
     """
     res = np.zeros(len(data))
     for i in range(len(data)):
@@ -135,6 +251,7 @@ class VelMaps():
                 self.lagRange = [-lag_range, lag_range]
             
         self._loaded_metadata = False
+        self._velmaps_loaded = False
 
     def ExportConfig(self, FileName, tRange=None):
         # Export configuration
@@ -177,20 +294,31 @@ class VelMaps():
         return self.mapMetaData.ToDict(section='MIfile').copy()
     def GetFPS(self):
         return self.mapMetaData.Get('MIfile', 'fps', 1.0, float)
-    def GetValidFrameRange(self, tRange=None):
-        """Gets a valid frame range, eventually converting None into explicit full range
-        """
-        if (tRange is None):
-            tRange = self.tRange
-        ret_range = tRange
-        if (ret_range is None):
-            ret_range = [0, -1]
-        if (ret_range[1] < 0):
-            ret_range[1] = self.corr_maps.outputShape[0]
-        if (len(ret_range) < 3):
-            ret_range.append(1)
-        return ret_range
+    def GetPixelSize(self):
+        return self.mapMetaData.Get('MIfile', 'px_size', 1.0, float)
     
+    def GetMaps(self):
+        """Searches for MIfile velocity maps
+        
+        Returns
+        -------
+        vmap_config: configuration file for velocity maps
+        vmap_mifiles: velocity maps mifile
+        """    
+                
+        if not self._velmaps_loaded:
+
+            assert os.path.isdir(self.outFolder), 'Velocity map folder ' + str(self.outFolder) + ' not found.'
+            config_fname = os.path.join(self.outFolder, 'VelMapsConfig.ini')
+            assert os.path.isfile(config_fname), 'Configuration file ' + str(config_fname) + ' not found'
+            self.conf_vmaps = cf.Config(config_fname)
+            vmap_fname = os.path.join(self.outFolder, '_vMap.dat')
+            assert os.path.isfile(vmap_fname), 'Velocity map file ' + str(config_fname) + ' not found'
+            self.vmap_mifile = MI.MIfile(vmap_fname, self.conf_vmaps.ToDict(section='velmap_metadata'))
+            self._velmaps_loaded = True
+        
+        return self.conf_vmaps, self.vmap_mifile
+
     def ComputeMultiproc(self, numProcesses, assemble_after=True):
         """Computes correlation maps in a multiprocess fashion
         
@@ -209,10 +337,11 @@ class VelMaps():
         if not self._loaded_metadata:
             self._load_metadata_from_corr()
             
-        start_t = self.GetValidFrameRange()[0]
-        end_t = self.GetValidFrameRange()[1]
+        cur_trange = MI.Validate_zRange(self.tRange, self.corr_maps.outputShape[0], replaceNone=True)
+        start_t = cur_trange[0]
+        end_t = cur_trange[1]
         num_t = (end_t-start_t) // numProcesses
-        step_t = self.GetValidFrameRange()[2]
+        step_t = cur_trange[2]
         all_tranges = []
         for pid in range(numProcesses):
             all_tranges.append([start_t, start_t+num_t, step_t])
@@ -470,8 +599,169 @@ class VelMaps():
         assert os.path.isfile(config_fname), 'Configuration file ' + str(config_fname) + ' not found'
         assert os.path.isfile(MI_fname), 'MI file ' + str(MI_fname) + ' not found'
         return MI.MIfile(MI_fname, config_fname)
+    
+    
+    def RefineMC(self, cropROI=None, tRange=None, lagTimes=None, corrPrior=None,\
+                 initGaussBall=1e-3, priorStd=None, corrStdfunc=corr_std_calc, corrStdfuncParams={},\
+                 regParam=0.0, nwalkers=None, nsteps=1000, burnin=0, qErr=[0.16, 0.84], detailed_output=True, file_suffix=''):
+        """Refine velocity map using generative modeling and MCMC sampling
+        
+        Parameters
+        ----------
+        cropROI :   region to be refined [topleftx (0-based), toplefty (0-based), width, height]
+                    pixels will be refined one at the time, and bigger ROI sizes will requre
+                    more time but not more memory
+        tRange :    time range to be refined [idx_min, idx_max, 1].
+                    Currently the timestep cannot be changed, it will mess up with the likelihood calculation
+        lagTimes :  list of timelags to be used for refinement.
+                    if None, all available timelags shorter than tRange will be used
+        corrPrior : Prior on correlation function parameters: [[d0_avg, base_avg], [d0_std, base_std]]
+                    if None, the default value [[1.0, 0.0], [0.01, 0.01]] will be used
+        initGaussBall : start MC walkers from random positions centered on the unrefined velocities and with
+                    a relative spread given by initGaussBall
+        priorStd :  use Gaussian prior centered in the unrefined velocities and with this standard deviation
+                    if None, will use a flat improper prior
+                    this is equal to setting all elements of priorStd to NaN
+        corrStdfunc : function calculating uncertainties on correlation data taking as parameters
+                    the correlation themselves plus eventual additional parameters
+        regParam :  float>=0. Regularization parameter penalizing velocity fluctuations.
+                    Default is regParam=0.0, which means no regularization
+        nwalkers :  number of MC walkers to run in parallel for MC sampling.
+                    if None, it will be set to twice the degrees of freedom of the problem
+        nsteps :    length of Markov chains to be generated by each walker
+                    It has to be larger than burnin
+        burnin :    burning length: number of initial MC steps that need to be discarded because the
+                    walker was reminiscent of the initial conditions
+        qErr :      [neg_err, pos_err]: quartiles of distributions defining standard errors to be saved.
+                    Default is [0.16, 0.84], corresponding to +/- 1sigma for Gaussian distributions
+                    if None, no error will be output
+        detailed_output : if True, the procedure will save as well:
+                    - d0 and baseline for every pixel
+                    - best log_likelihood, log_prior and log_posterior for every pixel
+                    - mean squared error for every pixel
+        file_suffix : suffix of the filename of the refined velocity map to be saved
+        """
+            
+        cropROI = MI.ValidateROI(cropROI, self.ImageShape(), replaceNone=True)
+        tRange = MI.Validate_zRange(tRange, self.ImageNumber(), replaceNone=True)
+        assert tRange[2]==1, 'MC refinement needs to have tRange[2]==1. ' + str(tRange[2]) + ' given.'
+        if lagTimes is None:
+            lagTimes = self.GetLagtimes()
+        lags = lagTimes.copy() # Make a copy to avoid removing elements from the original
+        if 0 in lags:
+            lags.remove(0)
+        if corrPrior is None:
+            corrPrior = [[1.0, 0.0], [0.01, 0.01]]
+        vel_config, vel_mifile = self.GetMaps()
+        vel_prior = vel_mifile.Read(zRange=tRange, cropROI=cropROI, closeAfter=True)
+        if priorStd is None:
+            vel_std = np.ones_like(vel_prior) * np.nan
+        else:
+            vel_std = priorStd * np.abs(vel_prior)
+        
+        res_vavg = np.empty_like(vel_prior)
+        vmap_MetaData = {
+            'hdr_len' : 0,
+            'shape' : list(res_vavg.shape),
+            'px_format' : 'f',
+            'fps' : self.GetFPS(),
+            'px_size' : self.GetPixelSize()
+            }
+        if qErr is not None:
+            res_verr = np.empty_like(res_vavg)
+        if detailed_output:
+            res_mse = np.empty_like(res_vavg[0])
+            res_prior = np.empty_like(res_mse)
+            res_posterior = np.empty_like(res_mse)
+            res_likelihood = np.empty_like(res_mse)
+            res_d0 = np.empty_like(res_mse)
+            res_base = np.empty_like(res_mse)
+            if qErr is not None:
+                res_d0_err = np.empty_like(res_mse)
+                res_base_err = np.empty_like(res_mse)
+        # the model has N+2 parameters: 
+        # - parameter 0 will be d0, 
+        # - parameter 1 will be the baseline,
+        # - parameters [2:] will be the speeds
+        ndim_corr = vel_prior.shape[0]+2
+        
+        for irow in range(cropROI[1], cropROI[1]+cropROI[3]):
+            for icol in range(cropROI[0], cropROI[0]+cropROI[2]):
+                corrTimetrace = self.corr_maps.GetCorrTimetrace([icol, irow], lagList=lags)
+                stdTimetrace = corrStdfunc(corrTimetrace, **corrStdfuncParams)
+                cur_prior = vel_prior[:,irow,icol]
+                    
+                prior_avg_params = np.asarray(corrPrior[0] + cur_prior.tolist())
+                prior_std_params = np.asarray(corrPrior[1] + vel_std[:,irow,icol].tolist())
+                starting_positions = (1 + initGaussBall * np.random.randn(nwalkers, ndim_corr)) * prior_avg_params
+                
+                # set up the sampler object
+                sampler_corr = emcee.EnsembleSampler(nwalkers, ndim_corr, log_posterior_corr,\
+                                                args=(g2m1_parab, corrTimetrace, stdTimetrace,\
+                                                      prior_avg_params, prior_std_params,\
+                                                      np.asarray(lags), self.qValue, regParam))
+                # run the sampler
+                sampler_corr.run_mcmc(starting_positions, nsteps)
 
-
+                samples_corr = sampler_corr.chain[:,burnin:,:]
+                # reshape the samples into a 2D array where the colums are individual time points
+                traces = samples_corr.reshape(-1, ndim_corr).T
+                # create a pandas DataFrame with labels.  This will come in handy 
+                # in a moment, when we start using seaborn to plot our results 
+                # (among other things, it saves us the trouble of typing in labels
+                # for our plots)
+                builder_corr_dict = {}
+                builder_corr_dict['d0'] = traces[0]
+                builder_corr_dict['base'] = traces[1]
+                for i in range(ndim_corr-2):
+                    # Take absolute value because a priori DSH only probes |v|
+                    builder_corr_dict['v'+str(i)] = np.absolute(traces[i+2])
+                parameter_samples_corr = pd.DataFrame(builder_corr_dict)
+                
+                # calculating the MAP and values can be done concisely using pandas
+                q_corr = parameter_samples_corr.quantile([0.16,0.50,0.84], axis=0)
+                best_params = np.empty_like(prior_avg_params)
+                best_params[0] = q_corr['d0'][0.50]
+                best_params[1] = q_corr['base'][0.50]
+                for i in range(ndim_corr-2):
+                    res_vavg[i,irow,icol] = best_params[i+2]
+                    if qErr is not None:
+                        res_verr[i,irow,icol] = 0.5*(q_corr['v'+str(i)][qErr[1]]-q_corr['v'+str(i)][qErr[0]])
+                if detailed_output:
+                    res_mse[irow,icol] = np.nanmean(np.square(np.subtract(g2m1_parab(compute_displ_multilag(best_params[2:], np.asarray(lags)),\
+                                                                                   self.qValue, best_params[0], best_params[1]),\
+                                                                          corrTimetrace)))
+                    res_prior[irow,icol] = log_prior_corr(best_params, prior_avg_params, prior_std_params, regParam)
+                    res_likelihood[irow,icol] = log_likelihood_corr(best_params, g2m1_parab, corrTimetrace,\
+                                                                  stdTimetrace, np.asarray(lags), self.qValue)
+                    res_posterior[irow,icol] = log_posterior_corr(best_params, g2m1_parab, corrTimetrace, stdTimetrace, prior_avg_params,\
+                                                                 prior_std_params, np.asarray(lags), self.qValue, regParam)
+                    res_d0[irow,icol] = best_params[0]
+                    res_base[irow,icol] = best_params[1]
+                    if qErr is not None:
+                        res_d0_err[irow,icol] = 0.5*(q_corr['d0'][qErr[1]]-q_corr['d0'][qErr[0]])
+                        res_base_err[irow,icol] = 0.5*(q_corr['base'][qErr[1]]-q_corr['base'][qErr[0]])
+        MI.MIfile(os.path.join(self.outFolder, '_vMap_refMC' + str(file_suffix) + '.dat'), vmap_MetaData).WriteData(res_vavg)
+        if qErr is not None:
+            MI.MIfile(os.path.join(self.outFolder, '_vMap_refMC_err' + str(file_suffix) + '.dat'), vmap_MetaData).WriteData(res_verr)
+        if detailed_output:
+            singleimg_MetaData = {
+                'hdr_len' : 0,
+                'shape' : [1, res_vavg.shape[1], res_vavg.shape[2]],
+                'px_format' : 'f',
+                'px_size' : self.GetPixelSize()
+                }
+            MI.MIfile(os.path.join(self.outFolder, '_vMap_refMC_MSE' + str(file_suffix) + '.dat'), singleimg_MetaData).WriteData(res_mse)
+            MI.MIfile(os.path.join(self.outFolder, '_vMap_refMC_prior' + str(file_suffix) + '.dat'), singleimg_MetaData).WriteData(res_prior)
+            MI.MIfile(os.path.join(self.outFolder, '_vMap_refMC_likelihood' + str(file_suffix) + '.dat'), singleimg_MetaData).WriteData(res_likelihood)
+            MI.MIfile(os.path.join(self.outFolder, '_vMap_refMC_post' + str(file_suffix) + '.dat'), singleimg_MetaData).WriteData(res_posterior)
+            MI.MIfile(os.path.join(self.outFolder, '_vMap_refMC_d0' + str(file_suffix) + '.dat'), singleimg_MetaData).WriteData(res_d0)
+            MI.MIfile(os.path.join(self.outFolder, '_vMap_refMC_base' + str(file_suffix) + '.dat'), singleimg_MetaData).WriteData(res_base)
+            if qErr is not None:
+                MI.MIfile(os.path.join(self.outFolder, '_vMap_refMC_d0err' + str(file_suffix) + '.dat'), singleimg_MetaData).WriteData(res_d0_err)
+                MI.MIfile(os.path.join(self.outFolder, '_vMap_refMC_baseerr' + str(file_suffix) + '.dat'), singleimg_MetaData).WriteData(res_base_err)
+        
+        return res_vavg
         
     def _load_metadata_from_corr(self):
         
