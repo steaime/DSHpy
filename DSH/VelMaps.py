@@ -685,6 +685,25 @@ class VelMaps():
         # - parameters [2:] will be the speeds
         ndim_corr = vel_prior.shape[0]+2
         
+        # Exports analysis configuration
+        conf_MCparams = {'crop_roi' : cropROI,
+                         't_range' : tRange,
+                         'lags' : lags,
+                         'corr_prior' : corrPrior,
+                         'init_gaussball' : initGaussBall,
+                         'prior_std' : priorStd,
+                         'corr_func' : str(corrStdfunc),
+                         'regularization_param' : regParam,
+                         'num_walkers' : nwalkers,
+                         'num_steps' : nsteps,
+                         'burnin_steps' : burnin,
+                         'quantiles' : qErr,
+                         'detailed_output' : detailed_output,
+                         'file_suffix' : file_suffix,
+                         }
+        vel_config.Import(conf_MCparams, section_name='refinemc_parameters')
+        vel_config.Export(os.path.join(self.outFolder, 'VelMapsConfig_RefMC' + str(file_suffix) + '.ini'))
+        
         for irow in range(cropROI[1], cropROI[1]+cropROI[3]):
             for icol in range(cropROI[0], cropROI[0]+cropROI[2]):
                 corrTimetrace = self.corr_maps.GetCorrTimetrace([icol, irow], lagList=lags)
@@ -719,10 +738,17 @@ class VelMaps():
                 parameter_samples_corr = pd.DataFrame(builder_corr_dict)
                 
                 # calculating the MAP and values can be done concisely using pandas
-                q_corr = parameter_samples_corr.quantile([0.16,0.50,0.84], axis=0)
-                best_params = np.empty_like(prior_avg_params)
-                best_params[0] = q_corr['d0'][0.50]
-                best_params[1] = q_corr['base'][0.50]
+                if qErr is None:
+                    best_params = parameter_samples_corr.quantile(0.50, axis=0).to_numpy()
+                else:
+                    best_params = np.empty_like(prior_avg_params)
+                    q_corr = parameter_samples_corr.quantile([qErr[0],0.50,qErr[1]], axis=0)
+                    best_params[0] = q_corr['d0'][0.50]
+                    best_params[1] = q_corr['base'][0.50]
+                    for i in range(ndim_corr-2):
+                        best_params[i+2] = q_corr['v'+str(i)][0.50]
+                
+                # Populate output arrays
                 for i in range(ndim_corr-2):
                     res_vavg[i,irow,icol] = best_params[i+2]
                     if qErr is not None:
@@ -741,6 +767,8 @@ class VelMaps():
                     if qErr is not None:
                         res_d0_err[irow,icol] = 0.5*(q_corr['d0'][qErr[1]]-q_corr['d0'][qErr[0]])
                         res_base_err[irow,icol] = 0.5*(q_corr['base'][qErr[1]]-q_corr['base'][qErr[0]])
+                        
+        # Save output files
         MI.MIfile(os.path.join(self.outFolder, '_vMap_refMC' + str(file_suffix) + '.dat'), vmap_MetaData).WriteData(res_vavg)
         if qErr is not None:
             MI.MIfile(os.path.join(self.outFolder, '_vMap_refMC_err' + str(file_suffix) + '.dat'), vmap_MetaData).WriteData(res_verr)
