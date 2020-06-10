@@ -307,7 +307,7 @@ class CorrMaps():
         else:
             return self.conf_cmaps, self.cmap_mifiles, self.all_lagtimes
     
-    def GetCorrTimetrace(self, pxLocs, zRange=None, lagList=None, excludeLags=[], lagFlip=False, debug=False):
+    def GetCorrTimetrace(self, pxLocs, zRange=None, lagList=None, excludeLags=[], lagFlip=False):
         """Returns (t, tau) correlations for a given set of pixels
         
         Parameters
@@ -340,16 +340,13 @@ class CorrMaps():
             listFlip_neg = list(np.ones_like(lagList_pos, dtype=bool)*True)
             lagList = lagList_neg+lagList_pos
             lagFlip = listFlip_neg+listFlip_pos
-            if debug:
-                print(lagList)
-                print(lagFlip)
         else:
             lagList = list(lagSet)
             lagList.sort(reverse=lagFlip)
             
-        return self.GetCorrValues(pxLocs, list(range(*self.cmap_mifiles[1].Validate_zRange(zRange))), lagList, lagFlip, debug)
+        return self.GetCorrValues(pxLocs, list(range(*self.cmap_mifiles[1].Validate_zRange(zRange))), lagList, lagFlip)
         
-    def GetCorrValues(self, pxLocs, tList, lagList, lagFlip=None, debug=False):
+    def GetCorrValues(self, pxLocs, tList, lagList, lagFlip=None):
         self.GetCorrMaps()
         if (type(pxLocs[0]) not in [list, tuple, np.ndarray]):
             pxLocs = [pxLocs]
@@ -361,8 +358,6 @@ class CorrMaps():
             lagFlip = np.ones_like(lagList, dtype=bool)
         elif (type(lagFlip) not in [list, tuple, np.ndarray]):
             lagFlip = np.ones_like(lagList, dtype=bool)*lagFlip
-        if debug:
-            print(lagFlip)
         res = np.ones((len(pxLocs), len(lagList), len(tList)))*np.nan
         for lidx in range(res.shape[1]):
             cur_mifile = self.cmap_mifiles[self.all_lagtimes.index(lagList[lidx])]
@@ -371,13 +366,10 @@ class CorrMaps():
                     if lagFlip[lidx]:
                         if tList[tidx] >= lagList[lidx]:
                             img_idx = tList[tidx]-lagList[lidx]
-                            print(' --- ' + str(lidx) + ' ' + str(lagList[lidx]) + ' ' + str(tidx) + ' ' + str(tList[tidx]) + ' ' + str(img_idx))
                         else:
                             img_idx = None
-                            print(' xxx ' + str(lidx) + ' ' + str(lagList[lidx]) + ' ' + str(tidx) + ' ' + str(tList[tidx]) + ' ' + str(img_idx))
                     else:
                         img_idx = tList[tidx]
-                        print(' +++ ' + str(lidx) + ' ' + str(lagList[lidx]) + ' ' + str(tidx) + ' ' + str(tList[tidx]) + ' ' + str(img_idx))
                     if img_idx is not None:
                         for pidx in range(res.shape[0]):
                             res[pidx, lidx, tidx] = cur_mifile._read_pixels(px_num=1,\
