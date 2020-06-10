@@ -628,6 +628,9 @@ class VelMaps():
         if not self._loaded_metadata:
             self._load_metadata_from_corr()
 
+        if tRange is None:
+            tRange = self.tRange
+
         # Load correlation data. Set first row (d0) to ones and set zero correlations to NaN
         corr_data = self.corr_maps.GetCorrTimetrace(pxLoc, zRange=tRange)
         corr_data[0] = np.ones_like(corr_data[0])
