@@ -662,7 +662,7 @@ class VelMaps():
                         if tidx >= self.lagTimes[lag_idxs[lidx]]:
                             cur_corr[lidx] = corr_data[lag_idxs[lidx],tidx-self.lagTimes[lag_idxs[lidx]]]
                             if debug and tidx in special_out:
-                                print('   --- ' + str(lidx) + ' - ' + str(lag_idxs[lidx]) + ' - ' + str(cur_corr[lidx] = corr_data[lag_idxs[lidx],tidx-self.lagTimes[lag_idxs[lidx]]]))
+                                print('   --- ' + str(lidx) + ' - ' + str(lag_idxs[lidx]) + ' - ' + str(corr_data[lag_idxs[lidx],tidx-self.lagTimes[lag_idxs[lidx]]]))
                         else:
                             if debug and tidx in special_out:
                                 print('   ooo ' + str(lidx) + ' - ' + str(lag_idxs[lidx]) + ' - ' + str(self.lagTimes[lag_idxs[lidx]]) + ' EXCEPTION')
