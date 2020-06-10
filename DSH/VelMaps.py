@@ -661,11 +661,20 @@ class VelMaps():
             
             # Fine tune selection of lags to include
             use_mask = self._tunemask_pixel(try_mask[0,:,tidx], zero_lidx, corr_data[0,:,tidx])
-            if debugPrint:
-                print('   ### ' + str(use_mask))
 
             # Perform linear fit
             cur_dt = np.true_divide(lagList[use_mask], self.GetFPS())
+            
+            
+            
+                                        ###### NOOOOOO
+                            # QUESTO E' VERO SOLO SE LE CORRELAZIONI SONO STATE CALCOLATE
+                            # CON STEP 1
+                            # ALTRIMENTI IL FRAMERATE DEV'ESSERE DIVISO PER IMGRANGE[2]
+
+            
+            
+            
             cur_dr = np.true_divide(invert_monotonic(corr_data[0,:,tidx][use_mask], qdr_g, overflow_to_nan=True), self.qValue)
             #cur_dr = np.true_divide(invert_monotonic(corr_data[0,:,tidx][use_mask], qdr_g), self.qValue)
             if self.signedLags:
@@ -690,9 +699,10 @@ class VelMaps():
                 strWrite += '\nt=' + str(tidx)
                 strWrite += '\n-------------------'
                 if self.signedLags:
-                    strWrite += '\norig_lag\torig_corr\tsign\tmask'
+                    strWrite += '\norig_lag\torig_corr\tsign\ttry_mask\tmask'
                     for i in range(corr_data.shape[1]):
-                        strWrite += '\n' + str(lagList[i]) + '\t' + str(corr_data[0,i,tidx]) + '\t' + str(lagsign[i]) + '\t' + str(use_mask[i])
+                        strWrite += '\n' + str(lagList[i]) + '\t' + str(corr_data[0,i,tidx]) + '\t' + str(try_mask[0,i,tidx]) +\
+                                    '\t' + str(lagsign[i]) + '\t' + str(use_mask[i])
                 else:
                     strWrite += '\norig_lag\torig_corr\tmask'
                     for i in range(corr_data.shape[1]):
@@ -1123,7 +1133,7 @@ class VelMaps():
                     use_mask[ilag_pos] = True
                     cur_hole = 0
                 else:
-                    cur_hole = cur_hole + 1
+                    cur_hole += 1
                 if (cur_hole > self.maxHoles):
                     break
             cur_hole = 0
@@ -1132,7 +1142,7 @@ class VelMaps():
                     use_mask[ilag_neg] = True
                     cur_hole = 0
                 else:
-                    cur_hole = cur_hole + 1
+                    cur_hole += 1
                 if (cur_hole > self.maxHoles):
                     break
         else:
