@@ -371,10 +371,13 @@ class CorrMaps():
                     if lagFlip[lidx]:
                         if tList[tidx] >= lagList[lidx]:
                             img_idx = tList[tidx]-lagList[lidx]
+                            print(' --- ' + str(lidx) + ' ' + str(lagList[lidx]) + ' ' + str(tidx) + ' ' + str(tList[tidx]) + ' ' + str(img_idx))
                         else:
                             img_idx = None
+                            print(' xxx ' + str(lidx) + ' ' + str(lagList[lidx]) + ' ' + str(tidx) + ' ' + str(tList[tidx]) + ' ' + str(img_idx))
                     else:
                         img_idx = tList[tidx]
+                        print(' +++ ' + str(lidx) + ' ' + str(lagList[lidx]) + ' ' + str(tidx) + ' ' + str(tList[tidx]) + ' ' + str(img_idx))
                     if img_idx is not None:
                         for pidx in range(res.shape[0]):
                             res[pidx, lidx, tidx] = cur_mifile._read_pixels(px_num=1,\
