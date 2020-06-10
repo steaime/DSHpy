@@ -307,7 +307,7 @@ class CorrMaps():
         else:
             return self.conf_cmaps, self.cmap_mifiles, self.all_lagtimes
     
-    def GetCorrTimetrace(self, pxLocs, zRange=None, lagList=None, excludeLags=[]):
+    def GetCorrTimetrace(self, pxLocs, zRange=None, lagList=None, excludeLags=[], lagFlip=False):
         """Returns (t, tau) correlations for a given set of pixels
         
         Parameters
@@ -317,6 +317,10 @@ class CorrMaps():
         lagList : list of lagtimes. If None, all available lagtimes will be loaded,
                   except the ones eventually contained in excludeLags
         excludeLags: if lagList is None, list of lagtimes to be excluded
+        lagFlip : if False: standard correlations will be returned
+                    if True: correlations having the given time as second correlated time
+                             will be returned if available
+                  if 'BOTH': both signs will be stitched together
         
         Returns
         -------
@@ -326,25 +330,49 @@ class CorrMaps():
         self.GetCorrMaps()
         if lagList is None:
             lagList = self.all_lagtimes
-        lagList = list((set(lagList) & set(self.all_lagtimes)) - set(excludeLags))
-        return self.GetCorrValues(pxLocs, list(range(*self.cmap_mifiles[1].Validate_zRange(zRange))), lagList)
+        lagSet = (set(lagList) & set(self.all_lagtimes)) - set(excludeLags)
+        if (lagFlip=='BOTH'):
+            lagList_pos = list(lagSet).copy()
+            lagList_pos.sort()
+            listFlip_pos = list(np.ones_like(lagList_pos, dtype=bool)*False)
+            lagList_neg = list(lagSet).copy()
+            lagList_neg.sort(reverse=True)
+            listFlip_neg = list(np.ones_like(lagList_pos, dtype=bool)*True)
+            lagList = lagList_neg+lagList_pos
+            lagFlip = listFlip_neg+listFlip_pos
+        else:
+            lagList = list(lagSet)
+            lagList.sort(reverse=lagFlip)
+            
+        return self.GetCorrValues(pxLocs, list(range(*self.cmap_mifiles[1].Validate_zRange(zRange))), lagList, lagFlip)
         
-    def GetCorrValues(self, pxLocs, tList, lagList):
+    def GetCorrValues(self, pxLocs, tList, lagList, lagFlip=None):
+        self.GetCorrMaps()
         if (type(pxLocs[0]) not in [list, tuple, np.ndarray]):
             pxLocs = [pxLocs]
         if (type(tList) not in [list, tuple, np.ndarray]):
             tList = [tList]
         if (type(lagList) not in [list, tuple, np.ndarray]):
             lagList = [lagList]
-        lagList = list(set(lagList) & set(self.all_lagtimes))
-        lagList.sort()
-        self.GetCorrMaps()
+        if lagFlip is None:
+            lagFlip = np.ones_like(lagList, dtype=bool)
+        elif (type(lagFlip) not in [list, tuple, np.ndarray]):
+            lagFlip = np.ones_like(lagList, dtype=bool)*lagFlip
         res = np.ones((len(pxLocs), len(lagList), len(tList)))*np.nan
         for lidx in range(res.shape[1]):
             cur_mifile = self.cmap_mifiles[self.all_lagtimes.index(lagList[lidx])]
             if cur_mifile is not None:
-                for pidx, tidx in np.ndindex(res[:,0,:].shape):
-                    res[pidx, lidx, tidx] = cur_mifile._read_pixels(px_num=1,\
-                               seek_pos=cur_mifile._get_offset(img_idx=tList[tidx], row_idx=pxLocs[pidx][0], col_idx=pxLocs[pidx][1]))
+                for tidx in range(res.shape[2]):
+                    if lagFlip[lidx]:
+                        if tList[tidx] >= lagList[lidx]:
+                            img_idx = tList[tidx]-lagList[lidx]
+                        else:
+                            img_idx = None
+                    else:
+                        img_idx = tList[tidx]
+                    if img_idx is not None:
+                        for pidx in range(res.shape[0]):
+                            res[pidx, lidx, tidx] = cur_mifile._read_pixels(px_num=1,\
+                                       seek_pos=cur_mifile._get_offset(img_idx=tList[tidx], row_idx=pxLocs[pidx][0], col_idx=pxLocs[pidx][1]))
         return np.squeeze(res)
        
