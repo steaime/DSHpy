@@ -688,9 +688,14 @@ class VelMaps():
                 strWrite = '\n*******************'
                 strWrite += '\nt=' + str(tidx)
                 strWrite += '\n-------------------'
-                strWrite += '\norig_lag\torig_corr\tsign\tmask'
-                for i in range(corr_data.shape[1]):
-                    strWrite += '\n' + str(lagList[i]) + '\t' + str(corr_data[0,i,tidx]) + '\t' + str(lagsign[i]) + '\t' + str(use_mask[i])
+                if self.signedLags:
+                    strWrite += '\norig_lag\torig_corr\tsign\tmask'
+                    for i in range(corr_data.shape[1]):
+                        strWrite += '\n' + str(lagList[i]) + '\t' + str(corr_data[0,i,tidx]) + '\t' + str(lagsign[i]) + '\t' + str(use_mask[i])
+                else:
+                    strWrite += '\norig_lag\torig_corr\tmask'
+                    for i in range(corr_data.shape[1]):
+                        strWrite += '\n' + str(lagList[i]) + '\t' + str(corr_data[0,i,tidx]) + '\t' + str(use_mask[i])
                 strWrite += '\n-------------------'
                 strWrite += '\nfit_dt\tfit_dr'
                 for i in range(len(cur_dt)):
