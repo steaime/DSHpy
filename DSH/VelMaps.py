@@ -656,7 +656,7 @@ class VelMaps():
                 if (lag_idxs[lidx] > 0):
                     if (all_sign_list[tidx][lidx] > 0):
                         cur_corr[lidx] = corr_data[lag_idxs[lidx],tidx]
-                    else:
+                    elif tidx >= self.lagTimes[lag_idxs[lidx]]:
                         cur_corr[lidx] = corr_data[lag_idxs[lidx],tidx-self.lagTimes[lag_idxs[lidx]]]
                     cur_lags[lidx] = self.lagTimes[lag_idxs[lidx]]*1.0/self.GetFPS()
                 else:
