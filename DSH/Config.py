@@ -50,7 +50,11 @@ class Config():
         str_res += '\n| Section count : ' + str(self.CountSections())
         str_res += '\n| Total keys    : ' + str(self.CountKeys())
         for sect_name in self.GetSections():
-            str_res += '\n| ' + str(sect_name).ljust(14) + ': ' + str(self.config._sections[sect_name])
+            sect_keys = self.config._sections[sect_name].keys()
+            str_res += '\n| ' + str(sect_name).ljust(14) + ': <' + str(len(sect_keys)) + ' keys>'
+            for cur_key in sect_keys:
+                str_res += '\n| ' + ' '.ljust(14) + ': ' + str(cur_key) + ' = ' +\
+                            self.config._sections[sect_name][cur_key]
         str_res += '\n|---------------+---------------'
         return str_res
     
