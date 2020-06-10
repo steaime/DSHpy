@@ -244,7 +244,7 @@ def LoadFromConfig(ConfigFile, outFolder=None):
 class VelMaps():
     """ Class to compute velocity maps from correlation maps """
     
-    def __init__(self, corr_maps, z_profile='Parabolic', q_value=1.0, t_range=None, lag_range=None, signed_lags=False, consec_only=False,\
+    def __init__(self, corr_maps, z_profile='Parabolic', q_value=1.0, t_range=None, lag_range=None, signed_lags=False, consec_only=True,\
                           max_holes=0, mask_opening=None, conservative_cutoff=0.3, generous_cutoff=0.15):
         """Initialize VelMaps
         
@@ -268,6 +268,7 @@ class VelMaps():
                     if signed_lags==False, the artificial correlation value at lag==0 will not be processed
                     (it is highly recommended to set signed_lags to False)
         consec_only : if True only select sorrelation chunk with consecutive True value of the mask around tau=0
+                    Note: it is highly recommended to use consec_only==True
         max_holes : integer, only used if consecutive_only==True.
                     Largest hole to be ignored before chunk is considered as discontinued
         mask_opening : None or integer > 1.
@@ -289,7 +290,7 @@ class VelMaps():
         self.lagRange = lag_range
         self.signedLags = signed_lags
         self.consecOnly = consec_only
-        self.maxHoles = mask_opening
+        self.maxHoles = max_holes
         self.maskOpening = mask_opening
         self.conservative_cutoff = conservative_cutoff
         self.generous_cutoff = generous_cutoff
