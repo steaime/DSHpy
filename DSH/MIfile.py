@@ -253,7 +253,7 @@ class MIfile():
         exp_meta['shape'] = list(mi_chunk.shape)
         if ('fps' in exp_meta):
             val_zRange = self.Validate_zRange(zRange)
-            exp_meta['fps'] = exp_meta['fps'] * 1.0 / val_zRange[2]
+            exp_meta['fps'] = float(exp_meta['fps']) * 1.0 / val_zRange[2]
         exp_config = cf.Config()
         exp_config.Import(exp_meta, section_name='MIfile')
         exp_config.Export(metadata_filename)
