@@ -139,7 +139,7 @@ def g2m1_affine(displ, q, d0=1.0, baseline=0):
     return np.square(np.true_divide(np.sin(dotpr),dotpr))
 
 
-def g2m1_sample(zProfile='Parabolic', d0=1.0, baseline=0.0):
+def g2m1_sample(zProfile='Parabolic', q=1.0, d0=1.0, baseline=0.0, max_dr=None, step_dr=0.001):
     """Generate a lookup table for inverting correlation function
         to give the dot product q*dr, where q is the scattering vector 
         and dt is the displacement cumulated over time delay tau and
@@ -151,23 +151,27 @@ def g2m1_sample(zProfile='Parabolic', d0=1.0, baseline=0.0):
     ----------
     zProfile : velocity profile for which correlation have to be modeled
                 available options: Parabolic | Affine
-    d0, baseline: correlation baselines
+    q: scattering vector (float), in units of inverse displacements
+    d0: correlation value limit at zero delay. Lower than 1.0 because of camera noise
+    baseline: baseline for correlation function. Larger than 0.0 because of stray light
+    max_dr: sample until this maximum displacement.
+            if None, it will sample until the first correlation minimum
+    step_dr: generate linearly spaced displacement points with this step
     """
-    if (zProfile=='Parabolic'):
-        dr_g = np.zeros([2,4500])
-        dr_g[0] = np.linspace(4.5, 0.001, num=dr_g.shape[1])
-        dr_g[1] = g2m1_parab(dr_g[0], 1.0, d0, baseline)
-        #(np.pi/4)*np.true_divide(np.square(np.abs(ssp.erf(np.sqrt(-dr_g[0]*1j)))), np.abs(dr_g[0]))
-        #dr_g[1][-1] = d0
-        return dr_g
-    elif (zProfile=='Affine'):
-        dr_g = np.zeros([2,3140])
-        dr_g[0] = np.linspace(3.14, 0.001, num=dr_g.shape[1])
-        dr_g[1] = g2m1_affine(dr_g[0], 1.0, d0, baseline)
-        #dr_g[1][-1] = d0
-        return dr_g
+    if (zProfile.upper()=='PARABOLIC'):
+        model = g2m1_parab
+        if max_dr is None:
+            max_dr = 4.5
+    elif (zProfile.upper()=='AFFINE'):
+        model = g2m1_affine
+        if max_dr is None:
+            max_dr = 3.14
     else:
         raise ValueError(str(zProfile) + 'z profile not implemented yet')
+    dr_g = np.zeros([2,int(max_dr/step_dr)])
+    dr_g[0] = np.linspace(max_dr, step_dr, num=dr_g.shape[1])
+    dr_g[1] = model(dr_g[0], q, d0, baseline)
+    return dr_g
 
 def _invert_monotonic(data, _lut):
     """Invert monotonic function based on a lookup table
