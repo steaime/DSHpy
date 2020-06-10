@@ -139,7 +139,7 @@ def g2m1_affine(displ, q, d0=1.0, baseline=0):
     return np.square(np.true_divide(np.sin(dotpr),dotpr))
 
 
-def _qdr_g_relation(zProfile='Parabolic', d0=1.0, baseline=0.0):
+def g2m1_sample(zProfile='Parabolic', d0=1.0, baseline=0.0):
     """Generate a lookup table for inverting correlation function
         to give the dot product q*dr, where q is the scattering vector 
         and dt is the displacement cumulated over time delay tau and
@@ -453,7 +453,7 @@ class VelMaps():
         self.ExportConfig(os.path.join(self.outFolder, 'VelMapsConfig' + str(file_suffix) + '.ini'))
 
         # Prepare memory
-        qdr_g = _qdr_g_relation(zProfile=self.zProfile)
+        qdr_g = g2m1_sample(zProfile=self.zProfile)
         vmap = np.zeros(_MapShape)
         write_vmap = MI.MIfile(os.path.join(self.outFolder, '_vMap' + str(file_suffix) + '.dat'), self.GetMetadata())
         if return_err:
