@@ -328,22 +328,6 @@ class CorrMaps():
             lagList = self.all_lagtimes
         lagList = list((set(lagList) & set(self.all_lagtimes)) - set(excludeLags))
         return self.GetCorrValues(pxLocs, list(range(*self.cmap_mifiles[1].Validate_zRange(zRange))), lagList)
-        
-        list_z = list(range(*self.cmap_mifiles[1].Validate_zRange(zRange)))
-        if (type(pxLocs[0]) not in [list, tuple, np.ndarray]):
-            pxLocs = [pxLocs]
-        lagList.sort()
-        res = np.ones((len(pxLocs), len(lagList), len(list_z))) * np.nan
-        for lidx in range(len(lagList)):
-            cur_mifile = self.cmap_mifiles[self.all_lagtimes.index(lagList[lidx])]
-            if cur_mifile is not None:
-                for zidx in range(len(list_z)):
-                    for pidx in range(len(pxLocs)):
-                        res[pidx,lidx,zidx] = cur_mifile._read_pixels(px_num=1,\
-                           seek_pos=cur_mifile._get_offset(img_idx=list_z[zidx], row_idx=pxLocs[pidx][0], col_idx=pxLocs[pidx][1]))
-        if (len(pxLocs) == 1):
-            return res.reshape((len(lagList), len(list_z)))
-        else:
             return res
         
     def GetCorrValues(self, pxLocs, tList, lagList):
@@ -363,8 +347,5 @@ class CorrMaps():
                 for pidx, tidx in np.ndindex(res[:,0,:].shape):
                     res[pidx, lidx, tidx] = cur_mifile._read_pixels(px_num=1,\
                                seek_pos=cur_mifile._get_offset(img_idx=tList[tidx], row_idx=pxLocs[pidx][0], col_idx=pxLocs[pidx][1]))
-        if (len(pxLocs) == 1):
-            return res.reshape((len(lagList), len(tList)))
-        else:
-            return res
+        return np.squeeze(res)
        
