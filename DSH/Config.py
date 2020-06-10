@@ -10,7 +10,7 @@ else:
     import ast
     use_json = False
 
-def ExportDict(self, dict_to_export, out_filename, section_name=None):
+def ExportDict(dict_to_export, out_filename, section_name=None):
     conf = Config()
     conf.Import(dict_to_export, section_name=section_name)
     conf.Export(out_filename)
