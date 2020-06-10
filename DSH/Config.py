@@ -40,6 +40,20 @@ class Config():
             else:
                 raise IOError('Configuration file ' + str(ConfigFile) + ' not found')
 
+    def __repr__(self):
+        return '<Config class: %s sections, %s keys>' % (self.CountSections(), self.CountKeys())
+    
+    def __str__(self):
+        str_res  = '\n|---------------|'
+        str_res += '\n| Config class: |'
+        str_res += '\n|---------------+---------------'
+        str_res += '\n| Section count : ' + str(self.CountSections())
+        str_res += '\n| Total keys    : ' + str(self.CountKeys())
+        for sect_name in self.GetSections:
+            str_res += '\n| ' + str(sect_name).ljust(14) + ': ' + str(self.config._sections[sect_name])
+        str_res += '\n|---------------+---------------'
+        return str_res
+    
     def Import(self, dict_config, section_name='default'):
         """Imports all dictionary entries into a given section
         
@@ -153,3 +167,12 @@ class Config():
             else:
                 print('WARNING: section not found in current configuration. Available sections are: ' + str(self.GetSections()))
                 return {}
+    
+    def CountSections(self):
+        return len(self.config.sections())
+    
+    def CountKeys(self):
+        num_keys = 0
+        for cur_sect in self.config.sections():
+            num_keys += len(self.config._sections[cur_sect].keys())
+        return num_keys
