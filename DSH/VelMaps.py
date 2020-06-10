@@ -660,6 +660,8 @@ class VelMaps():
             
             # Fine tune selection of lags to include
             use_mask = self._tunemask_pixel(try_mask[0,:,tidx], zero_lidx, corr_data[0,:,tidx])
+            if debugPrint:
+                print('   ### ' + str(use_mask))
 
             # Perform linear fit
             cur_dt = lagList[use_mask]
@@ -1098,18 +1100,19 @@ class VelMaps():
         use_mask : 1D boolean array. Mask to be used for linear fit
         """
         
+        temp_mask = np.asarray(try_mask, dtype=bool)
         if (self.maskOpening is not None and np.count_nonzero(try_mask) > 2):
             for cur_open_range in range(self.maskOpening, 2, -1):
                 # remove thresholding noise by removing N-lag-wide unmasked domains
                 cur_mask_denoise = binary_opening(try_mask, structure=np.ones(cur_open_range))
                 if (np.count_nonzero(try_mask) > 2):
-                    use_mask = cur_mask_denoise
+                    temp_mask = cur_mask_denoise
                     break
         if self.consecOnly:
-            use_mask = np.zeros(len(try_mask), dtype=bool)
+            use_mask = np.zeros(len(temp_mask), dtype=bool)
             cur_hole = 0
-            for ilag_pos in range(lagzero_idx+1, len(try_mask)):
-                if try_mask[ilag_pos]:
+            for ilag_pos in range(lagzero_idx+1, len(temp_mask)):
+                if temp_mask[ilag_pos]:
                     use_mask[ilag_pos] = True
                     cur_hole = 0
                 else:
@@ -1118,7 +1121,7 @@ class VelMaps():
                     break
             cur_hole = 0
             for ilag_neg in range(lagzero_idx, -1, -1):
-                if try_mask[ilag_neg]:
+                if temp_mask[ilag_neg]:
                     use_mask[ilag_neg] = True
                     cur_hole = 0
                 else:
@@ -1126,7 +1129,7 @@ class VelMaps():
                 if (cur_hole > self.maxHoles):
                     break
         else:
-            use_mask = try_mask
+            use_mask = temp_mask
 
         # Only use zero lag correlation when dealing with signed lagtimes
         use_mask[lagzero_idx] = self.signedLags
