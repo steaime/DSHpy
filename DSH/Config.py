@@ -49,7 +49,7 @@ class Config():
         str_res += '\n|---------------+---------------'
         str_res += '\n| Section count : ' + str(self.CountSections())
         str_res += '\n| Total keys    : ' + str(self.CountKeys())
-        for sect_name in self.GetSections:
+        for sect_name in self.GetSections():
             str_res += '\n| ' + str(sect_name).ljust(14) + ': ' + str(self.config._sections[sect_name])
         str_res += '\n|---------------+---------------'
         return str_res
