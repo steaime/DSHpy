@@ -641,7 +641,7 @@ class VelMaps():
                                                                                returnCoords=True, squeezeResult=False)
         lagList = np.asarray(lagList)
         zero_lidx = int((corr_data.shape[1]-1)/2)
-        corr_data[zero_lidx] = np.ones_like(corr_data[0])
+        corr_data[:,zero_lidx,:] = np.ones_like(corr_data[:,0,:])
         corr_data[np.where(corr_data==0)]=np.nan
         try_mask = corr_data > self.conservative_cutoff
         if self.signedLags:
