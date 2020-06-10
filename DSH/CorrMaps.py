@@ -101,7 +101,17 @@ class CorrMaps():
         str_res += '\n|-----------------+---------------'
         str_res += '\n| MI Filename     : ' + str(self.MIinput.GetFilename())
         str_res += '\n| output folder   : ' + str(self.outFolder)
-        str_res += '\n| lag times (' + str(self.numLags).zfill(2) + ')  : ' + str(self.lagList)
+        str_res += '\n| lag times (' + str(self.numLags).zfill(2) + ')  : ' 
+        lag_per_row = 20
+        if (self.numLags <= lag_per_row):
+            str_res += str(self.lagList)
+        else:
+            str_res += '['
+            for i in range(1, self.numLags):
+                if (i % lag_per_row == 0):
+                    str_res += '\n|                    '
+                str_res += self.lagList[i] + ', '
+            str_res = str_res[:-2] + ']'
         str_res += '\n| image range     : ' + str(self.imgRange)
         str_res += '\n| crop ROI        : ' + str(self.cropROI)
         str_res += '\n| Kernel          : ' + str(self.Kernel['type']) + ' - '
@@ -249,12 +259,14 @@ class CorrMaps():
         else:
             return None
     
-    def GetCorrMaps(self, openMIfiles=True, check_lagtimes=False):
+    def GetCorrMaps(self, openMIfiles=True, getAutocorr=True, check_lagtimes=False):
         """Searches for MIfile correlation maps
         
         Parameters
         ----------
         openMIfiles: if true, it opens all MIfiles for reading.
+        getAutocorr: if True, returns d0 in the list of correlation maps
+                    otherwise, returns None instead of the autocorrelation map
         check_lagtimes: if true, checks that the lagtimes extracted from the filenames match with self.lagList
         
         Returns
@@ -272,15 +284,13 @@ class CorrMaps():
             self.conf_cmaps = cf.Config(config_fname)
     
             all_cmap_fnames = sf.FindFileNames(self.outFolder, Prefix='CorrMap_d', Ext='.dat', Sort='ASC', AppendFolder=True)
-            self.cmap_mifiles = [None]
-            self.all_lagtimes = [0]
+            self.cmap_mifiles = []
+            self.all_lagtimes = []
             for i in range(len(all_cmap_fnames)):
-                # Let's not load lagtime 0: lagtime 0 will be ones by definition
                 cur_lag = sf.LastIntInStr(all_cmap_fnames[i])
-                if (cur_lag > 0):
-                    self.all_lagtimes.append(cur_lag)
-                    self.cmap_mifiles.append(MI.MIfile(all_cmap_fnames[i], self.conf_cmaps.ToDict(section='corrmap_metadata')))
-                    self.cmap_mifiles[-1].OpenForReading()
+                self.all_lagtimes.append(cur_lag)
+                self.cmap_mifiles.append(MI.MIfile(all_cmap_fnames[i], self.conf_cmaps.ToDict(section='corrmap_metadata')))
+                self.cmap_mifiles[-1].OpenForReading()
     
             # Check lagtimes for consistency
             if (check_lagtimes):
@@ -292,7 +302,10 @@ class CorrMaps():
                         
             self._corrmaps_loaded = True
         
-        return self.conf_cmaps, self.cmap_mifiles, self.all_lagtimes
+        if (self.all_lagtimes[0]==0 and getAutocorr==False):
+            return self.conf_cmaps, [None] + self.cmap_mifiles[1:], self.all_lagtimes
+        else:
+            return self.conf_cmaps, self.cmap_mifiles, self.all_lagtimes
     
     def GetCorrTimetrace(self, pxLocs, zRange=None, lagList=None):
         """Returns (t, tau) correlations for a given set of pixels
@@ -317,13 +330,14 @@ class CorrMaps():
         else:
             lagList = list(set(lagList) & set(self.all_lagtimes))
         lagList.sort()
-        res = np.empty((len(pxLocs), len(lagList), len(list_z)))
+        res = np.ones((len(pxLocs), len(lagList), len(list_z))) * np.nan
         for lidx in range(len(lagList)):
             cur_mifile = self.cmap_mifiles[self.all_lagtimes.index(lagList[lidx])]
-            for zidx in range(len(list_z)):
-                for pidx in range(len(pxLocs)):
-                    res[pidx,lidx,zidx] = cur_mifile._read_pixels(px_num=1,\
-                       seek_pos=cur_mifile._get_offset(img_idx=list_z[zidx], row_idx=pxLocs[pidx][0], col_idx=pxLocs[pidx][1]))
+            if cur_mifile is not None:
+                for zidx in range(len(list_z)):
+                    for pidx in range(len(pxLocs)):
+                        res[pidx,lidx,zidx] = cur_mifile._read_pixels(px_num=1,\
+                           seek_pos=cur_mifile._get_offset(img_idx=list_z[zidx], row_idx=pxLocs[pidx][0], col_idx=pxLocs[pidx][1]))
         if (len(pxLocs) == 1):
             return res.reshape((len(lagList), len(list_z)))
         else:

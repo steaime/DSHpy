@@ -168,7 +168,7 @@ def g2m1_sample(zProfile='Parabolic', q=1.0, d0=1.0, baseline=0.0, sample_dr=Non
     elif (zProfile.upper()=='AFFINE'):
         model = g2m1_affine
         if max_dr is None:
-            max_dr = 3.14
+            max_dr = 2.55
     else:
         raise ValueError(str(zProfile) + 'z profile not implemented yet')
     if sample_dr is None:
@@ -687,8 +687,9 @@ class VelMaps():
         if lagTimes is None:
             lagTimes = self.GetLagtimes()
         lags = lagTimes.copy() # Make a copy to avoid removing elements from the original
-        if 0 in lags:
-            lags.remove(0)
+        for cur_lag in lagTimes:
+            if (cur_lag == 0 or cur_lag > (tRange[1]-tRange[0])):
+                lags.remove(cur_lag)
         if corrPrior is None:
             corrPrior = [[1.0, 0.0], [0.01, 0.01]]
         vel_config, vel_mifile = self.GetMaps()
@@ -832,7 +833,7 @@ class VelMaps():
         
     def _load_metadata_from_corr(self):
         
-        self.confParams, self.cmap_mifiles, self.lagTimes = self.corr_maps.GetCorrMaps()
+        self.confParams, self.cmap_mifiles, self.lagTimes = self.corr_maps.GetCorrMaps(getAutocorr=False)
 
         # NOTE: first element of self.cmap_mifiles will be None instead of d0 (we don't need d0 to compute velocity maps)
         self.mapMetaData = cf.Config()
