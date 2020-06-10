@@ -639,7 +639,8 @@ class VelMaps():
         # Load correlation data. Set central row (d0) to ones and set zero correlations to NaN
         corr_data, tvalues, lagList, lagFlip = self.corr_maps.GetCorrTimetrace(pxLoc, zRange=tRange, lagFlip='BOTH',\
                                                                                returnCoords=True, squeezeResult=False)
-        zero_lidx = int((corr_data.shape[0]-1)/2)
+        lagList = np.asarray(lagList)
+        zero_lidx = int((corr_data.shape[1]-1)/2)
         corr_data[zero_lidx] = np.ones_like(corr_data[0])
         corr_data[np.where(corr_data==0)]=np.nan
         try_mask = corr_data > self.conservative_cutoff
