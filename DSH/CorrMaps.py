@@ -346,7 +346,7 @@ class CorrMaps():
             
         return self.GetCorrValues(pxLocs, list(range(*self.cmap_mifiles[1].Validate_zRange(zRange))), lagList, lagFlip)
         
-    def GetCorrValues(self, pxLocs, tList, lagList, lagFlip=None):
+    def GetCorrValues(self, pxLocs, tList, lagList, lagFlip=None, debug=False):
         self.GetCorrMaps()
         if (type(pxLocs[0]) not in [list, tuple, np.ndarray]):
             pxLocs = [pxLocs]
@@ -358,6 +358,8 @@ class CorrMaps():
             lagFlip = np.ones_like(lagList, dtype=bool)
         elif (type(lagFlip) not in [list, tuple, np.ndarray]):
             lagFlip = np.ones_like(lagList, dtype=bool)*lagFlip
+        if debug:
+            print(lagFlip)
         res = np.ones((len(pxLocs), len(lagList), len(tList)))*np.nan
         for lidx in range(res.shape[1]):
             cur_mifile = self.cmap_mifiles[self.all_lagtimes.index(lagList[lidx])]
