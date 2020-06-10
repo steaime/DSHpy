@@ -110,7 +110,7 @@ class CorrMaps():
             for i in range(1, self.numLags):
                 if (i % lag_per_row == 0):
                     str_res += '\n|                    '
-                str_res += self.lagList[i] + ', '
+                str_res += str(self.lagList[i]) + ', '
             str_res = str_res[:-2] + ']'
         str_res += '\n| image range     : ' + str(self.imgRange)
         str_res += '\n| crop ROI        : ' + str(self.cropROI)
