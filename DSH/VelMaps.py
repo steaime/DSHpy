@@ -666,7 +666,8 @@ class VelMaps():
 
             # Perform linear fit
             cur_dt = np.true_divide(lagList[use_mask], self.GetFPS())
-            cur_dr = np.true_divide(invert_monotonic(corr_data[0,:,tidx][use_mask], qdr_g), self.qValue)
+            cur_dr = np.true_divide(invert_monotonic(corr_data[0,:,tidx][use_mask], qdr_g, overflow_to_nan=True), self.qValue)
+            #cur_dr = np.true_divide(invert_monotonic(corr_data[0,:,tidx][use_mask], qdr_g), self.qValue)
             if self.signedLags:
                 cur_dt = np.multiply(cur_dt, lagsign[use_mask])
                 cur_dr = np.multiply(cur_dr, lagsign[use_mask])
@@ -702,11 +703,11 @@ class VelMaps():
                     strWrite += '\n' + str(cur_dt[i]) + '\t' + str(cur_dr[i])
                 strWrite += '\n-------------------'
                 strWrite += '\nFit results:'
-                strWrite += '\n  slope=' + str(slope)
-                strWrite += '\n  intercept=' + str(intercept)
-                strWrite += '\n  r_value=' + str(r_value)
-                strWrite += '\n  p_value=' + str(p_value)
-                strWrite += '\n  std_err=' + str(std_err)
+                strWrite += '\n  slope=\t' + str(slope)
+                strWrite += '\n  intercept=\t' + str(intercept)
+                strWrite += '\n  r_value=\t' + str(r_value)
+                strWrite += '\n  p_value=\t' + str(p_value)
+                strWrite += '\n  std_err=\t' + str(std_err)
                 strWrite += '\n*******************'                
                 fdeb.write(strWrite)
 
