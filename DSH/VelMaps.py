@@ -659,7 +659,7 @@ class VelMaps():
         for tidx in range(len(vel)):
             
             # Fine tune selection of lags to include
-            use_mask = self._tunemask_pixel(try_mask, zero_lidx, corr_data[0,:,tidx])
+            use_mask = self._tunemask_pixel(try_mask[0,:,tidx], zero_lidx, corr_data[0,:,tidx])
 
             # Perform linear fit
             cur_dt = lagList[use_mask]
