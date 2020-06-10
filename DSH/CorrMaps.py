@@ -328,7 +328,6 @@ class CorrMaps():
             lagList = self.all_lagtimes
         lagList = list((set(lagList) & set(self.all_lagtimes)) - set(excludeLags))
         return self.GetCorrValues(pxLocs, list(range(*self.cmap_mifiles[1].Validate_zRange(zRange))), lagList)
-            return res
         
     def GetCorrValues(self, pxLocs, tList, lagList):
         if (type(pxLocs[0]) not in [list, tuple, np.ndarray]):
