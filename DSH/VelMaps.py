@@ -620,6 +620,96 @@ class VelMaps():
     def ProcessSinglePixel(self, pxLoc, tRange=None, debugPrint=False, debugFile=None):
         """Computes v(t) for one single pixel
         
+        Parameters
+        ----------
+        pxLoc: [row_index, col_index] coordinates of pixel to be analyzed
+        
+        Returns
+        -------
+        vel : 1D array with velocity as a function of time
+        verr : 1D array with linear fit errors
+        """
+
+        if not self._loaded_metadata:
+            self._load_metadata_from_corr()
+
+        if tRange is None:
+            tRange = self.tRange
+
+        # Load correlation data. Set central row (d0) to ones and set zero correlations to NaN
+        corr_data, tvalues, lagList, lagFlip = self.corr_maps.GetCorrTimetrace(pxLoc, zRange=tRange, lagFlip='BOTH',\
+                                                                               returnCoords=True, squeezeResult=False)
+        zero_lidx = int((corr_data.shape[0]-1)/2)
+        corr_data[zero_lidx] = np.ones_like(corr_data[0])
+        corr_data[np.where(corr_data==0)]=np.nan
+        try_mask = corr_data > self.conservative_cutoff
+        if self.signedLags:
+            lagsign = np.ones_like(lagList, dtype=np.int8)
+            lagsign[lagFlip]=-1
+
+        # Prepare memory
+        qdr_g = g2m1_sample(zProfile=self.zProfile)
+        vel = np.zeros(corr_data.shape[2])
+        interc = np.zeros_like(vel)
+        fiterr = np.zeros_like(vel)
+        
+        if debugFile is not None:
+            fdeb = open(os.path.join(self.outFolder, debugFile), 'w')
+            
+        for tidx in range(len(vel)):
+            
+            # Fine tune selection of lags to include
+            use_mask = self._tunemask_pixel(try_mask, zero_lidx, corr_data[0,:,tidx])
+
+            # Perform linear fit
+            cur_dt = lagList[use_mask]
+            cur_dr = np.true_divide(invert_monotonic(corr_data[0,:,tidx][use_mask], qdr_g), self.qValue)
+            if self.signedLags:
+                cur_dt = np.multiply(cur_dt, lagsign[use_mask])
+                cur_dr = np.multiply(cur_dr, lagsign[use_mask])
+            if (np.max(cur_dt)==np.min(cur_dt)):
+                slope = np.nanmean(cur_dr)*1.0/cur_dt[0]
+                intercept, r_value, p_value, std_err = 0, np.nan, np.nan, np.nan
+            else:
+                slope, intercept, r_value, p_value, std_err = stats.linregress(cur_dt, cur_dr)  
+            
+            # Save result
+            vel[tidx] = slope
+            interc[tidx] = intercept
+            fiterr[tidx] = std_err
+            
+            if debugPrint:
+                print('   *** ' + str(tidx) + ' - ' + str(np.count_nonzero(use_mask)) + ' points, dt=[' + str(np.min(cur_dt)) + ',' + str(np.max(cur_dt)) + ']' +\
+                      ' - dr=[' + str(np.min(cur_dr)) + ',' + str(np.max(cur_dr)) + '] - fit result: ' + str([slope, intercept, r_value, p_value, std_err]))
+            if debugFile is not None:
+                strWrite = '\n*******************'
+                strWrite += '\nt=' + str(tidx)
+                strWrite += '\n-------------------'
+                strWrite += '\norig_lag\torig_corr\tsign\tmask'
+                for i in range(corr_data.shape[1]):
+                    strWrite += '\n' + str(lagList[i]) + '\t' + str(corr_data[0,i,tidx]) + '\t' + str(lagsign[i]) + '\t' + str(use_mask[i])
+                strWrite += '\n-------------------'
+                strWrite += '\nfit_dt\tfit_dr'
+                for i in range(len(cur_dt)):
+                    strWrite += '\n' + str(cur_dt[i]) + '\t' + str(cur_dr[i])
+                strWrite += '\n-------------------'
+                strWrite += '\nFit results:'
+                strWrite += '\n  slope=' + str(slope)
+                strWrite += '\n  intercept=' + str(intercept)
+                strWrite += '\n  r_value=' + str(r_value)
+                strWrite += '\n  p_value=' + str(p_value)
+                strWrite += '\n  std_err=' + str(std_err)
+                strWrite += '\n*******************'                
+                fdeb.write(strWrite)
+
+        if debugFile is not None:
+            fdeb.close()
+
+        return vel, interc, fiterr
+    
+    def ProcessSinglePixelOLD(self, pxLoc, tRange=None, debugPrint=False, debugFile=None):
+        """Computes v(t) for one single pixel
+        
         Returns
         -------
         vel : 1D array with velocity as a function of time
@@ -837,7 +927,7 @@ class VelMaps():
         
         for irow in range(cropROI[1], cropROI[1]+cropROI[3]):
             for icol in range(cropROI[0], cropROI[0]+cropROI[2]):
-                corrTimetrace = self.corr_maps.GetCorrTimetrace([icol, irow], lagList=lags)
+                corrTimetrace = self.corr_maps.GetCorrTimetrace([icol, irow], lagList=lags, lagFlip=False, returnCoords=False, squeezeResult=True)
                 stdTimetrace = corrStdfunc(corrTimetrace, **corrStdfuncParams)
                 cur_prior = vel_prior[:,irow,icol]
                     

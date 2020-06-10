@@ -307,7 +307,7 @@ class CorrMaps():
         else:
             return self.conf_cmaps, self.cmap_mifiles, self.all_lagtimes
     
-    def GetCorrTimetrace(self, pxLocs, zRange=None, lagList=None, excludeLags=[], lagFlip=False):
+    def GetCorrTimetrace(self, pxLocs, zRange=None, lagList=None, excludeLags=[], lagFlip=False, returnCoords=False, squeezeResult=True):
         """Returns (t, tau) correlations for a given set of pixels
         
         Parameters
@@ -321,12 +321,21 @@ class CorrMaps():
                     if True: correlations having the given time as second correlated time
                              will be returned if available
                   if 'BOTH': both signs will be stitched together
+        returnCoords : if True, also returns the list of times, lagtimes and lagsigns
+        squeezeResult : if True, squeeze the output numpy array to remove dimensions if size along axis is 1
         
         Returns
         -------
-        If only one pixel was asked, single 2D array: one row per time delay
-        Otherwise, 3D array, one matrix per pixel
+        res: If only one pixel was asked, single 2D array: one row per time delay
+                Otherwise, 3D array, one matrix per pixel
+        if returnCoords is True:
+        tvalues: list of image times
+        lagList: list of lagtimes, in image units. All elements are also contained in self.all_lagtimes
+                if lagFlip=='BOTH' lags are duplicated, first descending and then ascending
+        lagFlip: boolean value or list of boolean values indicating whether the lagtime is flipped
+                if signle boolean values, all values are interpreted as equally flipped
         """
+        
         self.GetCorrMaps()
         if lagList is None:
             lagList = self.all_lagtimes
@@ -337,16 +346,37 @@ class CorrMaps():
             listFlip_pos = list(np.ones_like(lagList_pos, dtype=bool)*False)
             lagList_neg = list(lagSet).copy()
             lagList_neg.sort(reverse=True)
+            # 0 is only counted once
+            if 0 in lagList_neg:
+                lagList_neg.remove(0)
             listFlip_neg = list(np.ones_like(lagList_pos, dtype=bool)*True)
             lagList = lagList_neg+lagList_pos
             lagFlip = listFlip_neg+listFlip_pos
         else:
             lagList = list(lagSet)
             lagList.sort(reverse=lagFlip)
-            
-        return self.GetCorrValues(pxLocs, list(range(*self.cmap_mifiles[1].Validate_zRange(zRange))), lagList, lagFlip)
         
-    def GetCorrValues(self, pxLocs, tList, lagList, lagFlip=None):
+        tvalues = list(range(*self.cmap_mifiles[1].Validate_zRange(zRange)))
+        res = self.GetCorrValues(pxLocs, tvalues, lagList, lagFlip=lagFlip, do_squeeze=squeezeResult)
+        if returnCoords:
+            return res, tvalues, lagList, lagFlip
+        else:
+            return res
+        
+    def GetCorrValues(self, pxLocs, tList, lagList, lagFlip=None, do_squeeze=True):
+        """Get correlation values relative to a bunch of pixel location, time points and lags
+        
+        Parameters
+        ----------
+        pxLocs: pixel location [row, col] or list of pixel locations
+        tList : time, in image units, or list of times
+        lagList: lagtime, in image units (must be present in self.all_lagtimes)
+                 or list of lagtimes
+        lagFlip: boolean or list of boolean with same shape as lagList
+                 indicates whether the time specified in tList is the smallest (lagFlip==False)
+                 or the larges (lagFlip==True) of the two times that are correlated
+        do_squeeze : if True, squeeze the output numpy array to remove dimensions if size along axis is 1
+        """
         self.GetCorrMaps()
         if (type(pxLocs[0]) not in [list, tuple, np.ndarray]):
             pxLocs = [pxLocs]
@@ -374,5 +404,8 @@ class CorrMaps():
                         for pidx in range(res.shape[0]):
                             res[pidx, lidx, tidx] = cur_mifile._read_pixels(px_num=1,\
                                        seek_pos=cur_mifile._get_offset(img_idx=img_idx, row_idx=pxLocs[pidx][0], col_idx=pxLocs[pidx][1]))
-        return np.squeeze(res)
+        if do_squeeze:
+            return np.squeeze(res)
+        else:
+            return res
        
