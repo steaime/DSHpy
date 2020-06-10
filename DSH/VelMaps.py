@@ -122,20 +122,49 @@ def g2m1_parab(displ, q, d0=1.0, baseline=0):
         dotpr = np.multiply(q, displ)
     return (np.pi/4)*np.true_divide(np.square(np.abs(ssp.erf(np.sqrt(-1j*dotpr)))),np.abs(dotpr))
 
-def _qdr_g_relation(zProfile='Parabolic'):
+def g2m1_affine(displ, q, d0=1.0, baseline=0):
+    """Simulates correlation data from given displacements
+        under the assumption of affine velocity profile
+    
+    Parameters
+    ----------
+    q: scattering vector (float), in units of inverse displacements
+    d0: correlation value limit at zero delay. Lower than 1.0 because of camera noise
+    baseline: baseline for correlation function. Larger than 0.0 because of stray light
+    """
+    if (q == 1.0):
+        dotpr = displ
+    else:
+        dotpr = np.multiply(q, displ)
+    return np.square(np.true_divide(np.sin(dotpr),dotpr))
+
+
+def _qdr_g_relation(zProfile='Parabolic', d0=1.0, baseline=0.0):
     """Generate a lookup table for inverting correlation function
         to give the dot product q*dr, where q is the scattering vector 
         and dt is the displacement cumulated over time delay tau and
         projected along q
         NOTE: displacements are sorted in descending order, and truncated so that
             correlations are increasing monotonically, to use _invert_monotonic
+    
+    Parameters
+    ----------
+    zProfile : velocity profile for which correlation have to be modeled
+                available options: Parabolic | Affine
+    d0, baseline: correlation baselines
     """
     if (zProfile=='Parabolic'):
         dr_g = np.zeros([2,4500])
-        dr_g[0] = np.linspace(4.5, 0.001, num=4500)
-        dr_g[1] = g2m1_parab(dr_g[0], q=1.0, d0=1.0, baseline=0.0)
+        dr_g[0] = np.linspace(4.5, 0.001, num=dr_g.shape[1])
+        dr_g[1] = g2m1_parab(dr_g[0], 1.0, d0, baseline)
         #(np.pi/4)*np.true_divide(np.square(np.abs(ssp.erf(np.sqrt(-dr_g[0]*1j)))), np.abs(dr_g[0]))
-        dr_g[1][4499] = 1 #to prevent correlation to be higher than highest value in array
+        #dr_g[1][-1] = d0
+        return dr_g
+    elif (zProfile=='Affine'):
+        dr_g = np.zeros([2,3140])
+        dr_g[0] = np.linspace(3.14, 0.001, num=dr_g.shape[1])
+        dr_g[1] = g2m1_affine(dr_g[0], 1.0, d0, baseline)
+        #dr_g[1][-1] = d0
         return dr_g
     else:
         raise ValueError(str(zProfile) + 'z profile not implemented yet')
