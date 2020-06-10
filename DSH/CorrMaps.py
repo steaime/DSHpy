@@ -307,7 +307,7 @@ class CorrMaps():
         else:
             return self.conf_cmaps, self.cmap_mifiles, self.all_lagtimes
     
-    def GetCorrTimetrace(self, pxLocs, zRange=None, lagList=None, excludeLags=[], lagFlip=False):
+    def GetCorrTimetrace(self, pxLocs, zRange=None, lagList=None, excludeLags=[], lagFlip=False, debug=False):
         """Returns (t, tau) correlations for a given set of pixels
         
         Parameters
@@ -340,11 +340,14 @@ class CorrMaps():
             listFlip_neg = list(np.ones_like(lagList_pos, dtype=bool)*True)
             lagList = lagList_neg+lagList_pos
             lagFlip = listFlip_neg+listFlip_pos
+            if debug:
+                print(lagList)
+                print(lagFlip)
         else:
             lagList = list(lagSet)
             lagList.sort(reverse=lagFlip)
             
-        return self.GetCorrValues(pxLocs, list(range(*self.cmap_mifiles[1].Validate_zRange(zRange))), lagList, lagFlip)
+        return self.GetCorrValues(pxLocs, list(range(*self.cmap_mifiles[1].Validate_zRange(zRange))), lagList, lagFlip, debug)
         
     def GetCorrValues(self, pxLocs, tList, lagList, lagFlip=None, debug=False):
         self.GetCorrMaps()
