@@ -326,12 +326,12 @@ class CorrMaps():
         self.GetCorrMaps()
         if lagList is None:
             lagList = self.all_lagtimes
+        lagList = list((set(lagList) & set(self.all_lagtimes)) - set(excludeLags))
         return self.GetCorrValues(pxLocs, list(range(*self.cmap_mifiles[1].Validate_zRange(zRange))), lagList)
         
         list_z = list(range(*self.cmap_mifiles[1].Validate_zRange(zRange)))
         if (type(pxLocs[0]) not in [list, tuple, np.ndarray]):
             pxLocs = [pxLocs]
-        lagList = list((set(lagList) & set(self.all_lagtimes)) - set(excludeLags))
         lagList.sort()
         res = np.ones((len(pxLocs), len(lagList), len(list_z))) * np.nan
         for lidx in range(len(lagList)):
