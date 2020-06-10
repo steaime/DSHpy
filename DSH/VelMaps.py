@@ -616,7 +616,7 @@ class VelMaps():
         else:
             return vmap
 
-    def ProcessSinglePixel(self, pxLoc):
+    def ProcessSinglePixel(self, pxLoc, tRange=None, debug=False):
         """Computes v(t) for one single pixel
         
         Returns
@@ -629,12 +629,12 @@ class VelMaps():
             self._load_metadata_from_corr()
 
         # Load correlation data. Set first row (d0) to ones and set zero correlations to NaN
-        corr_data = self.corr_maps.GetCorrTimetrace(pxLoc, zRange=None)
+        corr_data = self.corr_maps.GetCorrTimetrace(pxLoc, zRange=tRange)
         corr_data[0] = np.ones_like(corr_data[0])
         corr_data[np.where(corr_data==0)]=np.nan
 
         # Find list of compatible lagtimes
-        corrFrameIdx_list, all_lag_idxs, all_t1_idxs, all_sign_list = self._find_compatible_lags()
+        corrFrameIdx_list, all_lag_idxs, all_t1_idxs, all_sign_list = self._find_compatible_lags(tRange)
 
         # Prepare memory
         qdr_g = g2m1_sample(zProfile=self.zProfile)
@@ -662,7 +662,8 @@ class VelMaps():
                     zero_lidx = lidx
 
             # Fine tune selection of lags to include
-            use_mask = self._tunemask_pixel(cur_corr > self.conservative_cutoff, zero_lidx, cur_corr)
+            try_mask = cur_corr > self.conservative_cutoff
+            use_mask = self._tunemask_pixel(try_mask, zero_lidx, cur_corr)
 
             # Perform linear fit
             cur_dt = cur_lags[use_mask]
@@ -680,6 +681,10 @@ class VelMaps():
             vel[tidx] = slope
             interc[tidx] = intercept
             fiterr[tidx] = std_err
+            
+            if debug:
+                print('   *** ' + str(tidx) + ' - ' + str(np.count_nonzero(use_mask)) + ' points, dt=[' + str(np.min(cur_dt)) + ',' + str(np.max(cur_dt)) + ']' +\
+                      ' - dr=[' + str(np.min(cur_dr)) + ',' + str(np.max(cur_dr)) + '] - fit result: ' + str([slope, intercept, r_value, p_value, std_err]))
 
         return vel, interc, fiterr
 
