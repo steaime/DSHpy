@@ -617,7 +617,7 @@ class VelMaps():
         else:
             return vmap
 
-    def ProcessSinglePixel(self, pxLoc, tRange=None, debug=False, special_out=[]):
+    def ProcessSinglePixel(self, pxLoc, tRange=None, debugPrint=False, debugFile=None):
         """Computes v(t) for one single pixel
         
         Returns
@@ -645,6 +645,9 @@ class VelMaps():
         vel = np.zeros(len(all_lag_idxs))
         interc = np.zeros_like(vel)
         fiterr = np.zeros_like(vel)
+        
+        if debugFile is not None:
+            fdeb = open(os.path.join(self.outFolder, debugFile), 'w')
             
         for tidx in range(len(vel)):
             
@@ -657,16 +660,9 @@ class VelMaps():
                 if (lag_idxs[lidx] > 0):
                     if (all_sign_list[tidx][lidx] > 0):
                         cur_corr[lidx] = corr_data[lag_idxs[lidx],tidx]
-                        if debug and tidx in special_out:
-                            print('   +++ ' + str(lidx) + ' - ' + str(lag_idxs[lidx]) + ' - ' + str(corr_data[lag_idxs[lidx],tidx]))
                     else:
                         if tidx >= self.lagTimes[lag_idxs[lidx]]:
                             cur_corr[lidx] = corr_data[lag_idxs[lidx],tidx-self.lagTimes[lag_idxs[lidx]]]
-                            if debug and tidx in special_out:
-                                print('   --- ' + str(lidx) + ' - ' + str(lag_idxs[lidx]) + ' - ' + str(corr_data[lag_idxs[lidx],tidx-self.lagTimes[lag_idxs[lidx]]]))
-                        else:
-                            if debug and tidx in special_out:
-                                print('   ooo ' + str(lidx) + ' - ' + str(lag_idxs[lidx]) + ' - ' + str(self.lagTimes[lag_idxs[lidx]]) + ' NO DATA')
                     cur_lags[lidx] = self.lagTimes[lag_idxs[lidx]]*1.0/self.GetFPS()
                 else:
                     # if lag_idxs[lidx]==0, keep correlations equal to ones and lags equal to zero
@@ -694,14 +690,32 @@ class VelMaps():
             interc[tidx] = intercept
             fiterr[tidx] = std_err
             
-            if debug:
+            if debugPrint:
                 print('   *** ' + str(tidx) + ' - ' + str(np.count_nonzero(use_mask)) + ' points, dt=[' + str(np.min(cur_dt)) + ',' + str(np.max(cur_dt)) + ']' +\
                       ' - dr=[' + str(np.min(cur_dr)) + ',' + str(np.max(cur_dr)) + '] - fit result: ' + str([slope, intercept, r_value, p_value, std_err]))
-                if tidx in special_out:
-                    print(cur_corr)
-                    print(use_mask)
-                    print(cur_dt)
-                    print(cur_dr)
+            if debugFile is not None:
+                strWrite = '\n*******************'
+                strWrite += '\nt=' + str(tidx)
+                strWrite += '\n-------------------'
+                strWrite += '\norig_lag\torig_corr\tsign\tmask'
+                for i in range(len(cur_corr)):
+                    strWrite += '\n' + str(self.lagTimes[lag_idxs[i]]) + '\t' + str(cur_corr[i]) + '\t' + str(all_sign_list[tidx][i]) + '\t' + str(use_mask[i])
+                strWrite += '\n-------------------'
+                strWrite += '\nfit_dt\tfit_dr'
+                for i in range(len(cur_dt)):
+                    strWrite += '\n' + str(cur_dt[i]) + '\t' + str(cur_dr[i])
+                strWrite += '\n-------------------'
+                strWrite += '\nFit results:'
+                strWrite += '\n  slope=' + str(slope)
+                strWrite += '\n  intercept=' + str(intercept)
+                strWrite += '\n  r_value=' + str(r_value)
+                strWrite += '\n  p_value=' + str(p_value)
+                strWrite += '\n  std_err=' + str(std_err)
+                strWrite += '\n*******************'                
+                fdeb.write(strWrite)
+
+        if debugFile is not None:
+            fdeb.close()
 
         return vel, interc, fiterr
 
