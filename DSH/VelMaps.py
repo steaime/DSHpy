@@ -616,7 +616,7 @@ class VelMaps():
         else:
             return vmap
 
-    def ProcessSinglePixel(self, pxLoc, tRange=None, debug=False):
+    def ProcessSinglePixel(self, pxLoc):
         """Computes v(t) for one single pixel
         
         Returns
@@ -629,12 +629,12 @@ class VelMaps():
             self._load_metadata_from_corr()
 
         # Load correlation data. Set first row (d0) to ones and set zero correlations to NaN
-        corr_data = self.corr_maps.GetCorrTimetrace(pxLoc, zRange=tRange)
+        corr_data = self.corr_maps.GetCorrTimetrace(pxLoc, zRange=None)
         corr_data[0] = np.ones_like(corr_data[0])
         corr_data[np.where(corr_data==0)]=np.nan
 
         # Find list of compatible lagtimes
-        corrFrameIdx_list, all_lag_idxs, all_t1_idxs, all_sign_list = self._find_compatible_lags(tRange)
+        corrFrameIdx_list, all_lag_idxs, all_t1_idxs, all_sign_list = self._find_compatible_lags()
 
         # Prepare memory
         qdr_g = g2m1_sample(zProfile=self.zProfile)
@@ -661,11 +661,11 @@ class VelMaps():
                     zero_lidx = lidx
 
             # Fine tune selection of lags to include
-            use_mask = self._tunemask_pixel(cur_corr > self.conservative_cutoff, zero_lidx, corr_data)
+            use_mask = self._tunemask_pixel(cur_corr > self.conservative_cutoff, zero_lidx, cur_corr)
 
             # Perform linear fit
             cur_dt = cur_lags[use_mask]
-            cur_dr = np.true_divide(invert_monotonic(corr_data[use_mask], qdr_g), self.qValue)
+            cur_dr = np.true_divide(invert_monotonic(cur_corr[use_mask], qdr_g), self.qValue)
             if self.signedLags:
                 cur_dt = np.multiply(cur_dt, all_sign_list[tidx][use_mask])
                 cur_dr = np.multiply(cur_dr, all_sign_list[tidx][use_mask])
