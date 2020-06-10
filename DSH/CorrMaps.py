@@ -307,14 +307,16 @@ class CorrMaps():
         else:
             return self.conf_cmaps, self.cmap_mifiles, self.all_lagtimes
     
-    def GetCorrTimetrace(self, pxLocs, zRange=None, lagList=None):
+    def GetCorrTimetrace(self, pxLocs, zRange=None, lagList=None, excludeLags=[]):
         """Returns (t, tau) correlations for a given set of pixels
         
         Parameters
         ----------
-        pxLocs : list of pixel locations, each location being a tuple (row, col)
-        zRange : range of time (or z) slices to sample
-        lagList : list of lagtimes
+        pxLocs :  list of pixel locations, each location being a tuple (row, col)
+        zRange :  range of time (or z) slices to sample
+        lagList : list of lagtimes. If None, all available lagtimes will be loaded,
+                  except the ones eventually contained in excludeLags
+        excludeLags: if lagList is None, list of lagtimes to be excluded
         
         Returns
         -------
@@ -327,9 +329,7 @@ class CorrMaps():
             pxLocs = [pxLocs]
         if lagList is None:
             lagList = self.all_lagtimes
-        else:
-            lagList = list(set(lagList) & set(self.all_lagtimes))
-        lagList.sort()
+        lagList = list((set(lagList) & set(self.all_lagtimes)) - set(excludeLags)).sort()
         res = np.ones((len(pxLocs), len(lagList), len(list_z))) * np.nan
         for lidx in range(len(lagList)):
             cur_mifile = self.cmap_mifiles[self.all_lagtimes.index(lagList[lidx])]

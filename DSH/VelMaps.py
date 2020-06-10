@@ -179,15 +179,24 @@ def g2m1_sample(zProfile='Parabolic', q=1.0, d0=1.0, baseline=0.0, sample_dr=Non
         dr_g = model(sample_dr, q, d0, baseline)
     return dr_g
 
-def invert_monotonic(data, _lut):
+def invert_monotonic(data, _lut, overflow_to_nan=False):
     """Invert monotonic function based on a lookup table
         NOTE: data in the lookup table are supposed to be sorted such that
         the second column (the y axis) is sorted in ascending order
+    
+    Parameters
+    ----------
+    data: 1D array of correlation to be converted to displacements
+    _lut: lookup table for inversion
+    overflow_to_nan : if true, set all elements outside the LUT range to nan
     """
-    res = np.zeros(len(data))
+    res = np.ones_like(data)*np.nan
+    xmin, xmax = np.min(_lut[0]), np.max(_lut[0])
     for i in range(len(data)):
-        index = bisect.bisect_left(_lut[1], data[i])
-        res[i] = _lut[0][min(index, len(_lut[0])-1)]
+        if not np.isnan(data[i]):
+            if not (overflow_to_nan and (data[i]<xmin or data[i]>xmax)):
+                index = bisect.bisect_left(_lut[1], data[i])
+                res[i] = _lut[0][min(index, len(_lut[0])-1)]
     return res
 
 def _get_kw_from_config(conf=None):
@@ -254,11 +263,11 @@ class VelMaps():
                     the current time is the first one or the second one correlated
                     In this case, displacements will also be assigned the same sign as the lag
                     otherwise, we will work with absolute values only
-                    This will "flatten" the linear fits, reducing slopes and increasing intercepts
+                    Working with absolute values will "flatten" the linear fits, reducing slopes and increasing intercepts
                     It does a much better job accounting for noise contributions to corr(tau->0)
                     if signed_lags==False, the artificial correlation value at lag==0 will not be processed
                     (it is highly recommended to set signed_lags to False)
-        consec_only : only select sorrelation chunk with consecutive True value of the mask around tau=0
+        consec_only : if True only select sorrelation chunk with consecutive True value of the mask around tau=0
         max_holes : integer, only used if consecutive_only==True.
                     Largest hole to be ignored before chunk is considered as discontinued
         mask_opening : None or integer > 1.
@@ -419,8 +428,8 @@ class VelMaps():
         combined_corrmap = MI.MergeMIfiles(outFileName, vmap_mi_files, os.path.join(out_folder, '_vMap_metadata.ini'))
         return combined_corrmap
 
-    def Compute(self, tRange=None, file_suffix='', silent=True, return_err=False, debug=False):
-        """Computes correlation maps
+    def Compute(self, tRange=None, file_suffix='', silent=True, return_err=False):
+        """Computes velocity maps
         
         Parameters
         ----------
@@ -430,15 +439,13 @@ class VelMaps():
         silent : bool. If set to False, procedure will print to output every time steps it goes through. 
                 otherwise, it will run silently
         return_err : bool. if True, return mean squred error on the fit
-        debug : bool. If set to True, procedure will save more detailed output, including
-                fit intercept, errors and number of fitted datapoints
                 
         Returns
         -------
         res_3D : 3D velocity map
         """
 
-        if (silent==False or debug==True):
+        if not silent:
             start_time = time.time()
             print('Computing velocity maps:')
             cur_progperc = 0
@@ -469,10 +476,6 @@ class VelMaps():
         if return_err:
             verr = np.zeros(_MapShape)
             write_verr = MI.MIfile(os.path.join(self.outFolder, '_vErr' + str(file_suffix) + '.dat'), self.GetMetadata())
-        if debug:
-            write_interc = MI.MIfile(os.path.join(self.outFolder, '_interc' + str(file_suffix) + '.dat'), self.GetMetadata())
-            write_pval = MI.MIfile(os.path.join(self.outFolder, '_pval' + str(file_suffix) + '.dat'), self.GetMetadata())
-            write_nvals = MI.MIfile(os.path.join(self.outFolder, '_nvals' + str(file_suffix) + '.dat'), self.GetMetadata())
             
         for tidx in range(_MapShape[0]):
             
@@ -504,8 +507,8 @@ class VelMaps():
             
             # Populate arrays
             cur_cmaps = np.ones([len(lag_idxs), self.ImageHeight(), self.ImageWidth()])
-            cur_lags = np.zeros([len(lag_idxs), self.ImageHeight(), self.ImageWidth()])
-            cur_signs = np.ones([len(lag_idxs), self.ImageHeight(), self.ImageWidth()], dtype=np.int8)
+            cur_lags = np.zeros_like(cur_cmaps)
+            cur_signs = np.ones_like(cur_cmaps, dtype=np.int8)
             zero_lidx = -1
             for lidx in range(len(lag_idxs)):
                 if (lag_idxs[lidx] > 0):
@@ -518,10 +521,6 @@ class VelMaps():
                     zero_lidx = lidx
             cur_mask = cur_cmaps > self.conservative_cutoff
             
-            if debug:
-                cur_nvals = np.empty(self.ImageShape())
-                cur_interc = np.empty(self.ImageShape())
-                cur_pval = np.empty(self.ImageShape())
             
             for ridx in range(self.ImageHeight()):
                 for cidx in range(self.ImageWidth()):
@@ -594,26 +593,14 @@ class VelMaps():
                                 slope, intercept, r_value, p_value, std_err = stats.linregress(cur_dt, cur_dr)
                     else:
                         slope, std_err = np.nan, np.nan
-                        if debug:
-                            intercept, p_value = np.nan, np.nan
                         
                     vmap[tidx,ridx,cidx] = slope
                     if return_err:
                         verr[tidx,ridx,cidx] = std_err
-                    if debug:
-                        cur_nvals[ridx,cidx] = len(cur_dr)
-                        cur_interc[ridx,cidx] = intercept
-                        cur_pval[ridx,cidx] = p_value
 
             write_vmap.WriteData(vmap[tidx], closeAfter=False)
             if return_err:
                 write_verr.WriteData(verr[tidx], closeAfter=False)
-            if debug:
-                write_interc.WriteData(cur_interc, closeAfter=False)
-                write_pval.WriteData(cur_pval, closeAfter=False)
-                write_nvals.WriteData(cur_nvals, closeAfter=False)
-                print('t={0} -- slope range:[{1},{2}], interc range:[{3},{4}], elapsed: {5:.1f}s'.format(tidx, np.nanmin(vmap[tidx]), np.nanmax(vmap[tidx]),\
-                                                                                      np.nanmin(cur_interc), np.nanmax(cur_interc), time.time()-start_time))
 
             if not silent:
                 cur_p = (tidx+1)*100/_MapShape[0]
@@ -628,6 +615,72 @@ class VelMaps():
             return vmap, verr
         else:
             return vmap
+
+    def ProcessSinglePixel(self, pxLoc, tRange=None, debug=False):
+        """Computes v(t) for one single pixel
+        
+        Returns
+        -------
+        vel : 1D array with velocity as a function of time
+        verr : 1D array with linear fit errors
+        """
+
+        if not self._loaded_metadata:
+            self._load_metadata_from_corr()
+
+        # Load correlation data. Set first row (d0) to ones and set zero correlations to NaN
+        corr_data = self.corr_maps.GetCorrTimetrace(pxLoc, zRange=tRange)
+        corr_data[0] = np.ones_like(corr_data[0])
+        corr_data[np.where(corr_data==0)]=np.nan
+
+        # Find list of compatible lagtimes
+        corrFrameIdx_list, all_lag_idxs, all_t1_idxs, all_sign_list = self._find_compatible_lags(tRange)
+
+        # Prepare memory
+        qdr_g = g2m1_sample(zProfile=self.zProfile)
+        vel = np.zeros(len(corrFrameIdx_list))
+        verr = np.zeros_like(vel)
+            
+        for tidx in range(len(vel)):
+            
+            # Populate arrays
+            lag_idxs = all_lag_idxs[tidx]
+            cur_corr = np.ones(len(lag_idxs))
+            cur_lags = np.zeros_like(cur_corr)
+            zero_lidx = -1
+            for lidx in range(len(lag_idxs)):
+                if (lag_idxs[lidx] > 0):
+                    if (all_sign_list[tidx][lidx] > 0):
+                        cur_corr[lidx] = corr_data[lag_idxs[lidx],tidx]
+                    else:
+                        cur_corr[lidx] = corr_data[lag_idxs[lidx],tidx-self.lagTimes[lag_idxs[lidx]]]
+                    cur_lags[lidx] = self.lagTimes[lag_idxs[lidx]]*1.0/self.GetFPS()
+                else:
+                    # if lag_idxs[lidx]==0, keep correlations equal to ones and lags equal to zero
+                    # just memorize what this index is
+                    zero_lidx = lidx
+
+            # Fine tune selection of lags to include
+            use_mask = self._tunemask_pixel(cur_corr > self.conservative_cutoff, zero_lidx, corr_data)
+
+            # Perform linear fit
+            cur_dt = cur_lags[use_mask]
+            cur_dr = np.true_divide(invert_monotonic(corr_data[use_mask], qdr_g), self.qValue)
+            if self.signedLags:
+                cur_dt = np.multiply(cur_dt, all_sign_list[tidx][use_mask])
+                cur_dr = np.multiply(cur_dr, all_sign_list[tidx][use_mask])
+            if (np.max(cur_dt)==np.min(cur_dt)):
+                slope = np.nanmean(cur_dr)*1.0/cur_dt[0]
+                intercept, r_value, p_value, std_err = np.nan, np.nan, np.nan, np.nan
+            else:
+                slope, intercept, r_value, p_value, std_err = stats.linregress(cur_dt, cur_dr)  
+            
+            # Save result
+            vel[tidx] = slope
+            verr[tidx] = std_err
+
+        return vel, verr
+
 
     def GetMIfile(self):
         """Returns velocity map as MIfile, if found in folder
@@ -849,12 +902,131 @@ class VelMaps():
             
         self._loaded_metadata = True
 
+    def _find_compatible_lags(self, tRange=None):
+        """Finds a list of all (t, tau) couples needed to compute v(t*) at all times t*
+        
+        Parameters
+        ----------
+        tRange: range of times t* for which v(t*) needs to be computed
+        
+        Returns
+        -------
+        fridxs:    1D list of integers. Indexes of all relevant correlation map frames
+        lag_idxs:  2D list of integers. For every t*, list of all lag indexes for which correlations are available
+                   lag time in image units will be self.lagTimes[lag_idxs[t*][i]]
+        t1_idxs:   2D list of integers. For every t* and i-th lagtime t1_idxs[t*][i] will be the first of the
+                   two timepoints that are correlated. Thus, t1_idxs[t*][i]==fridxs[t*] for positive lagtimes and
+                   t1_idxs[t*][i]==fridxs[t*]-self.lagTimes[i] for negative lagtimes
+        sign_list: 2D list of integers. This list keeps track of positive and negative lagtimes by saving +1 and -1 respectively
+        """
+        
+        if (tRange is None):
+            tRange = self.tRange
+        else:
+            tRange = self.cmap_mifiles[1].Validate_zRange(tRange)
+        if (tRange is None):
+            fridxs = list(range(self.MapShape[0]))
+        else:
+            fridxs = list(range(*tRange))
 
+        # find compatible lag indexes
+        lag_idxs = []  # index of lag in all_lagtimes list
+        t1_idxs = []   # tidx if tidx is t1, tidx-lag if tidx is t2
+        sign_list = [] # +1 if tidx is t1, -1 if tidx is t2
+        
+        for tidx in range(len(fridxs)):
+            cur_lag_idxs = []
+            cur_t1_idxs = []
+            cur_sign_list = []
+            # From largest to smallest, 0 excluded
+            for lidx in range(len(self.lagTimes)-1, 0, -1):
+                if (self.lagTimes[lidx] <= fridxs[tidx]):
+                    bln_add = True
+                    if (self.lagRange is not None):
+                        bln_add = (-1.0*self.lagTimes[lidx] >= self.lagRange[0])
+                    if bln_add:
+                        cur_t1_idxs.append(fridxs[tidx]-self.lagTimes[lidx])
+                        cur_lag_idxs.append(lidx)
+                        cur_sign_list.append(-1)
+            # From smallest to largest, 0 included
+            for lidx in range(len(self.lagTimes)):
+                bln_add = True
+                if (self.lagRange is not None):
+                    bln_add = (self.lagTimes[lidx] <= self.lagRange[1])
+                if bln_add:
+                    cur_t1_idxs.append(fridxs[tidx])
+                    cur_lag_idxs.append(lidx)
+                    cur_sign_list.append(1)
+            lag_idxs.append(cur_lag_idxs)
+            t1_idxs.append(cur_t1_idxs)
+            sign_list.append(cur_sign_list)
 
+        return fridxs, lag_idxs, t1_idxs, sign_list
+    
+    
+    def _tunemask_pixel(self, try_mask, lagzero_idx, corrdata=None):
+        """Tunes mask for pixel-by-pixel linear fit
+        
+        Parameters
+        ----------
+        try_mask : 1D boolean array. First guess for the mask
+        lagzero_idx : index of zero lag (separating positive from negative time delays)
+        corrdata : 1D float array, optional. Array of correlation data
+                    it is used if final mask is too short, to slightly relax the correlation threshold
+                    
+        Returns
+        -------
+        use_mask : 1D boolean array. Mask to be used for linear fit
+        """
+        
+        if (self.maskOpening is not None and np.count_nonzero(try_mask) > 2):
+            for cur_open_range in range(self.maskOpening, 2, -1):
+                # remove thresholding noise by removing N-lag-wide unmasked domains
+                cur_mask_denoise = binary_opening(try_mask, structure=np.ones(cur_open_range))
+                if (np.count_nonzero(try_mask) > 2):
+                    use_mask = cur_mask_denoise
+                    break
+        if self.consecOnly:
+            use_mask = np.zeros(len(try_mask), dtype=bool)
+            cur_hole = 0
+            for ilag_pos in range(lagzero_idx+1, len(try_mask)):
+                if try_mask[ilag_pos]:
+                    use_mask[ilag_pos] = True
+                    cur_hole = 0
+                else:
+                    cur_hole = cur_hole + 1
+                if (cur_hole > self.maxHoles):
+                    break
+            cur_hole = 0
+            for ilag_neg in range(lagzero_idx, -1, -1):
+                if try_mask[ilag_neg]:
+                    use_mask[ilag_neg] = True
+                    cur_hole = 0
+                else:
+                    cur_hole = cur_hole + 1
+                if (cur_hole > self.maxHoles):
+                    break
+        else:
+            use_mask = try_mask
 
-
-
-
+        # Only use zero lag correlation when dealing with signed lagtimes
+        use_mask[lagzero_idx] = self.signedLags
+            
+        if (np.count_nonzero(use_mask) <= 1):
+            use_mask[lagzero_idx] = True
+            # Eventually use correlation data, if available
+            if corrdata is not None:
+                # If there are not enough useful correlation values, 
+                # check if the first available lagtimes can be used at least with a generous cutoff
+                # If they are, use them, otherwise just set that cell to nan
+                if (lagzero_idx+1 < len(try_mask)):
+                    if (corrdata[lagzero_idx+1] > self.generous_cutoff):
+                        use_mask[lagzero_idx+1] = True
+                if (lagzero_idx > 0):
+                    if (corrdata[lagzero_idx-1] > self.generous_cutoff):
+                        use_mask[lagzero_idx-1] = True
+        
+        return use_mask
 
 
 

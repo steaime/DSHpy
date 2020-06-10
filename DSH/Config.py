@@ -53,8 +53,7 @@ class Config():
             sect_keys = self.config._sections[sect_name].keys()
             str_res += '\n| ' + str(sect_name).ljust(14) + ': <' + str(len(sect_keys)) + ' keys>'
             for cur_key in sect_keys:
-                str_res += '\n| ' + ' '.ljust(14) + ': ' + str(cur_key) + ' = ' +\
-                            self.config._sections[sect_name][cur_key]
+                str_res += '\n| ' + ' '.ljust(16) + str(cur_key) + ' = ' + self.config._sections[sect_name][cur_key]
         str_res += '\n|---------------+---------------'
         return str_res
     
