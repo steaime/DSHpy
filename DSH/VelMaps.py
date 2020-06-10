@@ -616,7 +616,7 @@ class VelMaps():
         else:
             return vmap
 
-    def ProcessSinglePixel(self, pxLoc, tRange=None, debug=False):
+    def ProcessSinglePixel(self, pxLoc, tRange=None, debug=False, special_out=[]):
         """Computes v(t) for one single pixel
         
         Returns
@@ -688,6 +688,11 @@ class VelMaps():
             if debug:
                 print('   *** ' + str(tidx) + ' - ' + str(np.count_nonzero(use_mask)) + ' points, dt=[' + str(np.min(cur_dt)) + ',' + str(np.max(cur_dt)) + ']' +\
                       ' - dr=[' + str(np.min(cur_dr)) + ',' + str(np.max(cur_dr)) + '] - fit result: ' + str([slope, intercept, r_value, p_value, std_err]))
+                if tidx in special_out:
+                    print(cur_corr)
+                    print(use_mask)
+                    print(cur_dt)
+                    print(cur_dr)
 
         return vel, interc, fiterr
 
