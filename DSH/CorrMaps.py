@@ -324,11 +324,13 @@ class CorrMaps():
         Otherwise, 3D array, one matrix per pixel
         """
         self.GetCorrMaps()
+        if lagList is None:
+            lagList = self.all_lagtimes
+        return self.GetCorrValues(pxLocs, list(range(*self.cmap_mifiles[1].Validate_zRange(zRange))), lagList)
+        
         list_z = list(range(*self.cmap_mifiles[1].Validate_zRange(zRange)))
         if (type(pxLocs[0]) not in [list, tuple, np.ndarray]):
             pxLocs = [pxLocs]
-        if lagList is None:
-            lagList = self.all_lagtimes
         lagList = list((set(lagList) & set(self.all_lagtimes)) - set(excludeLags))
         lagList.sort()
         res = np.ones((len(pxLocs), len(lagList), len(list_z))) * np.nan
@@ -342,4 +344,27 @@ class CorrMaps():
         if (len(pxLocs) == 1):
             return res.reshape((len(lagList), len(list_z)))
         else:
-            return res       
+            return res
+        
+    def GetCorrValues(self, pxLocs, tList, lagList):
+        if (type(pxLocs[0]) not in [list, tuple, np.ndarray]):
+            pxLocs = [pxLocs]
+        if (type(tList) not in [list, tuple, np.ndarray]):
+            tList = [tList]
+        if (type(lagList) not in [list, tuple, np.ndarray]):
+            lagList = [lagList]
+        lagList = list(set(lagList) & set(self.all_lagtimes))
+        lagList.sort()
+        self.GetCorrMaps()
+        res = np.ones((len(pxLocs), len(lagList), len(tList)))*np.nan
+        for lidx in range(res.shape[1]):
+            cur_mifile = self.cmap_mifiles[self.all_lagtimes.index(lagList[lidx])]
+            if cur_mifile is not None:
+                for pidx, tidx in np.ndindex(res[:,0,:].shape):
+                    res[pidx, lidx, tidx] = cur_mifile._read_pixels(px_num=1,\
+                               seek_pos=cur_mifile._get_offset(img_idx=tList[tidx], row_idx=pxLocs[pidx][0], col_idx=pxLocs[pidx][1]))
+        if (len(pxLocs) == 1):
+            return res.reshape((len(lagList), len(tList)))
+        else:
+            return res
+       

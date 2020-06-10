@@ -665,7 +665,7 @@ class VelMaps():
                                 print('   --- ' + str(lidx) + ' - ' + str(lag_idxs[lidx]) + ' - ' + str(corr_data[lag_idxs[lidx],tidx-self.lagTimes[lag_idxs[lidx]]]))
                         else:
                             if debug and tidx in special_out:
-                                print('   ooo ' + str(lidx) + ' - ' + str(lag_idxs[lidx]) + ' - ' + str(self.lagTimes[lag_idxs[lidx]]) + ' EXCEPTION')
+                                print('   ooo ' + str(lidx) + ' - ' + str(lag_idxs[lidx]) + ' - ' + str(self.lagTimes[lag_idxs[lidx]]) + ' NO DATA')
                     cur_lags[lidx] = self.lagTimes[lag_idxs[lidx]]*1.0/self.GetFPS()
                 else:
                     # if lag_idxs[lidx]==0, keep correlations equal to ones and lags equal to zero
