@@ -665,7 +665,7 @@ class VelMaps():
                 print('   ### ' + str(use_mask))
 
             # Perform linear fit
-            cur_dt = lagList[use_mask]
+            cur_dt = np.true_divide(lagList[use_mask], self.GetFPS())
             cur_dr = np.true_divide(invert_monotonic(corr_data[0,:,tidx][use_mask], qdr_g), self.qValue)
             if self.signedLags:
                 cur_dt = np.multiply(cur_dt, lagsign[use_mask])
