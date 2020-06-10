@@ -139,12 +139,12 @@ def g2m1_affine(displ, q, d0=1.0, baseline=0):
     return np.square(np.true_divide(np.sin(dotpr),dotpr))
 
 
-def g2m1_sample(zProfile='Parabolic', q=1.0, d0=1.0, baseline=0.0, max_dr=None, step_dr=0.001):
+def g2m1_sample(zProfile='Parabolic', q=1.0, d0=1.0, baseline=0.0, sample_dr=None, max_dr=None, step_dr=0.001):
     """Generate a lookup table for inverting correlation function
         to give the dot product q*dr, where q is the scattering vector 
         and dt is the displacement cumulated over time delay tau and
         projected along q
-        NOTE: displacements are sorted in descending order, and truncated so that
+        NOTE: by default displacements are sorted in descending order, and truncated so that
             correlations are increasing monotonically, to use _invert_monotonic
     
     Parameters
@@ -154,9 +154,12 @@ def g2m1_sample(zProfile='Parabolic', q=1.0, d0=1.0, baseline=0.0, max_dr=None, 
     q: scattering vector (float), in units of inverse displacements
     d0: correlation value limit at zero delay. Lower than 1.0 because of camera noise
     baseline: baseline for correlation function. Larger than 0.0 because of stray light
-    max_dr: sample until this maximum displacement.
+    sample_dr: if None, displacements will be linearly sampled and a 2D LUT will be returned
+                otherwise, correlations will be computed using sample_dr as input displacements
+                and a 1D result will be returned
+    max_dr: sample until this maximum displacement (only used if sample_dr is None)
             if None, it will sample until the first correlation minimum
-    step_dr: generate linearly spaced displacement points with this step
+    step_dr: generate linearly spaced displacement points with this step (only used if sample_dr is None)
     """
     if (zProfile.upper()=='PARABOLIC'):
         model = g2m1_parab
@@ -168,12 +171,15 @@ def g2m1_sample(zProfile='Parabolic', q=1.0, d0=1.0, baseline=0.0, max_dr=None, 
             max_dr = 3.14
     else:
         raise ValueError(str(zProfile) + 'z profile not implemented yet')
-    dr_g = np.zeros([2,int(max_dr/step_dr)])
-    dr_g[0] = np.linspace(max_dr, step_dr, num=dr_g.shape[1])
-    dr_g[1] = model(dr_g[0], q, d0, baseline)
+    if sample_dr is None:
+        dr_g = np.zeros([2,int(max_dr/step_dr)])
+        dr_g[0] = np.linspace(max_dr, step_dr, num=dr_g.shape[1])
+        dr_g[1] = model(dr_g[0], q, d0, baseline)
+    else:
+        dr_g = model(sample_dr, q, d0, baseline)
     return dr_g
 
-def _invert_monotonic(data, _lut):
+def invert_monotonic(data, _lut):
     """Invert monotonic function based on a lookup table
         NOTE: data in the lookup table are supposed to be sorted such that
         the second column (the y axis) is sorted in ascending order
@@ -572,11 +578,11 @@ class VelMaps():
                         if self.signedLags:
                             cur_signs_1d = cur_signs[:,ridx,cidx][cur_use_mask]
                             cur_dt = np.multiply(cur_lags[:,ridx,cidx][cur_use_mask], cur_signs_1d)
-                            cur_dr = np.multiply(np.true_divide(_invert_monotonic(cur_data, qdr_g), self.qValue), cur_signs_1d)
+                            cur_dr = np.multiply(np.true_divide(invert_monotonic(cur_data, qdr_g), self.qValue), cur_signs_1d)
                             slope, intercept, r_value, p_value, std_err = stats.linregress(cur_dt, cur_dr)
                         else:
                             cur_dt = cur_lags[:,ridx,cidx][cur_use_mask]
-                            cur_dr = np.true_divide(_invert_monotonic(cur_data, qdr_g), self.qValue)
+                            cur_dr = np.true_divide(invert_monotonic(cur_data, qdr_g), self.qValue)
                             # Here there is the possibility to have only 2 datapoints with the same dt. We need to address that case
                             if (num_nonmasked == 2):
                                 if (np.max(cur_dt)==np.min(cur_dt)):
