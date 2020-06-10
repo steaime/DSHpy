@@ -381,6 +381,6 @@ class CorrMaps():
                     if img_idx is not None:
                         for pidx in range(res.shape[0]):
                             res[pidx, lidx, tidx] = cur_mifile._read_pixels(px_num=1,\
-                                       seek_pos=cur_mifile._get_offset(img_idx=tList[tidx], row_idx=pxLocs[pidx][0], col_idx=pxLocs[pidx][1]))
+                                       seek_pos=cur_mifile._get_offset(img_idx=img_idx, row_idx=pxLocs[pidx][0], col_idx=pxLocs[pidx][1]))
         return np.squeeze(res)
        
