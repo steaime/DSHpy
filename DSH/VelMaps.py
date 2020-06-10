@@ -639,7 +639,8 @@ class VelMaps():
         # Prepare memory
         qdr_g = g2m1_sample(zProfile=self.zProfile)
         vel = np.zeros(len(corrFrameIdx_list))
-        verr = np.zeros_like(vel)
+        interc = np.zeros_like(vel)
+        fiterr = np.zeros_like(vel)
             
         for tidx in range(len(vel)):
             
@@ -677,9 +678,10 @@ class VelMaps():
             
             # Save result
             vel[tidx] = slope
-            verr[tidx] = std_err
+            interc[tidx] = intercept
+            fiterr[tidx] = std_err
 
-        return vel, verr
+        return vel, interc, fiterr
 
 
     def GetMIfile(self):
