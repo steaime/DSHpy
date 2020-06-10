@@ -349,7 +349,7 @@ class CorrMaps():
             # 0 is only counted once
             if 0 in lagList_neg:
                 lagList_neg.remove(0)
-            listFlip_neg = list(np.ones_like(lagList_pos, dtype=bool)*True)
+            listFlip_neg = list(np.ones_like(lagList_neg, dtype=bool)*True)
             lagList = lagList_neg+lagList_pos
             lagFlip = listFlip_neg+listFlip_pos
         else:
