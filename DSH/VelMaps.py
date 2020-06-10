@@ -637,11 +637,11 @@ class VelMaps():
         corr_data[np.where(corr_data==0)]=np.nan
 
         # Find list of compatible lagtimes
-        corrFrameIdx_list, all_lag_idxs, all_t1_idxs, all_sign_list = self._find_compatible_lags(tRange)
+        all_lag_idxs, all_sign_list = self._find_compatible_lags(tRange)
 
         # Prepare memory
         qdr_g = g2m1_sample(zProfile=self.zProfile)
-        vel = np.zeros(len(corrFrameIdx_list))
+        vel = np.zeros(len(all_lag_idxs))
         interc = np.zeros_like(vel)
         fiterr = np.zeros_like(vel)
             
@@ -656,8 +656,16 @@ class VelMaps():
                 if (lag_idxs[lidx] > 0):
                     if (all_sign_list[tidx][lidx] > 0):
                         cur_corr[lidx] = corr_data[lag_idxs[lidx],tidx]
-                    elif tidx >= self.lagTimes[lag_idxs[lidx]]:
-                        cur_corr[lidx] = corr_data[lag_idxs[lidx],tidx-self.lagTimes[lag_idxs[lidx]]]
+                        if debug and tidx in special_out:
+                            print('   +++ ' + str(lidx) + ' - ' + str(lag_idxs[lidx]) + ' - ' + str(corr_data[lag_idxs[lidx],tidx]))
+                    else:
+                        if tidx >= self.lagTimes[lag_idxs[lidx]]:
+                            cur_corr[lidx] = corr_data[lag_idxs[lidx],tidx-self.lagTimes[lag_idxs[lidx]]]
+                            if debug and tidx in special_out:
+                                print('   --- ' + str(lidx) + ' - ' + str(lag_idxs[lidx]) + ' - ' + str(cur_corr[lidx] = corr_data[lag_idxs[lidx],tidx-self.lagTimes[lag_idxs[lidx]]]))
+                        else:
+                            if debug and tidx in special_out:
+                                print('   ooo ' + str(lidx) + ' - ' + str(lag_idxs[lidx]) + ' - ' + str(self.lagTimes[lag_idxs[lidx]]) + ' EXCEPTION')
                     cur_lags[lidx] = self.lagTimes[lag_idxs[lidx]]*1.0/self.GetFPS()
                 else:
                     # if lag_idxs[lidx]==0, keep correlations equal to ones and lags equal to zero
@@ -926,12 +934,8 @@ class VelMaps():
         
         Returns
         -------
-        fridxs:    1D list of integers. Indexes of all relevant correlation map frames
         lag_idxs:  2D list of integers. For every t*, list of all lag indexes for which correlations are available
                    lag time in image units will be self.lagTimes[lag_idxs[t*][i]]
-        t1_idxs:   2D list of integers. For every t* and i-th lagtime t1_idxs[t*][i] will be the first of the
-                   two timepoints that are correlated. Thus, t1_idxs[t*][i]==fridxs[t*] for positive lagtimes and
-                   t1_idxs[t*][i]==fridxs[t*]-self.lagTimes[i] for negative lagtimes
         sign_list: 2D list of integers. This list keeps track of positive and negative lagtimes by saving +1 and -1 respectively
         """
         
@@ -946,12 +950,10 @@ class VelMaps():
 
         # find compatible lag indexes
         lag_idxs = []  # index of lag in all_lagtimes list
-        t1_idxs = []   # tidx if tidx is t1, tidx-lag if tidx is t2
         sign_list = [] # +1 if tidx is t1, -1 if tidx is t2
         
         for tidx in range(len(fridxs)):
             cur_lag_idxs = []
-            cur_t1_idxs = []
             cur_sign_list = []
             # From largest to smallest, 0 excluded
             for lidx in range(len(self.lagTimes)-1, 0, -1):
@@ -960,7 +962,6 @@ class VelMaps():
                     if (self.lagRange is not None):
                         bln_add = (-1.0*self.lagTimes[lidx] >= self.lagRange[0])
                     if bln_add:
-                        cur_t1_idxs.append(fridxs[tidx]-self.lagTimes[lidx])
                         cur_lag_idxs.append(lidx)
                         cur_sign_list.append(-1)
             # From smallest to largest, 0 included
@@ -969,14 +970,12 @@ class VelMaps():
                 if (self.lagRange is not None):
                     bln_add = (self.lagTimes[lidx] <= self.lagRange[1])
                 if bln_add:
-                    cur_t1_idxs.append(fridxs[tidx])
                     cur_lag_idxs.append(lidx)
                     cur_sign_list.append(1)
             lag_idxs.append(cur_lag_idxs)
-            t1_idxs.append(cur_t1_idxs)
             sign_list.append(cur_sign_list)
 
-        return fridxs, lag_idxs, t1_idxs, sign_list
+        return lag_idxs, sign_list
     
     
     def _tunemask_pixel(self, try_mask, lagzero_idx, corrdata=None):
