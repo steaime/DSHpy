@@ -927,7 +927,7 @@ class VelMaps():
         
         return res_vavg
 
-    def MCsamplePixel(self, pxLoc, tRange, lagTimes, velPrior, corrPrior, initGaussBall, nwalkers, nsteps=1000,\
+    def MCsamplePixel(self, pxLoc, tRange, lagTimes, dt, velPrior, corrPrior, initGaussBall, nwalkers, nsteps=1000,\
                              corrStdfunc=corr_std_calc, corrStdfuncParams={}, regParam=0.0):
         """Sample posterior landscape for one single pixel using Markov Chain Monte Carlo sampler
         
@@ -935,7 +935,8 @@ class VelMaps():
         ----------
         pxLoc :     [row, col] location of the pixel
         tRange :    time range
-        lagTimes:   lag times, in physical units (e.g. in seconds)
+        lagTimes:   lag times, in image units
+        dt:         time conversion factor between image units and physical units (e.g. seconds)
         velPrior:   [prior_avg, prior_std] list of two arrays
         corrPrior:  [[d0_avg, base_avg], [d0_std, base_std]]
         initGaussBall : start MC walkers from random positions centered on the unrefined velocities and with
