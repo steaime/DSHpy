@@ -42,7 +42,7 @@ def log_prior_corr(param_guess, prior_avg_params, prior_std_params, reg_param):
         res += constant - 0.5*chi_square
     return res
 
-def log_likelihood_corr(param_guess, corr_func, obs_corr, obs_err, lagtimes, q):
+def log_likelihood_corr(param_guess, corr_func, obs_corr, obs_err, lagtimes, dt, q):
     """
     returns log of likelihood
     
@@ -57,7 +57,7 @@ def log_likelihood_corr(param_guess, corr_func, obs_corr, obs_err, lagtimes, q):
         q: scattering vector (float)
     """
     # Displacement matrix
-    cur_corr = corr_func(compute_displ_multilag(param_guess[2:], lagtimes), q, param_guess[0], param_guess[1])
+    cur_corr = corr_func(compute_displ_multilag(param_guess[2:], lagtimes, dt), q, param_guess[0], param_guess[1])
     # Residual matrix
     residual = np.square(np.subtract(cur_corr, obs_corr))
     # Chi square = Residual/Variance (must use nansum, there are NaNs in the displacement matrix)
@@ -66,12 +66,12 @@ def log_likelihood_corr(param_guess, corr_func, obs_corr, obs_err, lagtimes, q):
     constant = np.nansum(np.log(np.true_divide(1.0, np.sqrt(np.multiply(2.0*np.pi,np.square(obs_err))))))
     return constant - 0.5*chi_square
 
-def log_posterior_corr(param_guess, corr_func, obs_corr, obs_err, avg_params, std_params, lagtimes, q, reg_param=0):
+def log_posterior_corr(param_guess, corr_func, obs_corr, obs_err, avg_params, std_params, lagtimes, dt, q, reg_param=0):
     """
     returns log of posterior probability distribution
     """
     return log_prior_corr(param_guess, avg_params, std_params, reg_param) +\
-            log_likelihood_corr(param_guess, corr_func, obs_corr, obs_err, lagtimes, q)
+            log_likelihood_corr(param_guess, corr_func, obs_corr, obs_err, lagtimes, dt, q)
 
 def corr_std_calc(corr, baseline=0.1, rolloff=0.15):
     """Function calculating uncertainty on correlation values
@@ -843,11 +843,22 @@ class VelMaps():
         
         for irow in range(cropROI[1], cropROI[1]+cropROI[3]):
             for icol in range(cropROI[0], cropROI[0]+cropROI[2]):                
-                
-                mcmc = self.MCsample_SinglePixel([irow, icol], tRange, lagTimes, [vel_prior, vel_std], corrPrior, initGaussBall,\
-                                                 nwalkers, nsteps, corrStdfunc, corrStdfuncParams, regParam)
 
-                samples_corr = mcmc[:,burnin:,:]
+                corrTimetrace = self.corr_maps.GetCorrTimetrace([irow, icol], lagList=lagTimes, lagFlip=False, returnCoords=False, squeezeResult=True)
+                stdTimetrace = corrStdfunc(corrTimetrace, **corrStdfuncParams)
+                    
+                prior_avg_params = np.asarray(corrPrior[0] + vel_prior.tolist())
+                prior_std_params = np.asarray(corrPrior[1] + vel_std.tolist())
+                starting_positions = (1 + initGaussBall * np.random.randn(nwalkers, len(prior_avg_params))) * prior_avg_params
+                
+                # set up the sampler object
+                sampler_corr = emcee.EnsembleSampler(nwalkers, len(prior_avg_params), log_posterior_corr,\
+                                                args=(g2m1_parab, corrTimetrace, stdTimetrace, prior_avg_params, prior_std_params,\
+                                                      lagTimes, self.corr_maps.imgRange[2]/self.GetFPS(), self.qValue, regParam))
+                # run the sampler
+                sampler_corr.run_mcmc(starting_positions, nsteps)
+
+                samples_corr = sampler_corr.chain[:,burnin:,:]
                 # reshape the samples into a 2D array where the colums are individual time points
                 traces = samples_corr.reshape(-1, ndim_corr).T
                 # create a pandas DataFrame with labels.  This will come in handy 
@@ -916,7 +927,7 @@ class VelMaps():
         
         return res_vavg
 
-    def MCsample_SinglePixel(self, pxLoc, tRange, lagTimes, velPrior, corrPrior, initGaussBall, nwalkers, nsteps=1000,\
+    def MCsamplePixel(self, pxLoc, tRange, lagTimes, velPrior, corrPrior, initGaussBall, nwalkers, nsteps=1000,\
                              corrStdfunc=corr_std_calc, corrStdfuncParams={}, regParam=0.0):
         """Sample posterior landscape for one single pixel using Markov Chain Monte Carlo sampler
         
@@ -952,9 +963,8 @@ class VelMaps():
         
         # set up the sampler object
         sampler_corr = emcee.EnsembleSampler(nwalkers, len(prior_avg_params), log_posterior_corr,\
-                                        args=(g2m1_parab, corrTimetrace, stdTimetrace,\
-                                              prior_avg_params, prior_std_params,\
-                                              lagTimes, self.qValue, regParam))
+                                        args=(g2m1_parab, corrTimetrace, stdTimetrace, prior_avg_params, prior_std_params,\
+                                              lagTimes, self.corr_maps.imgRange[2]/self.GetFPS(), self.qValue, regParam))
         # run the sampler
         sampler_corr.run_mcmc(starting_positions, nsteps)
         
