@@ -396,17 +396,6 @@ class CorrMaps():
                     if lagFlip[lidx]:
                         if tList[tidx] >= lagList[lidx]:
                             img_idx = tList[tidx]-int(lagList[lidx]/self.imgRange[2])
-                            
-                            
-                            ###### NOOOOOO
-                            # QUESTO E' VERO SOLO SE LE CORRELAZIONI SONO STATE CALCOLATE
-                            # CON STEP 1
-                            # ALTRIMENTI IL LAGTIME DEV'ESSERE DIVISO PER IMGRANGE[2]
-                            
-                            
-                            
-                            
-                            
                         else:
                             img_idx = None
                     else:

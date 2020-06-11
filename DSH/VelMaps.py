@@ -445,6 +445,8 @@ class VelMaps():
         -------
         res_3D : 3D velocity map
         """
+        
+        raise ValueError('THIS FUNCTION HAS KNOWN BUGS TO BE FIXED ACCORDING TO ProcessSinglePixel')
 
         if not silent:
             start_time = time.time()
@@ -663,18 +665,7 @@ class VelMaps():
             use_mask = self._tunemask_pixel(try_mask[0,:,tidx], zero_lidx, corr_data[0,:,tidx])
 
             # Perform linear fit
-            cur_dt = np.true_divide(lagList[use_mask], self.GetFPS())
-            
-            
-            
-                                        ###### NOOOOOO
-                            # QUESTO E' VERO SOLO SE LE CORRELAZIONI SONO STATE CALCOLATE
-                            # CON STEP 1
-                            # ALTRIMENTI IL FRAMERATE DEV'ESSERE DIVISO PER IMGRANGE[2]
-
-            
-            
-            
+            cur_dt = np.true_divide(lagList[use_mask], self.GetFPS()*1.0/self.corr_maps.imgRange[2])
             cur_dr = np.true_divide(invert_monotonic(corr_data[0,:,tidx][use_mask], qdr_g, overflow_to_nan=True), self.qValue)
             #cur_dr = np.true_divide(invert_monotonic(corr_data[0,:,tidx][use_mask], qdr_g), self.qValue)
             if self.signedLags:
@@ -725,109 +716,6 @@ class VelMaps():
             fdeb.close()
 
         return vel, interc, fiterr
-    
-    def ProcessSinglePixelOLD(self, pxLoc, tRange=None, debugPrint=False, debugFile=None):
-        """Computes v(t) for one single pixel
-        
-        Returns
-        -------
-        vel : 1D array with velocity as a function of time
-        verr : 1D array with linear fit errors
-        """
-
-        if not self._loaded_metadata:
-            self._load_metadata_from_corr()
-
-        if tRange is None:
-            tRange = self.tRange
-
-        # Load correlation data. Set first row (d0) to ones and set zero correlations to NaN
-        corr_data = self.corr_maps.GetCorrTimetrace(pxLoc, zRange=tRange)
-        corr_data[0] = np.ones_like(corr_data[0])
-        corr_data[np.where(corr_data==0)]=np.nan
-
-        # Find list of compatible lagtimes
-        all_lag_idxs, all_sign_list = self._find_compatible_lags(tRange)
-
-        # Prepare memory
-        qdr_g = g2m1_sample(zProfile=self.zProfile)
-        vel = np.zeros(len(all_lag_idxs))
-        interc = np.zeros_like(vel)
-        fiterr = np.zeros_like(vel)
-        
-        if debugFile is not None:
-            fdeb = open(os.path.join(self.outFolder, debugFile), 'w')
-            
-        for tidx in range(len(vel)):
-            
-            # Populate arrays
-            lag_idxs = all_lag_idxs[tidx]
-            cur_corr = np.ones(len(lag_idxs))
-            cur_lags = np.zeros_like(cur_corr)
-            zero_lidx = -1
-            for lidx in range(len(lag_idxs)):
-                if (lag_idxs[lidx] > 0):
-                    if (all_sign_list[tidx][lidx] > 0):
-                        cur_corr[lidx] = corr_data[lag_idxs[lidx],tidx]
-                    else:
-                        if tidx >= self.lagTimes[lag_idxs[lidx]]:
-                            cur_corr[lidx] = corr_data[lag_idxs[lidx],tidx-self.lagTimes[lag_idxs[lidx]]]
-                    cur_lags[lidx] = self.lagTimes[lag_idxs[lidx]]*1.0/self.GetFPS()
-                else:
-                    # if lag_idxs[lidx]==0, keep correlations equal to ones and lags equal to zero
-                    # just memorize what this index is
-                    zero_lidx = lidx
-
-            # Fine tune selection of lags to include
-            try_mask = cur_corr > self.conservative_cutoff
-            use_mask = self._tunemask_pixel(try_mask, zero_lidx, cur_corr)
-
-            # Perform linear fit
-            cur_dt = cur_lags[use_mask]
-            cur_dr = np.true_divide(invert_monotonic(cur_corr[use_mask], qdr_g), self.qValue)
-            if self.signedLags:
-                cur_dt = np.multiply(cur_dt, all_sign_list[tidx][use_mask])
-                cur_dr = np.multiply(cur_dr, all_sign_list[tidx][use_mask])
-            if (np.max(cur_dt)==np.min(cur_dt)):
-                slope = np.nanmean(cur_dr)*1.0/cur_dt[0]
-                intercept, r_value, p_value, std_err = np.nan, np.nan, np.nan, np.nan
-            else:
-                slope, intercept, r_value, p_value, std_err = stats.linregress(cur_dt, cur_dr)  
-            
-            # Save result
-            vel[tidx] = slope
-            interc[tidx] = intercept
-            fiterr[tidx] = std_err
-            
-            if debugPrint:
-                print('   *** ' + str(tidx) + ' - ' + str(np.count_nonzero(use_mask)) + ' points, dt=[' + str(np.min(cur_dt)) + ',' + str(np.max(cur_dt)) + ']' +\
-                      ' - dr=[' + str(np.min(cur_dr)) + ',' + str(np.max(cur_dr)) + '] - fit result: ' + str([slope, intercept, r_value, p_value, std_err]))
-            if debugFile is not None:
-                strWrite = '\n*******************'
-                strWrite += '\nt=' + str(tidx)
-                strWrite += '\n-------------------'
-                strWrite += '\norig_lag\torig_corr\tsign\tmask'
-                for i in range(len(cur_corr)):
-                    strWrite += '\n' + str(self.lagTimes[lag_idxs[i]]) + '\t' + str(cur_corr[i]) + '\t' + str(all_sign_list[tidx][i]) + '\t' + str(use_mask[i])
-                strWrite += '\n-------------------'
-                strWrite += '\nfit_dt\tfit_dr'
-                for i in range(len(cur_dt)):
-                    strWrite += '\n' + str(cur_dt[i]) + '\t' + str(cur_dr[i])
-                strWrite += '\n-------------------'
-                strWrite += '\nFit results:'
-                strWrite += '\n  slope=' + str(slope)
-                strWrite += '\n  intercept=' + str(intercept)
-                strWrite += '\n  r_value=' + str(r_value)
-                strWrite += '\n  p_value=' + str(p_value)
-                strWrite += '\n  std_err=' + str(std_err)
-                strWrite += '\n*******************'                
-                fdeb.write(strWrite)
-
-        if debugFile is not None:
-            fdeb.close()
-
-        return vel, interc, fiterr
-
 
     def GetMIfile(self):
         """Returns velocity map as MIfile, if found in folder
@@ -840,9 +728,9 @@ class VelMaps():
         return MI.MIfile(MI_fname, config_fname)
     
     
-    def RefineMC(self, cropROI=None, tRange=None, lagTimes=None, corrPrior=None,\
-                 initGaussBall=1e-3, priorStd=None, corrStdfunc=corr_std_calc, corrStdfuncParams={},\
-                 regParam=0.0, nwalkers=None, nsteps=1000, burnin=0, qErr=[0.16, 0.84], detailed_output=True, file_suffix=''):
+    def RefineMC(self, cropROI=None, tRange=None, lagTimes=None, velPrior=None, priorStd=None, corrPrior=None,\
+                 initGaussBall=1e-3, corrStdfunc=corr_std_calc, corrStdfuncParams={}, regParam=0.0,\
+                 nwalkers=None, nsteps=1000, burnin=0, qErr=[0.16, 0.84], detailed_output=True, file_suffix=''):
         """Refine velocity map using generative modeling and MCMC sampling
         
         Parameters
@@ -854,13 +742,15 @@ class VelMaps():
                     Currently the timestep cannot be changed, it will mess up with the likelihood calculation
         lagTimes :  list of timelags to be used for refinement.
                     if None, all available timelags shorter than tRange will be used
+        velPrior :  prior guess for velocity map. If None, procedure will search for a velocity map and
+                    load information from there
+        priorStd :  use Gaussian prior centered in the unrefined velocities and with this standard deviation
+                    if None, will use a flat improper prior
+                    this is equal to setting all elements of priorStd to NaN
         corrPrior : Prior on correlation function parameters: [[d0_avg, base_avg], [d0_std, base_std]]
                     if None, the default value [[1.0, 0.0], [0.01, 0.01]] will be used
         initGaussBall : start MC walkers from random positions centered on the unrefined velocities and with
                     a relative spread given by initGaussBall
-        priorStd :  use Gaussian prior centered in the unrefined velocities and with this standard deviation
-                    if None, will use a flat improper prior
-                    this is equal to setting all elements of priorStd to NaN
         corrStdfunc : function calculating uncertainties on correlation data taking as parameters
                     the correlation themselves plus eventual additional parameters
         regParam :  float>=0. Regularization parameter penalizing velocity fluctuations.
@@ -890,10 +780,14 @@ class VelMaps():
         for cur_lag in lagTimes:
             if (cur_lag == 0 or cur_lag > (tRange[1]-tRange[0])):
                 lags.remove(cur_lag)
+        lags = np.asarray(np.true_divide(lags, self.GetFPS()*1.0/self.corr_maps.imgRange[2]))
         if corrPrior is None:
             corrPrior = [[1.0, 0.0], [0.01, 0.01]]
         vel_config, vel_mifile = self.GetMaps()
-        vel_prior = vel_mifile.Read(zRange=tRange, cropROI=cropROI, closeAfter=True)
+        if velPrior is None:
+            vel_prior = vel_mifile.Read(zRange=tRange, cropROI=cropROI, closeAfter=True)
+        else:
+            vel_prior = velPrior
         if priorStd is None:
             vel_std = np.ones_like(vel_prior) * np.nan
         else:
@@ -925,6 +819,9 @@ class VelMaps():
         # - parameters [2:] will be the speeds
         ndim_corr = vel_prior.shape[0]+2
         
+        if nwalkers is None:
+            nwalkers = 2*ndim_corr
+        
         # Exports analysis configuration
         conf_MCparams = {'crop_roi' : cropROI,
                          't_range' : tRange,
@@ -945,24 +842,12 @@ class VelMaps():
         vel_config.Export(os.path.join(self.outFolder, 'VelMapsConfig_RefMC' + str(file_suffix) + '.ini'))
         
         for irow in range(cropROI[1], cropROI[1]+cropROI[3]):
-            for icol in range(cropROI[0], cropROI[0]+cropROI[2]):
-                corrTimetrace = self.corr_maps.GetCorrTimetrace([icol, irow], lagList=lags, lagFlip=False, returnCoords=False, squeezeResult=True)
-                stdTimetrace = corrStdfunc(corrTimetrace, **corrStdfuncParams)
-                cur_prior = vel_prior[:,irow,icol]
-                    
-                prior_avg_params = np.asarray(corrPrior[0] + cur_prior.tolist())
-                prior_std_params = np.asarray(corrPrior[1] + vel_std[:,irow,icol].tolist())
-                starting_positions = (1 + initGaussBall * np.random.randn(nwalkers, ndim_corr)) * prior_avg_params
+            for icol in range(cropROI[0], cropROI[0]+cropROI[2]):                
                 
-                # set up the sampler object
-                sampler_corr = emcee.EnsembleSampler(nwalkers, ndim_corr, log_posterior_corr,\
-                                                args=(g2m1_parab, corrTimetrace, stdTimetrace,\
-                                                      prior_avg_params, prior_std_params,\
-                                                      np.asarray(lags), self.qValue, regParam))
-                # run the sampler
-                sampler_corr.run_mcmc(starting_positions, nsteps)
+                mcmc = self.MCsample_SinglePixel([irow, icol], tRange, lagTimes, [vel_prior, vel_std], corrPrior, initGaussBall,\
+                                                 nwalkers, nsteps, corrStdfunc, corrStdfuncParams, regParam)
 
-                samples_corr = sampler_corr.chain[:,burnin:,:]
+                samples_corr = mcmc[:,burnin:,:]
                 # reshape the samples into a 2D array where the colums are individual time points
                 traces = samples_corr.reshape(-1, ndim_corr).T
                 # create a pandas DataFrame with labels.  This will come in handy 
@@ -994,14 +879,14 @@ class VelMaps():
                     if qErr is not None:
                         res_verr[i,irow,icol] = 0.5*(q_corr['v'+str(i)][qErr[1]]-q_corr['v'+str(i)][qErr[0]])
                 if detailed_output:
-                    res_mse[irow,icol] = np.nanmean(np.square(np.subtract(g2m1_parab(compute_displ_multilag(best_params[2:], np.asarray(lags)),\
+                    res_mse[irow,icol] = np.nanmean(np.square(np.subtract(g2m1_parab(compute_displ_multilag(best_params[2:], lags),\
                                                                                    self.qValue, best_params[0], best_params[1]),\
                                                                           corrTimetrace)))
                     res_prior[irow,icol] = log_prior_corr(best_params, prior_avg_params, prior_std_params, regParam)
                     res_likelihood[irow,icol] = log_likelihood_corr(best_params, g2m1_parab, corrTimetrace,\
-                                                                  stdTimetrace, np.asarray(lags), self.qValue)
+                                                                  stdTimetrace, lags, self.qValue)
                     res_posterior[irow,icol] = log_posterior_corr(best_params, g2m1_parab, corrTimetrace, stdTimetrace, prior_avg_params,\
-                                                                 prior_std_params, np.asarray(lags), self.qValue, regParam)
+                                                                 prior_std_params, lags, self.qValue, regParam)
                     res_d0[irow,icol] = best_params[0]
                     res_base[irow,icol] = best_params[1]
                     if qErr is not None:
@@ -1030,6 +915,52 @@ class VelMaps():
                 MI.MIfile(os.path.join(self.outFolder, '_vMap_refMC_baseerr' + str(file_suffix) + '.dat'), singleimg_MetaData).WriteData(res_base_err)
         
         return res_vavg
+
+    def MCsample_SinglePixel(self, pxLoc, tRange, lagTimes, velPrior, corrPrior, initGaussBall, nwalkers, nsteps=1000,\
+                             corrStdfunc=corr_std_calc, corrStdfuncParams={}, regParam=0.0):
+        """Sample posterior landscape for one single pixel using Markov Chain Monte Carlo sampler
+        
+        Parameters
+        ----------
+        pxLoc :     [row, col] location of the pixel
+        tRange :    time range
+        lagTimes:   lag times, in physical units (e.g. in seconds)
+        velPrior:   [prior_avg, prior_std] list of two arrays
+        corrPrior:  [[d0_avg, base_avg], [d0_std, base_std]]
+        initGaussBall : start MC walkers from random positions centered on the unrefined velocities and with
+                    a relative spread given by initGaussBall
+        corrStdfunc : function calculating uncertainties on correlation data taking as parameters
+                    the correlation themselves plus eventual additional parameters
+        regParam :  float>=0. Regularization parameter penalizing velocity fluctuations.
+                    Default is regParam=0.0, which means no regularization
+        nwalkers :  number of MC walkers to run in parallel for MC sampling.
+                    if None, it will be set to twice the degrees of freedom of the problem
+        nsteps :    length of Markov chains to be generated by each walker
+                    It has to be larger than burnin
+        
+        Returns
+        -------
+        sampler chain: 3D array with shape ()
+        """
+        
+        corrTimetrace = self.corr_maps.GetCorrTimetrace(pxLoc, lagList=lagTimes, lagFlip=False, returnCoords=False, squeezeResult=True)
+        stdTimetrace = corrStdfunc(corrTimetrace, **corrStdfuncParams)
+            
+        prior_avg_params = np.asarray(corrPrior[0] + velPrior[0].tolist())
+        prior_std_params = np.asarray(corrPrior[1] + velPrior[1].tolist())
+        starting_positions = (1 + initGaussBall * np.random.randn(nwalkers, len(prior_avg_params))) * prior_avg_params
+        
+        # set up the sampler object
+        sampler_corr = emcee.EnsembleSampler(nwalkers, len(prior_avg_params), log_posterior_corr,\
+                                        args=(g2m1_parab, corrTimetrace, stdTimetrace,\
+                                              prior_avg_params, prior_std_params,\
+                                              lagTimes, self.qValue, regParam))
+        # run the sampler
+        sampler_corr.run_mcmc(starting_positions, nsteps)
+        
+        # return MCMC
+        return sampler_corr.chain
+
         
     def _load_metadata_from_corr(self):
         
@@ -1048,58 +979,6 @@ class VelMaps():
             print('WARNING: no correlation maps found in folder ' + str(self.corr_maps.outFolder))
             
         self._loaded_metadata = True
-
-    def _find_compatible_lags(self, tRange=None):
-        """Finds a list of all (t, tau) couples needed to compute v(t*) at all times t*
-        
-        Parameters
-        ----------
-        tRange: range of times t* for which v(t*) needs to be computed
-        
-        Returns
-        -------
-        lag_idxs:  2D list of integers. For every t*, list of all lag indexes for which correlations are available
-                   lag time in image units will be self.lagTimes[lag_idxs[t*][i]]
-        sign_list: 2D list of integers. This list keeps track of positive and negative lagtimes by saving +1 and -1 respectively
-        """
-        
-        if (tRange is None):
-            tRange = self.tRange
-        else:
-            tRange = self.cmap_mifiles[1].Validate_zRange(tRange)
-        if (tRange is None):
-            fridxs = list(range(self.MapShape[0]))
-        else:
-            fridxs = list(range(*tRange))
-
-        # find compatible lag indexes
-        lag_idxs = []  # index of lag in all_lagtimes list
-        sign_list = [] # +1 if tidx is t1, -1 if tidx is t2
-        
-        for tidx in range(len(fridxs)):
-            cur_lag_idxs = []
-            cur_sign_list = []
-            # From largest to smallest, 0 excluded
-            for lidx in range(len(self.lagTimes)-1, 0, -1):
-                if (self.lagTimes[lidx] <= fridxs[tidx]):
-                    bln_add = True
-                    if (self.lagRange is not None):
-                        bln_add = (-1.0*self.lagTimes[lidx] >= self.lagRange[0])
-                    if bln_add:
-                        cur_lag_idxs.append(lidx)
-                        cur_sign_list.append(-1)
-            # From smallest to largest, 0 included
-            for lidx in range(len(self.lagTimes)):
-                bln_add = True
-                if (self.lagRange is not None):
-                    bln_add = (self.lagTimes[lidx] <= self.lagRange[1])
-                if bln_add:
-                    cur_lag_idxs.append(lidx)
-                    cur_sign_list.append(1)
-            lag_idxs.append(cur_lag_idxs)
-            sign_list.append(cur_sign_list)
-
-        return lag_idxs, sign_list
     
     
     def _tunemask_pixel(self, try_mask, lagzero_idx, corrdata=None):
