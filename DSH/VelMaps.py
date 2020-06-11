@@ -955,7 +955,7 @@ class VelMaps():
         sampler chain: 3D array with shape ()
         """
         
-        corrTimetrace = self.corr_maps.GetCorrTimetrace(pxLoc, lagList=lagTimes, lagFlip=False, returnCoords=False, squeezeResult=True)
+        corrTimetrace = self.corr_maps.GetCorrTimetrace(pxLoc, zRange=tRange, lagList=lagTimes, lagFlip=False, returnCoords=False, squeezeResult=True)
         stdTimetrace = corrStdfunc(corrTimetrace, **corrStdfuncParams)
             
         prior_avg_params = np.asarray(corrPrior[0] + velPrior[0].tolist())
