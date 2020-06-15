@@ -1,6 +1,6 @@
 import os
 import re
-
+import inspect
   
 def AllIntInStr(my_string):
     arr_str = re.findall(r'\d+', my_string)
@@ -116,3 +116,7 @@ def ExtractIndexFromStrings(StringList, index_pos=0, index_notfound=-1):
         else:
             res.append(index_notfound)
     return res
+
+def filter_kwdict_funcparams(my_dict, my_func):
+    return {k: v for k, v in my_dict.items() \
+            if k in [p.name for p in inspect.signature(my_func).parameters.values()]}

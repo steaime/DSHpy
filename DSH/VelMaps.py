@@ -239,13 +239,12 @@ def LoadFromConfig(ConfigFile, outFolder=None):
     """
     config = cf.Config(ConfigFile)
     vmap_kw = _get_kw_from_config(config)
-    return VelMaps(CM.LoadFromConfig(ConfigFile, outFolder), **vmap_kw)
+    return VelMaps(CM.LoadFromConfig(ConfigFile, outFolder), **sf.filter_kwdict_funcparams(vmap_kw, VelMaps.__init__))
 
 class VelMaps():
     """ Class to compute velocity maps from correlation maps """
     
-    def __init__(self, corr_maps, z_profile='Parabolic', q_value=1.0, t_range=None, lag_range=None, signed_lags=False, consec_only=True,\
-                          max_holes=0, mask_opening=None, conservative_cutoff=0.3, generous_cutoff=0.15):
+    def __init__(self, corr_maps, z_profile='Parabolic', q_value=1.0, t_range=None):
         """Initialize VelMaps
         
         Parameters
@@ -259,26 +258,6 @@ class VelMaps():
         lag_range :  restrict analysis to correlation maps with lagtimes in a given range (in image units)
                     if None, all available correlation maps will be used
                     if int, lagtimes in [-lagRange, lagRange] will be used
-        signed_lags : if True, lagtimes will have a positive or negative sign according to whether
-                    the current time is the first one or the second one correlated
-                    In this case, displacements will also be assigned the same sign as the lag
-                    otherwise, we will work with absolute values only
-                    Working with absolute values will "flatten" the linear fits, reducing slopes and increasing intercepts
-                    It does a much better job accounting for noise contributions to corr(tau->0)
-                    if signed_lags==False, the artificial correlation value at lag==0 will not be processed
-                    (it is highly recommended to set signed_lags to False)
-        consec_only : if True only select sorrelation chunk with consecutive True value of the mask around tau=0
-                    Note: it is highly recommended to use consec_only==True
-        max_holes : integer, only used if consecutive_only==True.
-                    Largest hole to be ignored before chunk is considered as discontinued
-        mask_opening : None or integer > 1.
-                    if not None, apply binary_opening to the mask for a given pixel as a function of lagtime
-                    This removes thresholding noise by removing N-lag-wide unmasked domains where N=mask_opening_range
-        conservative_cutoff : only consider correlation data above this threshold value
-        generous_cutoff : when correlations above conservative_cutoff are not enough for linear fitting,
-                    include first lagtimes provided correlation data is above this more generous threshold
-                    Note: for parabolic profiles, the first correlation minimum is 0.083, 
-                    the first maximum after that is 0.132. Don't go below that!
         """
         
         self.corr_maps = corr_maps
@@ -287,22 +266,23 @@ class VelMaps():
         self.zProfile = z_profile
         self.qValue = q_value
         self.tRange = t_range
-        self.lagRange = lag_range
-        self.signedLags = signed_lags
-        self.consecOnly = consec_only
-        self.maxHoles = max_holes
-        self.maskOpening = mask_opening
-        self.conservative_cutoff = conservative_cutoff
-        self.generous_cutoff = generous_cutoff
         
-        if (lag_range is not None):
-            if (isinstance(lag_range, int) or isinstance(lag_range, float)):
-                self.lagRange = [-lag_range, lag_range]
+        #self.consecOnly = consec_only
+        #self.maxHoles = max_holes
+        #self.maskOpening = mask_opening
+        #self.conservative_cutoff = conservative_cutoff
+        #self.generous_cutoff = generous_cutoff
+        #self.signedLags = signed_lags
+        #self.lagRange = lag_range
+        #if (lag_range is not None):
+        #    if (isinstance(lag_range, int) or isinstance(lag_range, float)):
+        #        self.lagRange = [-lag_range, lag_range]
             
         self._loaded_metadata = False
         self._velmaps_loaded = False
 
     def ExportConfig(self, FileName, tRange=None):
+        raise ValueError('Obsolete function: some properties are not shared self properties anymore!')
         # Export configuration
         if (tRange is None):
             tRange = self.tRange
@@ -619,12 +599,38 @@ class VelMaps():
         else:
             return vmap
 
-    def ProcessSinglePixel(self, pxLoc, tRange=None, debugPrint=False, debugFile=None):
+    def ProcessSinglePixel(self, pxLoc, tRange=None, signed_lags=False, symm_only=False, consec_only=True,\
+                          max_holes=0, mask_opening=None, conservative_cutoff=0.3, generous_cutoff=0.15,\
+                          debugPrint=False, debugFile=None):
         """Computes v(t) for one single pixel
         
         Parameters
         ----------
         pxLoc: [row_index, col_index] coordinates of pixel to be analyzed
+        tRange : time range. If None, self.tRange will be used. Use None for single process computation
+                Set it to subset of total images for multiprocess computation
+        signed_lags : if True, lagtimes will have a positive or negative sign according to whether
+                    the current time is the first one or the second one correlated
+                    In this case, displacements will also be assigned the same sign as the lag
+                    otherwise, we will work with absolute values only
+                    Working with absolute values will "flatten" the linear fits, reducing slopes and increasing intercepts
+                    It does a much better job accounting for noise contributions to corr(tau->0)
+                    if signed_lags==False, the artificial correlation value at lag==0 will not be processed
+                    (it is highly recommended to set signed_lags to False)
+        symm_only : only considers time delays for which both positive and negative data are available.
+                    If symm_only==True, v(t) is evaluated using data actually centered on t
+        consec_only : if True only select sorrelation chunk with consecutive True value of the mask around tau=0
+                    Note: it is highly recommended to use consec_only==True
+        max_holes : integer, only used if consecutive_only==True.
+                    Largest hole to be ignored before chunk is considered as discontinued
+        mask_opening : None or integer > 1.
+                    if not None, apply binary_opening to the mask for a given pixel as a function of lagtime
+                    This removes thresholding noise by removing N-lag-wide unmasked domains where N=mask_opening_range
+        conservative_cutoff : only consider correlation data above this threshold value
+        generous_cutoff : when correlations above conservative_cutoff are not enough for linear fitting,
+                    include first lagtimes provided correlation data is above this more generous threshold
+                    Note: for parabolic profiles, the first correlation minimum is 0.083, 
+                    the first maximum after that is 0.132. Don't go below that!
         
         Returns
         -------
@@ -645,8 +651,8 @@ class VelMaps():
         zero_lidx = int((corr_data.shape[1]-1)/2)
         corr_data[:,zero_lidx,:] = np.ones_like(corr_data[:,0,:])
         corr_data[np.where(corr_data==0)]=np.nan
-        try_mask = corr_data > self.conservative_cutoff
-        if self.signedLags:
+        try_mask = corr_data > conservative_cutoff
+        if signed_lags:
             lagsign = np.ones_like(lagList, dtype=np.int8)
             lagsign[lagFlip]=-1
 
@@ -662,13 +668,13 @@ class VelMaps():
         for tidx in range(len(vel)):
             
             # Fine tune selection of lags to include
-            use_mask = self._tunemask_pixel(try_mask[0,:,tidx], zero_lidx, corr_data[0,:,tidx])
-
+            use_mask = self._tunemask_pixel(try_mask[0,:,tidx], zero_lidx, mask_opening, consec_only, max_holes, symm_only, signed_lags,\
+                        corrdata=corr_data[0,:,tidx], generous_cutoff=generous_cutoff)
             # Perform linear fit
             cur_dt = np.true_divide(lagList[use_mask], self.GetFPS()*1.0/self.corr_maps.imgRange[2])
             cur_dr = np.true_divide(invert_monotonic(corr_data[0,:,tidx][use_mask], qdr_g, overflow_to_nan=True), self.qValue)
             #cur_dr = np.true_divide(invert_monotonic(corr_data[0,:,tidx][use_mask], qdr_g), self.qValue)
-            if self.signedLags:
+            if signed_lags:
                 cur_dt = np.multiply(cur_dt, lagsign[use_mask])
                 cur_dr = np.multiply(cur_dr, lagsign[use_mask])
             if (np.max(cur_dt)==np.min(cur_dt)):
@@ -689,7 +695,7 @@ class VelMaps():
                 strWrite = '\n*******************'
                 strWrite += '\nt=' + str(tidx)
                 strWrite += '\n-------------------'
-                if self.signedLags:
+                if signed_lags:
                     strWrite += '\norig_lag\torig_corr\tsign\ttry_mask\tmask'
                     for i in range(corr_data.shape[1]):
                         strWrite += '\n' + str(lagList[i]) + '\t' + str(corr_data[0,i,tidx]) + '\t' + str(try_mask[0,i,tidx]) +\
@@ -937,6 +943,7 @@ class VelMaps():
         tRange :    time range
         lagTimes:   lag times, in image units
         dt:         time conversion factor between image units and physical units (e.g. seconds)
+                    if <=0, it will be set to the default value given by correlation timestep and acquisition FPS
         velPrior:   [prior_avg, prior_std] list of two arrays
         corrPrior:  [[d0_avg, base_avg], [d0_std, base_std]]
         initGaussBall : start MC walkers from random positions centered on the unrefined velocities and with
@@ -955,6 +962,9 @@ class VelMaps():
         sampler chain: 3D array with shape ()
         """
         
+        if (dt <= 0):
+            dt = self.corr_maps.imgRange[2]/self.GetFPS()
+        
         corrTimetrace = self.corr_maps.GetCorrTimetrace(pxLoc, zRange=tRange, lagList=lagTimes, lagFlip=False, returnCoords=False, squeezeResult=True)
         stdTimetrace = corrStdfunc(corrTimetrace, **corrStdfuncParams)
             
@@ -965,7 +975,7 @@ class VelMaps():
         # set up the sampler object
         sampler_corr = emcee.EnsembleSampler(nwalkers, len(prior_avg_params), log_posterior_corr,\
                                         args=(g2m1_parab, corrTimetrace, stdTimetrace, prior_avg_params, prior_std_params,\
-                                              lagTimes, self.corr_maps.imgRange[2]/self.GetFPS(), self.qValue, regParam))
+                                              lagTimes, dt, self.qValue, regParam))
         # run the sampler
         sampler_corr.run_mcmc(starting_positions, nsteps)
         
@@ -992,7 +1002,8 @@ class VelMaps():
         self._loaded_metadata = True
     
     
-    def _tunemask_pixel(self, try_mask, lagzero_idx, corrdata=None):
+    def _tunemask_pixel(self, try_mask, lagzero_idx, mask_opening, consec_only, max_holes, symm_only, signed_lags,\
+                        corrdata=None, generous_cutoff=0.0):
         """Tunes mask for pixel-by-pixel linear fit
         
         Parameters
@@ -1008,14 +1019,14 @@ class VelMaps():
         """
         
         temp_mask = np.asarray(try_mask, dtype=bool)
-        if (self.maskOpening is not None and np.count_nonzero(try_mask) > 2):
-            for cur_open_range in range(self.maskOpening, 2, -1):
+        if (mask_opening is not None and np.count_nonzero(try_mask) > 2):
+            for cur_open_range in range(mask_opening, 2, -1):
                 # remove thresholding noise by removing N-lag-wide unmasked domains
                 cur_mask_denoise = binary_opening(try_mask, structure=np.ones(cur_open_range))
                 if (np.count_nonzero(try_mask) > 2):
                     temp_mask = cur_mask_denoise
                     break
-        if self.consecOnly:
+        if consec_only:
             use_mask = np.zeros(len(temp_mask), dtype=bool)
             cur_hole = 0
             for ilag_pos in range(lagzero_idx+1, len(temp_mask)):
@@ -1024,7 +1035,7 @@ class VelMaps():
                     cur_hole = 0
                 else:
                     cur_hole += 1
-                if (cur_hole > self.maxHoles):
+                if (cur_hole > max_holes):
                     break
             cur_hole = 0
             for ilag_neg in range(lagzero_idx, -1, -1):
@@ -1033,13 +1044,22 @@ class VelMaps():
                     cur_hole = 0
                 else:
                     cur_hole += 1
-                if (cur_hole > self.maxHoles):
+                if (cur_hole > max_holes):
                     break
         else:
             use_mask = temp_mask
+            
+        if symm_only:
+            for ilag_relpos in range(1, len(temp_mask)-lagzero_idx):
+                if ilag_relpos>lagzero_idx:
+                    cur_both = (use_mask[lagzero_idx+ilag_relpos] and use_mask[lagzero_idx-ilag_relpos])
+                else:
+                    cur_both = False
+                use_mask[lagzero_idx+ilag_relpos] = cur_both
+                use_mask[lagzero_idx-ilag_relpos] = cur_both
 
         # Only use zero lag correlation when dealing with signed lagtimes
-        use_mask[lagzero_idx] = self.signedLags
+        use_mask[lagzero_idx] = signed_lags
             
         if (np.count_nonzero(use_mask) <= 1):
             use_mask[lagzero_idx] = True
@@ -1049,10 +1069,10 @@ class VelMaps():
                 # check if the first available lagtimes can be used at least with a generous cutoff
                 # If they are, use them, otherwise just set that cell to nan
                 if (lagzero_idx+1 < len(try_mask)):
-                    if (corrdata[lagzero_idx+1] > self.generous_cutoff):
+                    if (corrdata[lagzero_idx+1] > generous_cutoff):
                         use_mask[lagzero_idx+1] = True
                 if (lagzero_idx > 0):
-                    if (corrdata[lagzero_idx-1] > self.generous_cutoff):
+                    if (corrdata[lagzero_idx-1] > generous_cutoff):
                         use_mask[lagzero_idx-1] = True
         
         return use_mask
