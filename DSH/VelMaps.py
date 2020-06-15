@@ -632,6 +632,7 @@ class VelMaps():
                     Note: for parabolic profiles, the first correlation minimum is 0.083, 
                     the first maximum after that is 0.132. Don't go below that!
         method : 'linfit'|'lstsq'|'mean'
+        zeroInterc : only applicable if method=='lstsq'
         
         Returns
         -------
@@ -710,14 +711,15 @@ class VelMaps():
                     intercept = np.nanstd(cur_slopes)
                 r_value, p_value, std_err = None, None, None
             
+            if debugPrint:
+                print('   *** ' + str(tidx) + ' - ' + str(np.count_nonzero(use_mask[:,tidx])) + ' points, dt=[' + str(np.min(cur_dt)) + ',' + str(np.max(cur_dt)) + ']' +\
+                      ' - dr=[' + str(np.min(cur_dr)) + ',' + str(np.max(cur_dr)) + '] - fit result: ' + str([slope, intercept, r_value, p_value, std_err]))
+            
             # Save result
             vel[tidx] = slope
             interc[tidx] = intercept
             fiterr[tidx] = std_err
-            
-            if debugPrint:
-                print('   *** ' + str(tidx) + ' - ' + str(np.count_nonzero(use_mask[:,tidx])) + ' points, dt=[' + str(np.min(cur_dt)) + ',' + str(np.max(cur_dt)) + ']' +\
-                      ' - dr=[' + str(np.min(cur_dr)) + ',' + str(np.max(cur_dr)) + '] - fit result: ' + str([slope, intercept, r_value, p_value, std_err]))
+
             if debugFile is not None:
                 strWrite = '\n*******************'
                 strWrite += '\nt=' + str(tidx)
