@@ -717,7 +717,7 @@ class VelMaps():
                     std_err = np.nan
                 else:
                     std_err = np.nanstd(cur_slopes)
-                r_value, p_value = None, None, None
+                r_value, p_value = None, None
             
             if debugPrint:
                 print('   *** ' + str(tidx) + ' - ' + str(np.count_nonzero(use_mask[:,tidx])) + ' points, dt=[' + str(np.min(cur_dt)) + ',' + str(np.max(cur_dt)) + ']' +\
