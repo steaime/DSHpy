@@ -695,12 +695,16 @@ class VelMaps():
                     slope, intercept, r_value, p_value, std_err = stats.linregress(cur_dt, cur_dr)
             elif method=='lstsq':
                 if zeroInterc:
-                    slope, std_err, _, _ = np.linalg.lstsq(cur_dt[:,np.newaxis], cur_dr, rcond=None)
+                    slope, residuals, _, _ = np.linalg.lstsq(cur_dt[:,np.newaxis], cur_dr, rcond=None)
                     intercept = 0
                 else:
-                    matrix, std_err, _, _ = np.linalg.lstsq(np.vstack([cur_dt, np.ones(len(cur_dt))]).T, cur_dr, rcond=None)
+                    matrix, residuals, _, _ = np.linalg.lstsq(np.vstack([cur_dt, np.ones(len(cur_dt))]).T, cur_dr, rcond=None)
                     slope = matrix[0]
                     intercept = matrix[1]
+                if len(residuals) > 0:
+                    std_err = residuals[0]
+                else:
+                    std_err = np.nan
                 r_value, p_value = np.nan, np.nan
             else:
                 cur_slopes = np.true_divide(cur_dr, cur_dt)
