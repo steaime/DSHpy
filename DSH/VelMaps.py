@@ -1049,16 +1049,14 @@ class VelMaps():
         else:
             use_mask = temp_mask
         
-        print('use_mask_presym : ' + str(use_mask))
         if symm_only:
             for ilag_relpos in range(1, len(temp_mask)-lagzero_idx):
                 if ilag_relpos>lagzero_idx:
-                    cur_both = (use_mask[lagzero_idx+ilag_relpos] and use_mask[lagzero_idx-ilag_relpos])
+                    use_mask[lagzero_idx+ilag_relpos] = False
                 else:
-                    cur_both = False
-                use_mask[lagzero_idx+ilag_relpos] = cur_both
-                use_mask[lagzero_idx-ilag_relpos] = cur_both
-        print('use_mask_postsym : ' + str(use_mask))
+                    cur_both = (use_mask[lagzero_idx+ilag_relpos] and use_mask[lagzero_idx-ilag_relpos])
+                    use_mask[lagzero_idx+ilag_relpos] = cur_both
+                    use_mask[lagzero_idx-ilag_relpos] = cur_both
 
         # Only use zero lag correlation when dealing with signed lagtimes
         use_mask[lagzero_idx] = signed_lags
