@@ -33,8 +33,8 @@ def log_prior_corr(param_guess, prior_avg_params, prior_std_params, reg_param):
     else:
         v_grad = np.diff(param_guess[2:])
         rel_grad = np.true_divide(v_grad, param_guess[2:-1])
-        del_gradgrad = np.diff(rel_grad)
-        res = -reg_param * np.sum(np.square(del_gradgrad))
+        #del_gradgrad = np.diff(rel_grad)
+        res = -reg_param * np.sum(np.square(rel_grad))
     if prior_avg_params is not None:
         residual = np.square(np.subtract(param_guess, prior_avg_params))
         chi_square = np.nansum(np.true_divide(residual,np.square(prior_std_params)))
@@ -73,7 +73,7 @@ def log_posterior_corr(param_guess, corr_func, obs_corr, obs_err, avg_params, st
     return log_prior_corr(param_guess, avg_params, std_params, reg_param) +\
             log_likelihood_corr(param_guess, corr_func, obs_corr, obs_err, lagtimes, dt, q)
 
-def corr_std_calc(corr, baseline=0.1, rolloff=0.15):
+def corr_std_calc(corr, baseline=0.1, rolloff=0.15, exponent=1.0):
     """Function calculating uncertainty on correlation values
         To prevent low correlations (more affected by noise on baseline and
         spontaneous decorrelation) from dominating the signal, which is 
@@ -82,7 +82,7 @@ def corr_std_calc(corr, baseline=0.1, rolloff=0.15):
     """
     # Need to clip here and there to avoid numerical overflow and runtime warnings
     corr_clip = np.clip(corr, a_min=1e-6, a_max=1-1e-6)
-    return baseline*np.exp(np.clip(np.power(np.true_divide(rolloff, corr_clip), 1), a_min=-10, a_max=10))
+    return baseline*np.exp(np.clip(np.power(np.true_divide(rolloff, corr_clip), exponent), a_min=-10, a_max=10))
 
 def compute_displ_multilag(v, lagtimes, dt=1.0):
     """Compute discrete displacements from a velocity array and a list of lagtimes
@@ -712,11 +712,12 @@ class VelMaps():
             else:
                 cur_slopes = np.true_divide(cur_dr, cur_dt)
                 slope = np.nanmean(cur_slopes)
+                intercept = 0
                 if simpleOut:
-                    intercept = np.nan
+                    std_err = np.nan
                 else:
-                    intercept = np.nanstd(cur_slopes)
-                r_value, p_value, std_err = None, None, None
+                    std_err = np.nanstd(cur_slopes)
+                r_value, p_value = None, None, None
             
             if debugPrint:
                 print('   *** ' + str(tidx) + ' - ' + str(np.count_nonzero(use_mask[:,tidx])) + ' points, dt=[' + str(np.min(cur_dt)) + ',' + str(np.max(cur_dt)) + ']' +\
