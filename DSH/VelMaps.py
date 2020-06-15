@@ -601,7 +601,7 @@ class VelMaps():
 
     def ProcessSinglePixel(self, pxLoc, tRange=None, signed_lags=False, symm_only=False, consec_only=True,\
                           max_holes=0, mask_opening=None, conservative_cutoff=0.3, generous_cutoff=0.15,\
-                          linear_fit=False, returnMask=False, debugPrint=False, debugFile=None):
+                          method='lstsq', zeroInterc=True, simpleOut=True, debugPrint=False, debugFile=None):
         """Computes v(t) for one single pixel
         
         Parameters
@@ -631,14 +631,17 @@ class VelMaps():
                     include first lagtimes provided correlation data is above this more generous threshold
                     Note: for parabolic profiles, the first correlation minimum is 0.083, 
                     the first maximum after that is 0.132. Don't go below that!
+        method : 'linfit'|'lstsq'|'mean'
         
         Returns
         -------
         vel : 1D array with velocity as a function of time
-        if linear_fit:
-            interc : 1D array with intercepts of linear fits as a function of time
-            verr : 1D array with errors on linear fit slopes
-        if returnMask:
+        interc : 1D array with intercepts of linear fits as a function of time
+        if simpleOut==False:
+            verr : 1D array with errors
+                    - if method == linfit, this will contain error on slopes
+                    - if method == lstsq, this will contain the sum of fit residuals
+                    - if method == mean, this will contain the standard deviation of point-wise slopes
             mask : 2D array with (t, tau) datapoints actually used in linear fit
         """
 
@@ -664,9 +667,8 @@ class VelMaps():
         # Prepare memory
         qdr_g = g2m1_sample(zProfile=self.zProfile)
         vel = np.zeros(corr_data.shape[2])
-        if linear_fit:
-            interc = np.zeros_like(vel)
-            fiterr = np.zeros_like(vel)
+        interc = np.zeros_like(vel)
+        fiterr = np.zeros_like(vel)
         
         if debugFile is not None:
             fdeb = open(os.path.join(self.outFolder, debugFile), 'w')
@@ -683,20 +685,35 @@ class VelMaps():
             if signed_lags:
                 cur_dt = np.multiply(cur_dt, lagsign[use_mask[:,tidx]])
                 cur_dr = np.multiply(cur_dr, lagsign[use_mask[:,tidx]])
-            if linear_fit:
+
+            if method=='linfit':
                 if (np.max(cur_dt)==np.min(cur_dt)):
                     slope = np.nanmean(cur_dr)*1.0/cur_dt[0]
                     intercept, r_value, p_value, std_err = 0, np.nan, np.nan, np.nan
                 else:
                     slope, intercept, r_value, p_value, std_err = stats.linregress(cur_dt, cur_dr)
-                interc[tidx] = intercept
-                fiterr[tidx] = std_err
+            elif method=='lstsq':
+                if zeroInterc:
+                    slope, std_err, _, _ = np.linalg.lstsq(cur_dt[:,np.newaxis], cur_dr, rcond=None)
+                    intercept = 0
+                else:
+                    matrix, std_err, _, _ = np.linalg.lstsq(np.vstack([cur_dt, np.ones(len(cur_dt))]).T, cur_dr, rcond=None)
+                    slope = matrix[0]
+                    intercept = matrix[1]
+                r_value, p_value = np.nan, np.nan
             else:
-                slope = np.nanmean(np.true_divide(cur_dr, cur_dt))
-                intercept, r_value, p_value, std_err = None, None, None, None
+                cur_slopes = np.true_divide(cur_dr, cur_dt)
+                slope = np.nanmean(cur_slopes)
+                if simpleOut:
+                    intercept = np.nan
+                else:
+                    intercept = np.nanstd(cur_slopes)
+                r_value, p_value, std_err = None, None, None
             
             # Save result
             vel[tidx] = slope
+            interc[tidx] = intercept
+            fiterr[tidx] = std_err
             
             if debugPrint:
                 print('   *** ' + str(tidx) + ' - ' + str(np.count_nonzero(use_mask[:,tidx])) + ' points, dt=[' + str(np.min(cur_dt)) + ',' + str(np.max(cur_dt)) + ']' +\
@@ -731,16 +748,10 @@ class VelMaps():
         if debugFile is not None:
             fdeb.close()
 
-        if linear_fit:
-            if returnMask:
-                return vel, interc, fiterr, use_mask
-            else:
-                return vel, interc, fiterr
+        if simpleOut:
+            return vel, interc
         else:
-            if returnMask:
-                return vel, use_mask
-            else:
-                return vel
+            return vel, interc, fiterr, use_mask
 
     def GetMIfile(self):
         """Returns velocity map as MIfile, if found in folder
