@@ -601,7 +601,7 @@ class VelMaps():
 
     def ProcessSinglePixel(self, pxLoc, tRange=None, signed_lags=False, symm_only=False, consec_only=True,\
                           max_holes=0, mask_opening=None, conservative_cutoff=0.3, generous_cutoff=0.15,\
-                          returnMask=False, debugPrint=False, debugFile=None):
+                          linear_fit=False, returnMask=False, debugPrint=False, debugFile=None):
         """Computes v(t) for one single pixel
         
         Parameters
@@ -635,8 +635,9 @@ class VelMaps():
         Returns
         -------
         vel : 1D array with velocity as a function of time
-        interc : 1D array with intercepts of linear fits as a function of time
-        verr : 1D array with linear fit errors
+        if linear_fit:
+            interc : 1D array with intercepts of linear fits as a function of time
+            verr : 1D array with errors on linear fit slopes
         if returnMask:
             mask : 2D array with (t, tau) datapoints actually used in linear fit
         """
@@ -681,11 +682,14 @@ class VelMaps():
             if signed_lags:
                 cur_dt = np.multiply(cur_dt, lagsign[use_mask[:,tidx]])
                 cur_dr = np.multiply(cur_dr, lagsign[use_mask[:,tidx]])
-            if (np.max(cur_dt)==np.min(cur_dt)):
-                slope = np.nanmean(cur_dr)*1.0/cur_dt[0]
-                intercept, r_value, p_value, std_err = 0, np.nan, np.nan, np.nan
+            if linear_fit:
+                if (np.max(cur_dt)==np.min(cur_dt)):
+                    slope = np.nanmean(cur_dr)*1.0/cur_dt[0]
+                    intercept, r_value, p_value, std_err = 0, np.nan, np.nan, np.nan
+                else:
+                    slope, intercept, r_value, p_value, std_err = stats.linregress(cur_dt, cur_dr)
             else:
-                slope, intercept, r_value, p_value, std_err = stats.linregress(cur_dt, cur_dr)  
+                slope = np.nanmean(np.true_divide(cur_dr, cur_dt))
             
             # Save result
             vel[tidx] = slope
@@ -725,10 +729,16 @@ class VelMaps():
         if debugFile is not None:
             fdeb.close()
 
-        if returnMask:
-            return vel, interc, fiterr, use_mask
+        if linear_fit:
+            if returnMask:
+                return vel, interc, fiterr, use_mask
+            else:
+                return vel, interc, fiterr
         else:
-            return vel, interc, fiterr
+            if returnMask:
+                return vel, use_mask
+            else:
+                return vel
 
     def GetMIfile(self):
         """Returns velocity map as MIfile, if found in folder
