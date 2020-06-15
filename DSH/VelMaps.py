@@ -601,7 +601,7 @@ class VelMaps():
 
     def ProcessSinglePixel(self, pxLoc, tRange=None, signed_lags=False, symm_only=False, consec_only=True,\
                           max_holes=0, mask_opening=None, conservative_cutoff=0.3, generous_cutoff=0.15,\
-                          debugPrint=False, debugFile=None):
+                          returnMask=False, debugPrint=False, debugFile=None):
         """Computes v(t) for one single pixel
         
         Parameters
@@ -635,7 +635,10 @@ class VelMaps():
         Returns
         -------
         vel : 1D array with velocity as a function of time
+        interc : 1D array with intercepts of linear fits as a function of time
         verr : 1D array with linear fit errors
+        if returnMask:
+            mask : 2D array with (t, tau) datapoints actually used in linear fit
         """
 
         if not self._loaded_metadata:
@@ -652,6 +655,7 @@ class VelMaps():
         corr_data[:,zero_lidx,:] = np.ones_like(corr_data[:,0,:])
         corr_data[np.where(corr_data==0)]=np.nan
         try_mask = corr_data > conservative_cutoff
+        use_mask = np.empty_like(try_mask[0], dtype=bool)
         if signed_lags:
             lagsign = np.ones_like(lagList, dtype=np.int8)
             lagsign[lagFlip]=-1
@@ -668,15 +672,15 @@ class VelMaps():
         for tidx in range(len(vel)):
             
             # Fine tune selection of lags to include
-            use_mask = self._tunemask_pixel(try_mask[0,:,tidx], zero_lidx, mask_opening, consec_only, max_holes, symm_only, signed_lags,\
+            use_mask[:,tidx] = self._tunemask_pixel(try_mask[0,:,tidx], zero_lidx, mask_opening, consec_only, max_holes, symm_only, signed_lags,\
                         corrdata=corr_data[0,:,tidx], generous_cutoff=generous_cutoff)
             # Perform linear fit
-            cur_dt = np.true_divide(lagList[use_mask], self.GetFPS()*1.0/self.corr_maps.imgRange[2])
-            cur_dr = np.true_divide(invert_monotonic(corr_data[0,:,tidx][use_mask], qdr_g, overflow_to_nan=True), self.qValue)
+            cur_dt = np.true_divide(lagList[use_mask[:,tidx]], self.GetFPS()*1.0/self.corr_maps.imgRange[2])
+            cur_dr = np.true_divide(invert_monotonic(corr_data[0,:,tidx][use_mask[:,tidx]], qdr_g, overflow_to_nan=True), self.qValue)
             #cur_dr = np.true_divide(invert_monotonic(corr_data[0,:,tidx][use_mask], qdr_g), self.qValue)
             if signed_lags:
-                cur_dt = np.multiply(cur_dt, lagsign[use_mask])
-                cur_dr = np.multiply(cur_dr, lagsign[use_mask])
+                cur_dt = np.multiply(cur_dt, lagsign[use_mask[:,tidx]])
+                cur_dr = np.multiply(cur_dr, lagsign[use_mask[:,tidx]])
             if (np.max(cur_dt)==np.min(cur_dt)):
                 slope = np.nanmean(cur_dr)*1.0/cur_dt[0]
                 intercept, r_value, p_value, std_err = 0, np.nan, np.nan, np.nan
@@ -689,7 +693,7 @@ class VelMaps():
             fiterr[tidx] = std_err
             
             if debugPrint:
-                print('   *** ' + str(tidx) + ' - ' + str(np.count_nonzero(use_mask)) + ' points, dt=[' + str(np.min(cur_dt)) + ',' + str(np.max(cur_dt)) + ']' +\
+                print('   *** ' + str(tidx) + ' - ' + str(np.count_nonzero(use_mask[:,tidx])) + ' points, dt=[' + str(np.min(cur_dt)) + ',' + str(np.max(cur_dt)) + ']' +\
                       ' - dr=[' + str(np.min(cur_dr)) + ',' + str(np.max(cur_dr)) + '] - fit result: ' + str([slope, intercept, r_value, p_value, std_err]))
             if debugFile is not None:
                 strWrite = '\n*******************'
@@ -699,11 +703,11 @@ class VelMaps():
                     strWrite += '\norig_lag\torig_corr\tsign\ttry_mask\tmask'
                     for i in range(corr_data.shape[1]):
                         strWrite += '\n' + str(lagList[i]) + '\t' + str(corr_data[0,i,tidx]) + '\t' + str(try_mask[0,i,tidx]) +\
-                                    '\t' + str(lagsign[i]) + '\t' + str(use_mask[i])
+                                    '\t' + str(lagsign[i]) + '\t' + str(use_mask[i,tidx])
                 else:
                     strWrite += '\norig_lag\torig_corr\tmask'
                     for i in range(corr_data.shape[1]):
-                        strWrite += '\n' + str(lagList[i]) + '\t' + str(corr_data[0,i,tidx]) + '\t' + str(use_mask[i])
+                        strWrite += '\n' + str(lagList[i]) + '\t' + str(corr_data[0,i,tidx]) + '\t' + str(use_mask[i,tidx])
                 strWrite += '\n-------------------'
                 strWrite += '\nfit_dt\tfit_dr'
                 for i in range(len(cur_dt)):
@@ -721,7 +725,10 @@ class VelMaps():
         if debugFile is not None:
             fdeb.close()
 
-        return vel, interc, fiterr
+        if returnMask:
+            return vel, interc, fiterr, use_mask
+        else:
+            return vel, interc, fiterr
 
     def GetMIfile(self):
         """Returns velocity map as MIfile, if found in folder
