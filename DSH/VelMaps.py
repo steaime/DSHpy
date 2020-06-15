@@ -664,8 +664,9 @@ class VelMaps():
         # Prepare memory
         qdr_g = g2m1_sample(zProfile=self.zProfile)
         vel = np.zeros(corr_data.shape[2])
-        interc = np.zeros_like(vel)
-        fiterr = np.zeros_like(vel)
+        if linear_fit:
+            interc = np.zeros_like(vel)
+            fiterr = np.zeros_like(vel)
         
         if debugFile is not None:
             fdeb = open(os.path.join(self.outFolder, debugFile), 'w')
@@ -688,13 +689,14 @@ class VelMaps():
                     intercept, r_value, p_value, std_err = 0, np.nan, np.nan, np.nan
                 else:
                     slope, intercept, r_value, p_value, std_err = stats.linregress(cur_dt, cur_dr)
+                interc[tidx] = intercept
+                fiterr[tidx] = std_err
             else:
                 slope = np.nanmean(np.true_divide(cur_dr, cur_dt))
+                intercept, r_value, p_value, std_err = None, None, None, None
             
             # Save result
             vel[tidx] = slope
-            interc[tidx] = intercept
-            fiterr[tidx] = std_err
             
             if debugPrint:
                 print('   *** ' + str(tidx) + ' - ' + str(np.count_nonzero(use_mask[:,tidx])) + ' points, dt=[' + str(np.min(cur_dt)) + ',' + str(np.max(cur_dt)) + ']' +\
