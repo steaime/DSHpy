@@ -625,10 +625,19 @@ class VelMaps():
     def ProcessSinglePixel(self, pxLoc, tRange=None, signed_lags=False, symm_only=False, consec_only=True,\
                           max_holes=0, mask_opening=None, conservative_cutoff=0.3, generous_cutoff=0.15,\
                           method='lstsq', simpleOut=True, debugPrint=False, debugFile=None):
-        return self.ProcessMultiPixel(pxLoc, readConsecutive=1, tRange=tRange, signed_lags=signed_lags, symm_only=symm_only,\
+        if simpleOut:
+            res = self.ProcessMultiPixel(pxLoc, readConsecutive=1, tRange=tRange, signed_lags=signed_lags, symm_only=symm_only,\
                                       consec_only=consec_only, max_holes=max_holes, mask_opening=mask_opening,\
                                       conservative_cutoff=conservative_cutoff, generous_cutoff=generous_cutoff,\
                                       method=method, simpleOut=simpleOut)
+
+            return res[0]
+        else:
+            vel, interc, fiterr, use_mask = self.ProcessMultiPixel(pxLoc, readConsecutive=1, tRange=tRange, signed_lags=signed_lags, symm_only=symm_only,\
+                                      consec_only=consec_only, max_holes=max_holes, mask_opening=mask_opening,\
+                                      conservative_cutoff=conservative_cutoff, generous_cutoff=generous_cutoff,\
+                                      method=method, simpleOut=simpleOut)
+            return vel[0], interc[0], fiterr[0], use_mask[0]
 
     def MCsamplePixel(self, pxLoc, tRange, lagTimes, dt, velPrior, corrPrior, initGaussBall, nwalkers, nsteps=1000,\
                              corrStdfunc=corr_std_calc, corrStdfuncParams={}, regParam=0.0):
