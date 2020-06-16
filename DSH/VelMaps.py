@@ -259,9 +259,6 @@ class VelMaps():
                     NOTE by Stefano : 4.25 1/um
         t_range :    restrict analysis to given time range [min, max, step].
                     if None, analyze full correlation maps
-        lag_range :  restrict analysis to correlation maps with lagtimes in a given range (in image units)
-                    if None, all available correlation maps will be used
-                    if int, lagtimes in [-lagRange, lagRange] will be used
         """
         
         self.corr_maps = corr_maps
@@ -456,8 +453,6 @@ class VelMaps():
             vmap_options['mask_opening'] = mask_opening
         if (tRange is not None):
             vmap_options['t_range'] = list(tRange)
-        if (self.lagRange is not None):
-            vmap_options['lag_range'] = list(self.lagRange)
         
         mapMedatada = {
                 'hdr_len' : 0,
