@@ -1,6 +1,6 @@
 import sys
 import os
-from DSH import Config, MIfile, CorrMaps, VelMaps
+from DSH import Config, MIfile, CorrMaps, VelMaps, SharedFunctions
 
 
 if __name__ == '__main__':
@@ -62,18 +62,19 @@ if __name__ == '__main__':
                     vmap_kw = VelMaps._get_kw_from_config(conf)
                     
                     # Initialize MelMaps object
-                    vel_maps = VelMaps.VelMaps(corr_maps, **vmap_kw)
+                    vel_maps = VelMaps.VelMaps(corr_maps, **SharedFunctions.filter_kwdict_funcparams(vmap_kw, VelMaps.VelMaps.__init__))
                     
                 if ('-skip_vmap' not in cmd_list):
                     
                     if (num_proc == 1):
                         if ('-silent' not in cmd_list):
                             print('    - Computing velocity maps (single process)')
-                        vel_maps.Compute()
+                        vel_maps.Compute(**SharedFunctions.filter_kwdict_funcparams(vmap_kw, VelMaps.VelMaps.Compute))
                     else:
                         if ('-silent' not in cmd_list):
                             print('    - Computing velocity maps (splitting computaton in {0} processes)'.format(num_proc))
-                        vel_maps.ComputeMultiproc(num_proc, assemble_after=False)
+                        vel_maps.ComputeMultiproc(num_proc, assemble_after=False,\
+                                                  **SharedFunctions.filter_kwdict_funcparams(vmap_kw, VelMaps.VelMaps.ComputeMultiproc))
                                             
                 if (num_proc > 1 and '-skip_vmap_assemble' not in cmd_list):
                     

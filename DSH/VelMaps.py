@@ -205,11 +205,13 @@ def _get_kw_from_config(conf=None):
                't_range':None,\
                'lag_range':None,\
                'signed_lags':False,\
+               'symm_only':True,\
                'consec_only':True,\
                'max_holes':0,\
                'mask_opening':None,\
                'conservative_cutoff':0.3,\
-               'generous_cutoff':0.15}
+               'generous_cutoff':0.15,\
+               'method':'linfit'}
     if (conf is None):
         return def_kw
     else:
@@ -217,11 +219,13 @@ def _get_kw_from_config(conf=None):
                't_range':conf.Get('velmap_parameters', 't_range', def_kw['t_range'], int),\
                'lag_range':conf.Get('velmap_parameters', 'lag_range', def_kw['lag_range'], int),\
                'signed_lags':conf.Get('velmap_parameters', 'signed_lags', def_kw['signed_lags'], bool),\
+               'symm_only':conf.Get('velmap_parameters', 'symm_only', def_kw['symm_only'], bool),\
                'consec_only':conf.Get('velmap_parameters', 'consec_only', def_kw['consec_only'], bool),\
                'max_holes':conf.Get('velmap_parameters', 'max_holes', def_kw['max_holes'], int),\
                'mask_opening':conf.Get('velmap_parameters', 'mask_opening', def_kw['mask_opening'], int),\
                'conservative_cutoff':conf.Get('velmap_parameters', 'conservative_cutoff', def_kw['conservative_cutoff'], float),\
-               'generous_cutoff':conf.Get('velmap_parameters', 'generous_cutoff', def_kw['generous_cutoff'], float)}
+               'generous_cutoff':conf.Get('velmap_parameters', 'generous_cutoff', def_kw['generous_cutoff'], float),\
+               'method':conf.Get('velmap_parameters', 'method', def_kw['method'], str)}
 
 def LoadFromConfig(ConfigFile, outFolder=None):
     """Loads a VelMaps object from a config file like the one exported with VelMaps.ExportConfig()
