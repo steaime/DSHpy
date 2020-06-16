@@ -787,16 +787,25 @@ class VelMaps():
         return use_mask
 
 
-    def GetMIfile(self):
+    def GetMIfile(self, name_prefix='_vMap', raise_exception=True):
         """Returns velocity map as MIfile, if found in folder
         """
         assert (os.path.isdir(self.outFolder)), 'Correlation map folder ' + str(self.outFolder) + ' not found.'
-        config_fname = os.path.join(self.outFolder, '_vMap_metadata.ini')
-        MI_fname = os.path.join(self.outFolder, '_vMap.dat')
-        assert os.path.isfile(config_fname), 'Configuration file ' + str(config_fname) + ' not found'
-        assert os.path.isfile(MI_fname), 'MI file ' + str(MI_fname) + ' not found'
-        return MI.MIfile(MI_fname, config_fname)
-    
+        config_fname = os.path.join(self.outFolder, name_prefix+'_metadata.ini')
+        MI_fname = os.path.join(self.outFolder, name_prefix+'.dat')
+        if not os.path.isfile(config_fname):
+            if raise_exception:
+                raise IOError('Configuration file ' + str(config_fname) + ' not found')
+            else:
+                print('WARNING: Configuration file ' + str(config_fname) + ' not found')
+                return None
+        if not os.path.isfile(MI_fname):
+            if raise_exception:
+                raise IOError('MI file ' + str(MI_fname) + ' not found')
+            else:
+                print('WARNING: MI file ' + str(MI_fname) + ' not found')
+                return None
+        return MI.MIfile(MI_fname, config_fname)   
     
     def RefineMC(self, cropROI=None, tRange=None, lagTimes=None, velPrior=None, priorStd=None, corrPrior=None,\
                  initGaussBall=1e-3, corrStdfunc=corr_std_calc, corrStdfuncParams={}, regParam=0.0,\
@@ -997,7 +1006,7 @@ class VelMaps():
         
         return res_vavg
 
-    def CalcDisplacements(self, outFilename, outMetadataFile, silent=True):
+    def CalcDisplacements(self):
         """Integrate velocities to compute total displacements since the beginning of the experiment
         """
 
@@ -1011,11 +1020,45 @@ class VelMaps():
         for tidx in range(1, displmap_data.shape[0]):
             displmap_data[tidx] = np.add(displmap_data[tidx-1], np.multiply(vmap_data[tidx], dt))
 
-        MI.MIfile(outFilename, vmap_mifile.GetMetadata()).WriteData(displmap_data)
-        cf.ExportDict(vmap_mifile.GetMetadata(), outMetadataFile, section_name='MIfile')
+        MI.MIfile(os.path.join(self.outFolder, '_displMap.dat'), vmap_mifile.GetMetadata()).WriteData(displmap_data)
+        cf.ExportDict(vmap_mifile.GetMetadata(), os.path.join(self.outFolder, '_displMap_metadata.ini'), section_name='MIfile')
         
         return displmap_data
 
+
+    def CalcGradients(self, axis=None):
+        """Compute spatial gradients of displacements and velocities, if present
+        
+        Parameters
+        ----------
+        axis: None, int or tuple of ints. Gradient is calculated only along the given axis or axes 
+              The default (axis = None) is to calculate the gradient for all the axes of the input array. 
+              axis may be negative, in which case it counts from the last to the first axis.
+        """
+
+        map_prefix = ['_vMap', '_displMap']
+        if axis is None:
+            axis = (0, 1, 2)
+        elif type(axis) is int:
+            axis = (axis)
+
+        for cur_prefix in map_prefix:
+            
+            # Read full velocity|displacement map to memory
+            cur_mifile = self.GetMIfile(name_prefix=cur_prefix, raise_exception=False)
+            
+            if cur_mifile is not None:
+                
+                map_data = cur_mifile.Read()
+                
+                map_gradients = np.gradient(map_data, cur_mifile.GetPixelSize(), axis=axis)
+                if (len(axis)==1):
+                    map_gradients = [map_gradients]
+                
+                for axidx in range(len(axis)):
+                    out_prefix = cur_prefix + '_grad' + str(axis[axidx])
+                    MI.MIfile(os.path.join(self.outFolder, out_prefix+'.dat'), cur_mifile.GetMetadata()).WriteData(map_gradients[axidx])
+            
 
 
 

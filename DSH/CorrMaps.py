@@ -361,7 +361,7 @@ class CorrMaps():
             lagList.sort(reverse=lagFlip)
         
         tvalues = list(range(*self.cmap_mifiles[1].Validate_zRange(zRange)))
-        res = self.GetCorrValues(pxLocs, tvalues, lagList, lagFlip=lagFlip, do_squeeze=squeezeResult, readConsecutive=1)
+        res = self.GetCorrValues(pxLocs, tvalues, lagList, lagFlip=lagFlip, do_squeeze=squeezeResult, readConsecutive=readConsecutive)
         
         if returnCoords:
             return res, tvalues, lagList, lagFlip
