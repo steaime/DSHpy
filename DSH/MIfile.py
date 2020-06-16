@@ -8,7 +8,7 @@ from DSH import Config as cf
 _data_depth = {'b':1, 'B':1, '?':1, 'h':2, 'H':2, 'i':4, 'I':4, 'f':4, 'd':8}
 _data_types = {'b':np.int8, 'B':np.uint8, '?':bool, 'h':np.int16, 'H':np.uint16, 'i':np.int32, 'I':np.uint32, 'f':np.float32, 'd':np.float64}
 
-def MergeMIfiles(MergedFileName, MIfileList, MergedMetadataFile=None):
+def MergeMIfiles(MergedFileName, MIfileList, MergedMetadataFile=None, MergeAxis=0, FinalShape=None):
     """Merge multiple image files into one image file
     
     Parameters
@@ -17,6 +17,12 @@ def MergeMIfiles(MergedFileName, MIfileList, MergedMetadataFile=None):
     MIfileList : list of MIfile objects or of 2-element list [MIfilename, MedatData]
                  Image shape and pixel format must be the same for all MIfiles
     MergedMetadataFile : if not None, export metadata of merged file
+    MergeAxis : Stitch MIfiles along specific axis.
+                Default is 0 (z axis or time). MIfiles need to have the same shape
+                along the other axes
+    FinalShape : if not None, reshape final output to given shape
+                Shape along the merged axis will be disregarded and automatically computed
+                (can set this to -1)
                  
     Returns
     -------
@@ -38,27 +44,50 @@ def MergeMIfiles(MergedFileName, MIfileList, MergedMetadataFile=None):
         else:
             add_mi = cur_mifile
         mi_in_list.append(add_mi)
-        out_meta['shape'][0] += add_mi.ImageNumber()
-        cur_shape = add_mi.ImageShape()
+        cur_MIshape = add_mi.GetShape()
+        if (MergeAxis < 0):
+            MergeAxis += len(cur_MIshape)
+        out_meta['shape'][MergeAxis] += cur_MIshape[MergeAxis]
         cur_format = add_mi.DataFormat()
         if (out_meta['shape'][1] == 0):
-            out_meta['shape'][1], out_meta['shape'][2] = cur_shape[0], cur_shape[1]
+            for ax in range(len(cur_MIshape)):
+                if ax!=MergeAxis:
+                    out_meta['shape'][ax] = cur_MIshape[ax]
             out_meta['px_format'] = cur_format
             out_meta['fps'] = add_mi.GetFPS()
             out_meta['px_size'] = add_mi.GetPixelSize()
-        elif (out_meta['shape'][1] != cur_shape[0] or out_meta['shape'][2] != cur_shape[1] and out_meta['px_format'] != cur_format):
-            raise IOError('MIfiles should all have the same image shape and format')
+        else:
+            for ax in range(len(cur_MIshape)):
+                if (ax!=MergeAxis and out_meta['shape'][ax]!=cur_MIshape[ax]):
+                    raise IOError('Cannot merge MIfiles of shapes ' + str(out_meta['shape']) +\
+                                  ' and ' + str(cur_MIshape) + ' along axis ' + str(MergeAxis))
+            if (out_meta['px_format'] != cur_format):
+                raise IOError('MIfiles should all have the same pixel format')
     
+    if (FinalShape is not None):
+        re_shape = FinalShape.copy()
+        re_shape[MergeAxis] = int(np.prod(out_meta['shape']) / (re_shape[MergeAxis-1]*re_shape[MergeAxis-2]))
+        if (np.prod(re_shape)!=np.prod(out_meta['shape'])):
+            raise ValueError('An error occurred trying to reshape MIfile of shape ' + str(out_meta['shape']) +\
+                             ' into shape ' + str(re_shape) + ': pixel number is not conserved (' + str(np.prod(re_shape)) +\
+                             '!=' + str(np.prod(out_meta['shape'])) + ')!')
+        else:
+            out_meta['shape'] = re_shape
     if (MergedMetadataFile is not None):
         conf = cf.Config()
         conf.Import(out_meta, section_name='MIfile')
         conf.Export(MergedMetadataFile)
-
     
     outMIfile = MIfile(MergedFileName, out_meta)
-    for cur_mifile in mi_in_list:
-        outMIfile.WriteData(cur_mifile.Read(closeAfter=True), closeAfter=False)
-    outMIfile.Close()
+    if (MergeAxis==0):
+        for cur_mifile in mi_in_list:
+            outMIfile.WriteData(cur_mifile.Read(closeAfter=True), closeAfter=False)
+        outMIfile.Close()
+    else:
+        write_data = mi_in_list[0].Read(closeAfter=True)
+        for midx in range(1, len(mi_in_list)):
+            write_data = np.append(write_data, cur_mifile.Read(closeAfter=True), axis=MergeAxis)
+        outMIfile.WriteData(write_data, closeAfter=True)
 
 def ValidateROI(ROI, ImageShape, replaceNone=False):
     """Validates a Region Of Interest (ROI)

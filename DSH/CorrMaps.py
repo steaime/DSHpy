@@ -307,33 +307,37 @@ class CorrMaps():
         else:
             return self.conf_cmaps, self.cmap_mifiles, self.all_lagtimes
     
-    def GetCorrTimetrace(self, pxLocs, zRange=None, lagList=None, excludeLags=[], lagFlip=False, returnCoords=False, squeezeResult=True):
+    def GetCorrTimetrace(self, pxLocs, zRange=None, lagList=None, excludeLags=[], lagFlip=False, returnCoords=False,\
+                         squeezeResult=True, readConsecutive=1):
         """Returns (t, tau) correlations for a given set of pixels
         
         Parameters
         ----------
-        pxLocs :  list of pixel locations, each location being a tuple (row, col)
-        zRange :  range of time (or z) slices to sample
-        lagList : list of lagtimes. If None, all available lagtimes will be loaded,
-                  except the ones eventually contained in excludeLags
-        excludeLags: if lagList is None, list of lagtimes to be excluded
-        lagFlip : if False: standard correlations will be returned
-                    if True: correlations having the given time as second correlated time
-                             will be returned if available
-                  if 'BOTH': both signs will be stitched together
-        returnCoords : if True, also returns the list of times, lagtimes and lagsigns
-        squeezeResult : if True, squeeze the output numpy array to remove dimensions if size along axis is 1
+        pxLocs :          list of pixel locations, each location being a tuple (row, col)
+        zRange :          range of time (or z) slices to sample
+        lagList :         list of lagtimes. If None, all available lagtimes will be loaded,
+                          except the ones eventually contained in excludeLags
+        excludeLags:      if lagList is None, list of lagtimes to be excluded
+        lagFlip :         if False: standard correlations will be returned
+                          if True: correlations having the given time as second correlated time
+                                   will be returned if available
+                          if 'BOTH': both signs will be stitched together
+        returnCoords :    if True, also returns the list of times, lagtimes and lagsigns
+        squeezeResult :   if True, squeeze the output numpy array to remove dimensions if size along axis is 1
+        readConsecutive : positive integer. Number of consecutive pixels to read starting from each pxLoc
+                          if >1 the output will still be a 3D array, but the first dimension will be
+                          len(pxLoc) x readConsecutive
         
         Returns
         -------
-        res: If only one pixel was asked, single 2D array: one row per time delay
-                Otherwise, 3D array, one matrix per pixel
+        res:              If only one pixel was asked, single 2D array: one row per time delay
+                          Otherwise, 3D array, one matrix per pixel
         if returnCoords is True:
-        tvalues: list of image times
-        lagList: list of lagtimes, in image units. All elements are also contained in self.all_lagtimes
-                if lagFlip=='BOTH' lags are duplicated, first descending and then ascending
-        lagFlip: boolean value or list of boolean values indicating whether the lagtime is flipped
-                if signle boolean values, all values are interpreted as equally flipped
+        tvalues:          list of image times
+        lagList:          list of lagtimes, in image units. All elements are also contained in self.all_lagtimes
+                          if lagFlip=='BOTH' lags are duplicated, first descending and then ascending
+        lagFlip:          boolean value or list of boolean values indicating whether the lagtime is flipped
+                          if signle boolean values, all values are interpreted as equally flipped
         """
         
         self.GetCorrMaps()
@@ -357,25 +361,29 @@ class CorrMaps():
             lagList.sort(reverse=lagFlip)
         
         tvalues = list(range(*self.cmap_mifiles[1].Validate_zRange(zRange)))
-        res = self.GetCorrValues(pxLocs, tvalues, lagList, lagFlip=lagFlip, do_squeeze=squeezeResult)
+        res = self.GetCorrValues(pxLocs, tvalues, lagList, lagFlip=lagFlip, do_squeeze=squeezeResult, readConsecutive=1)
+        
         if returnCoords:
             return res, tvalues, lagList, lagFlip
         else:
             return res
         
-    def GetCorrValues(self, pxLocs, tList, lagList, lagFlip=None, do_squeeze=True):
+    def GetCorrValues(self, pxLocs, tList, lagList, lagFlip=None, do_squeeze=True, readConsecutive=1):
         """Get correlation values relative to a bunch of pixel location, time points and lags
         
         Parameters
         ----------
-        pxLocs: pixel location [row, col] or list of pixel locations
-        tList : time, in image units, or list of times
-        lagList: lagtime, in image units (must be present in self.all_lagtimes)
-                 or list of lagtimes
-        lagFlip: boolean or list of boolean with same shape as lagList
-                 indicates whether the time specified in tList is the smallest (lagFlip==False)
-                 or the larges (lagFlip==True) of the two times that are correlated
-        do_squeeze : if True, squeeze the output numpy array to remove dimensions if size along axis is 1
+        pxLocs:           pixel location [row, col] or list of pixel locations
+        tList :           time, in image units, or list of times
+        lagList:          lagtime, in image units (must be present in self.all_lagtimes)
+                          or list of lagtimes
+        lagFlip:          boolean or list of boolean with same shape as lagList
+                          indicates whether the time specified in tList is the smallest (lagFlip==False)
+                          or the larges (lagFlip==True) of the two times that are correlated
+        do_squeeze :      if True, squeeze the output numpy array to remove dimensions if size along axis is 1
+        readConsecutive : positive integer. Number of consecutive pixels to read starting from each pxLoc
+                          if >1 the output will still be a 3D array, but the first dimension will be
+                          len(pxLoc) x readConsecutive
         """
         self.GetCorrMaps()
         if (type(pxLocs[0]) not in [list, tuple, np.ndarray]):
@@ -388,7 +396,11 @@ class CorrMaps():
             lagFlip = np.ones_like(lagList, dtype=bool)
         elif (type(lagFlip) not in [list, tuple, np.ndarray]):
             lagFlip = np.ones_like(lagList, dtype=bool)*lagFlip
-        res = np.ones((len(pxLocs), len(lagList), len(tList)))*np.nan
+        if readConsecutive>1:
+            res_shape = (len(pxLocs), len(lagList), len(tList), readConsecutive)
+        else:
+            res_shape = (len(pxLocs), len(lagList), len(tList))
+        res = np.ones(res_shape)*np.nan
         for lidx in range(res.shape[1]):
             cur_mifile = self.cmap_mifiles[self.all_lagtimes.index(lagList[lidx])]
             if cur_mifile is not None:
@@ -402,8 +414,13 @@ class CorrMaps():
                         img_idx = tList[tidx]
                     if img_idx is not None:
                         for pidx in range(res.shape[0]):
-                            res[pidx, lidx, tidx] = cur_mifile._read_pixels(px_num=1,\
+                            res[pidx, lidx, tidx] = cur_mifile._read_pixels(px_num=readConsecutive,\
                                        seek_pos=cur_mifile._get_offset(img_idx=img_idx, row_idx=pxLocs[pidx][0], col_idx=pxLocs[pidx][1]))
+        if readConsecutive>1:
+            res = np.moveaxis(res, -1, 1)
+            new_shape = (res.shape[0]*res.shape[1], res.shape[2], res.shape[3])
+            res.reshape(new_shape)
+            
         if do_squeeze:
             return np.squeeze(res)
         else:
