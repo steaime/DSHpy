@@ -60,7 +60,8 @@ def MergeMIfiles(MergedFileName, MIfileList, MergedMetadataFile=None, MergeAxis=
             for ax in range(len(cur_MIshape)):
                 if (ax!=MergeAxis and out_meta['shape'][ax]!=cur_MIshape[ax]):
                     raise IOError('Cannot merge MIfiles of shapes ' + str(out_meta['shape']) +\
-                                  ' and ' + str(cur_MIshape) + ' along axis ' + str(MergeAxis))
+                                  ' and ' + str(cur_MIshape) + ' along axis ' + str(MergeAxis) +\
+                                  ' (sizes on axis ' + str(ax) + ' do not match)')
             if (out_meta['px_format'] != cur_format):
                 raise IOError('MIfiles should all have the same pixel format')
     

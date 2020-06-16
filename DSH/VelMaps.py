@@ -418,8 +418,6 @@ class VelMaps():
         res_3D : 3D velocity map
         """
         
-        raise ValueError('THIS FUNCTION HAS KNOWN BUGS TO BE FIXED ACCORDING TO ProcessSinglePixel')
-
         if not silent:
             start_time = time.time()
             print('Computing velocity maps...')
