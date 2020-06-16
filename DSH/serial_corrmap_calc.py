@@ -59,7 +59,7 @@ if __name__ == '__main__':
                 if (('-skip_vmap' not in cmd_list) or (num_proc > 1 and '-skip_vmap_assemble' not in cmd_list)):
                     
                     # Read options for velocity calculation
-                    vmap_kw = VelMaps._get_kw_from_config(conf)
+                    vmap_kw = VelMaps._get_kw_from_config(conf, section='velmap_parameters')
                     
                     # Initialize MelMaps object
                     vel_maps = VelMaps.VelMaps(corr_maps, **SharedFunctions.filter_kwdict_funcparams(vmap_kw, VelMaps.VelMaps.__init__))

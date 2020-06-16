@@ -199,7 +199,7 @@ def invert_monotonic(data, _lut, overflow_to_nan=False):
                 res[i] = _lut[0][min(index, len(_lut[0])-1)]
     return res
 
-def _get_kw_from_config(conf=None):
+def _get_kw_from_config(conf=None, section='velmap_parameters'):
     # Read options for velocity calculation from DSH.Config object
     def_kw = {'q_value':1.0,\
                't_range':None,\
@@ -215,17 +215,17 @@ def _get_kw_from_config(conf=None):
     if (conf is None):
         return def_kw
     else:
-        return {'q_value':conf.Get('velmap_parameters', 'q_value', def_kw['q_value'], float),\
-               't_range':conf.Get('velmap_parameters', 't_range', def_kw['t_range'], int),\
-               'lag_range':conf.Get('velmap_parameters', 'lag_range', def_kw['lag_range'], int),\
-               'signed_lags':conf.Get('velmap_parameters', 'signed_lags', def_kw['signed_lags'], bool),\
-               'symm_only':conf.Get('velmap_parameters', 'symm_only', def_kw['symm_only'], bool),\
-               'consec_only':conf.Get('velmap_parameters', 'consec_only', def_kw['consec_only'], bool),\
-               'max_holes':conf.Get('velmap_parameters', 'max_holes', def_kw['max_holes'], int),\
-               'mask_opening':conf.Get('velmap_parameters', 'mask_opening', def_kw['mask_opening'], int),\
-               'conservative_cutoff':conf.Get('velmap_parameters', 'conservative_cutoff', def_kw['conservative_cutoff'], float),\
-               'generous_cutoff':conf.Get('velmap_parameters', 'generous_cutoff', def_kw['generous_cutoff'], float),\
-               'method':conf.Get('velmap_parameters', 'method', def_kw['method'], str)}
+        return {'q_value':conf.Get(section, 'q_value', def_kw['q_value'], float),\
+               't_range':conf.Get(section, 't_range', def_kw['t_range'], int),\
+               'lag_range':conf.Get(section, 'lag_range', def_kw['lag_range'], int),\
+               'signed_lags':conf.Get(section, 'signed_lags', def_kw['signed_lags'], bool),\
+               'symm_only':conf.Get(section, 'symm_only', def_kw['symm_only'], bool),\
+               'consec_only':conf.Get(section, 'consec_only', def_kw['consec_only'], bool),\
+               'max_holes':conf.Get(section, 'max_holes', def_kw['max_holes'], int),\
+               'mask_opening':conf.Get(section, 'mask_opening', def_kw['mask_opening'], int),\
+               'conservative_cutoff':conf.Get(section, 'conservative_cutoff', def_kw['conservative_cutoff'], float),\
+               'generous_cutoff':conf.Get(section, 'generous_cutoff', def_kw['generous_cutoff'], float),\
+               'method':conf.Get(section, 'method', def_kw['method'], str)}
 
 def LoadFromConfig(ConfigFile, outFolder=None):
     """Loads a VelMaps object from a config file like the one exported with VelMaps.ExportConfig()
@@ -549,7 +549,11 @@ class VelMaps():
         vel = np.zeros((corr_data.shape[0], corr_data.shape[2]))
         
         if simpleOut:
-            interc, fiterr, use_mask = None, None, None
+            if method=='linfit':
+                interc = np.zeros_like(vel)
+            else:
+                interc = None
+            fiterr, use_mask = None, None
         else:
             interc = np.zeros_like(vel)
             fiterr = np.zeros_like(vel)
@@ -613,6 +617,8 @@ class VelMaps():
                 if not simpleOut:
                     interc[pidx,tidx] = intercept
                     fiterr[pidx,tidx] = std_err
+                elif method=='linfit':
+                    interc[pidx,tidx] = intercept                    
 
         if simpleOut:
             return vel
@@ -991,188 +997,42 @@ class VelMaps():
         
         return res_vavg
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    def ProcessSinglePixel_OLD(self, pxLoc, tRange=None, signed_lags=False, symm_only=False, consec_only=True,\
-                          max_holes=0, mask_opening=None, conservative_cutoff=0.3, generous_cutoff=0.15,\
-                          method='lstsq', zeroInterc=True, simpleOut=True, debugPrint=False, debugFile=None):
-        """Computes v(t) for one single pixel
-        
-        Parameters
-        ----------
-        pxLoc: [row_index, col_index] coordinates of pixel to be analyzed
-        tRange : time range. If None, self.tRange will be used. Use None for single process computation
-                Set it to subset of total images for multiprocess computation
-        signed_lags : if True, lagtimes will have a positive or negative sign according to whether
-                    the current time is the first one or the second one correlated
-                    In this case, displacements will also be assigned the same sign as the lag
-                    otherwise, we will work with absolute values only
-                    Working with absolute values will "flatten" the linear fits, reducing slopes and increasing intercepts
-                    It does a much better job accounting for noise contributions to corr(tau->0)
-                    if signed_lags==False, the artificial correlation value at lag==0 will not be processed
-                    (it is highly recommended to set signed_lags to False)
-        symm_only : only considers time delays for which both positive and negative data are available.
-                    If symm_only==True, v(t) is evaluated using data actually centered on t
-        consec_only : if True only select sorrelation chunk with consecutive True value of the mask around tau=0
-                    Note: it is highly recommended to use consec_only==True
-        max_holes : integer, only used if consecutive_only==True.
-                    Largest hole to be ignored before chunk is considered as discontinued
-        mask_opening : None or integer > 1.
-                    if not None, apply binary_opening to the mask for a given pixel as a function of lagtime
-                    This removes thresholding noise by removing N-lag-wide unmasked domains where N=mask_opening_range
-        conservative_cutoff : only consider correlation data above this threshold value
-        generous_cutoff : when correlations above conservative_cutoff are not enough for linear fitting,
-                    include first lagtimes provided correlation data is above this more generous threshold
-                    Note: for parabolic profiles, the first correlation minimum is 0.083, 
-                    the first maximum after that is 0.132. Don't go below that!
-        method : 'linfit'|'lstsq'|'lstsq_wint'|'mean'
-        
-        Returns
-        -------
-        vel : 1D array with velocity as a function of time
-        interc : 1D array with intercepts of linear fits as a function of time
-        if simpleOut==False:
-            verr : 1D array with errors
-                    - if method == linfit, this will contain error on slopes
-                    - if method == lstsq, this will contain the sum of fit residuals
-                    - if method == mean, this will contain the standard deviation of point-wise slopes
-            mask : 2D array with (t, tau) datapoints actually used in linear fit
+    def CalcDisplacements(self, outFilename, outMetadataFile, silent=True):
+        """Integrate velocities to compute total displacements since the beginning of the experiment
         """
 
-        if not self._loaded_metadata:
-            self._load_metadata_from_corr()
-
-        if tRange is None:
-            tRange = self.tRange
-
-        # Load correlation data. Set central row (d0) to ones and set zero correlations to NaN
-        corr_data, tvalues, lagList, lagFlip = self.corr_maps.GetCorrTimetrace(pxLoc, zRange=tRange, lagFlip='BOTH',\
-                                                                               returnCoords=True, squeezeResult=False)
-        lagList = np.asarray(lagList)
-        zero_lidx = int((corr_data.shape[1]-1)/2)
-        corr_data[:,zero_lidx,:] = np.ones_like(corr_data[:,0,:])
-        corr_data[np.where(corr_data==0)]=np.nan
-        try_mask = corr_data > conservative_cutoff
-        use_mask = np.empty_like(try_mask[0], dtype=bool)
-        if signed_lags:
-            lagsign = np.ones_like(lagList, dtype=np.int8)
-            lagsign[lagFlip]=-1
-
-        # Prepare memory
-        qdr_g = g2m1_sample(zProfile=self.zProfile)
-        vel = np.zeros(corr_data.shape[2])
-        interc = np.zeros_like(vel)
-        fiterr = np.zeros_like(vel)
+        # Read full velocity map to memory
+        vmap_mifile = self.GetMIfile()
+        vmap_data = vmap_mifile.Read()
         
-        if debugFile is not None:
-            fdeb = open(os.path.join(self.outFolder, debugFile), 'w')
-            
-        for tidx in range(len(vel)):
-            
-            # Fine tune selection of lags to include
-            use_mask[:,tidx] = self._tunemask_pixel(try_mask[0,:,tidx], zero_lidx, mask_opening, consec_only, max_holes, symm_only, signed_lags,\
-                        corrdata=corr_data[0,:,tidx], generous_cutoff=generous_cutoff)
-            # Perform linear fit
-            cur_dt = np.true_divide(lagList[use_mask[:,tidx]], self.GetFPS()*1.0/self.corr_maps.imgRange[2])
-            cur_dr = np.true_divide(invert_monotonic(corr_data[0,:,tidx][use_mask[:,tidx]], qdr_g, overflow_to_nan=True), self.qValue)
-            #cur_dr = np.true_divide(invert_monotonic(corr_data[0,:,tidx][use_mask], qdr_g), self.qValue)
-            if signed_lags:
-                cur_dt = np.multiply(cur_dt, lagsign[use_mask[:,tidx]])
-                cur_dr = np.multiply(cur_dr, lagsign[use_mask[:,tidx]])
+        displmap_data = np.empty_like(vmap_data)
+        dt = 1.0/vmap_data.GetFPS()
+        displmap_data[0] = np.multiply(vmap_data[0], dt)
+        for tidx in range(1, displmap_data.shape[0]):
+            displmap_data[tidx] = np.add(displmap_data[tidx-1], np.multiply(vmap_data[tidx], dt))
 
-            if method=='linfit':
-                if (np.max(cur_dt)==np.min(cur_dt)):
-                    if tidx>0:
-                        intercept = np.mean(interc[:tidx])
-                    else:
-                        intercept = 0
-                    slope = (np.nanmean(cur_dr)-intercept)*1.0/cur_dt[0]
-                    std_err = np.nan
-                else:
-                    slope, intercept, _, _, std_err = stats.linregress(cur_dt, cur_dr)
-            elif method=='lstsq':
-                slope, residuals, _, _ = np.linalg.lstsq(cur_dt[:,np.newaxis], cur_dr, rcond=None)
-                intercept = 0
-                if len(residuals) > 0:
-                    std_err = residuals[0]
-                else:
-                    std_err = np.nan
-            elif method=='lstsq_wint':
-                matrix, residuals, _, _ = np.linalg.lstsq(np.vstack([cur_dt, np.ones(len(cur_dt))]).T, cur_dr, rcond=None)
-                slope = matrix[0]
-                intercept = matrix[1]
-                if len(residuals) > 0:
-                    std_err = residuals[0]
-                else:
-                    std_err = np.nan
-            else:
-                cur_slopes = np.true_divide(cur_dr, cur_dt)
-                slope = np.nanmean(cur_slopes)
-                intercept = 0
-                if simpleOut:
-                    std_err = np.nan
-                else:
-                    std_err = np.nanstd(cur_slopes)
-            
-            if debugPrint:
-                print('   *** ' + str(tidx) + ' - ' + str(np.count_nonzero(use_mask[:,tidx])) + ' points, dt=[' + str(np.min(cur_dt)) + ',' + str(np.max(cur_dt)) + ']' +\
-                      ' - dr=[' + str(np.min(cur_dr)) + ',' + str(np.max(cur_dr)) + '] - fit result: ' + str([slope, intercept, std_err]))
-            
-            # Save result
-            vel[tidx] = slope
-            interc[tidx] = intercept
-            fiterr[tidx] = std_err
+        MI.MIfile(outFilename, vmap_mifile.GetMetadata()).WriteData(displmap_data)
+        cf.ExportDict(vmap_mifile.GetMetadata(), outMetadataFile, section_name='MIfile')
+        
+        return displmap_data
 
-            if debugFile is not None:
-                strWrite = '\n*******************'
-                strWrite += '\nt=' + str(tidx)
-                strWrite += '\n-------------------'
-                if signed_lags:
-                    strWrite += '\norig_lag\torig_corr\tsign\ttry_mask\tmask'
-                    for i in range(corr_data.shape[1]):
-                        strWrite += '\n' + str(lagList[i]) + '\t' + str(corr_data[0,i,tidx]) + '\t' + str(try_mask[0,i,tidx]) +\
-                                    '\t' + str(lagsign[i]) + '\t' + str(use_mask[i,tidx])
-                else:
-                    strWrite += '\norig_lag\torig_corr\tmask'
-                    for i in range(corr_data.shape[1]):
-                        strWrite += '\n' + str(lagList[i]) + '\t' + str(corr_data[0,i,tidx]) + '\t' + str(use_mask[i,tidx])
-                strWrite += '\n-------------------'
-                strWrite += '\nfit_dt\tfit_dr'
-                for i in range(len(cur_dt)):
-                    strWrite += '\n' + str(cur_dt[i]) + '\t' + str(cur_dr[i])
-                strWrite += '\n-------------------'
-                strWrite += '\nFit results:'
-                strWrite += '\n  slope=\t' + str(slope)
-                strWrite += '\n  intercept=\t' + str(intercept)
-                strWrite += '\n  std_err=\t' + str(std_err)
-                strWrite += '\n*******************'                
-                fdeb.write(strWrite)
 
-        if debugFile is not None:
-            fdeb.close()
 
-        if simpleOut:
-            return vel, interc
-        else:
-            return vel, interc, fiterr, use_mask
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     def Compute_OLD(self, tRange=None, file_suffix='', silent=True, return_err=False):
         """Computes velocity maps
@@ -1363,31 +1223,3 @@ class VelMaps():
             return vmap, verr
         else:
             return vmap
-
-
-    def CalcDisplacements(self, outFilename, outMetadataFile, silent=True):
-        """Integrate velocities to compute total displacements since the beginning of the experiment
-        """
-        if (os.path.isdir(self.outFolder)):
-            vmap_fname = os.path.join(self.outFolder, '_vMap.dat')
-            config_fname = os.path.join(self.outFolder, '_vMap_metadata.ini')
-            if (os.path.isfile(config_fname) and os.path.isfile(vmap_fname)):
-                vmap_mifile = MI.MIfile(vmap_fname, config_fname)
-            else:
-                raise IOError('MIfile ' + str(vmap_fname) + ' or metadata file ' + str(config_fname) + ' not found')
-        else:
-            raise IOError('Correlation map folder ' + str(self.outFolder) + ' not found.')
-
-        # Read all velocity map to memory
-        vmap_data = vmap_mifile.Read()
-        
-        displmap_data = np.empty_like(vmap_data)
-        dt = 1.0/vmap_data.GetFPS()
-        displmap_data[0] = np.multiply(vmap_data[0], dt)
-        for tidx in range(1, displmap_data.shape[0]):
-            displmap_data[tidx] = np.add(displmap_data[tidx-1], np.multiply(vmap_data[0], dt))
-
-        MI.MIfile(outFilename, vmap_mifile.GetMetadata()).WriteData(displmap_data)
-        cf.ExportDict(vmap_mifile.GetMetadata(), outMetadataFile, section_name='MIfile')
-        
-        return displmap_data

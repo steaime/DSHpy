@@ -73,7 +73,7 @@ def MergeMIfiles(MergedFileName, MIfileList, MergedMetadataFile=None, MergeAxis=
                              ' into shape ' + str(re_shape) + ': pixel number is not conserved (' + str(np.prod(re_shape)) +\
                              '!=' + str(np.prod(out_meta['shape'])) + ')!')
         else:
-            out_meta['shape'] = re_shape
+            out_meta['shape'] = list(re_shape)
     if (MergedMetadataFile is not None):
         conf = cf.Config()
         conf.Import(out_meta, section_name='MIfile')
