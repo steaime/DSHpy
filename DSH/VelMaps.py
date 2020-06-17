@@ -6,7 +6,7 @@ from scipy import stats
 from scipy.ndimage import binary_opening
 import datetime
 import time
-from multiprocessing import Process, Lock
+from multiprocessing import Process
 
 import emcee
 import pandas as pd
@@ -425,6 +425,8 @@ class VelMaps():
                     corr_data, tvalues, lagList, lagFlip = self.corr_maps.GetCorrTimetrace(np.unravel_index(all_startLoc[pid], self.ImageShape()),\
                                                                                            zRange=self.tRange, lagFlip='BOTH', returnCoords=True,\
                                                                                            squeezeResult=False, readConsecutive=cur_read, skipGet=True)
+                    fLog.write('\n            ...read data. Correlation matrix has shape ' + str(corr_data.shape))
+                    fLog.flush()
                     cur_p = Process(target=self.Compute, args=(np.unravel_index(all_startLoc[pid], self.ImageShape()), cur_read,\
                                                                None, '_'+str(pid).zfill(2), signed_lags,\
                                                                symm_only, consec_only, max_holes, mask_opening, conservative_cutoff,\
@@ -630,10 +632,10 @@ class VelMaps():
 
         # Load correlation data. Set central row (d0) to ones and set zero correlations to NaN
         if corrTT is None:
-            corr_data, tvalues, lagList, lagFlip = self.corr_maps.GetCorrTimetrace(pxLoc, zRange=tRange, lagFlip='BOTH',\
+            corr_data, _, lagList, lagFlip = self.corr_maps.GetCorrTimetrace(pxLoc, zRange=tRange, lagFlip='BOTH',\
                                                           returnCoords=True, squeezeResult=False, readConsecutive=readConsecutive, skipGet=True)
         else:
-            corr_data, tvalues, lagList, lagFlip = corrTT[0], corrTT[1], corrTT[2], corrTT[3]
+            corr_data, _, lagList, lagFlip = corrTT[0], corrTT[1], corrTT[2], corrTT[3]
 
 
         lagList = np.asarray(lagList)
@@ -669,7 +671,8 @@ class VelMaps():
             for tidx in range(vel.shape[1]):
                 
                 # Fine tune selection of lags to include
-                cur_use_mask[:,tidx] = self._tunemask_pixel(corr_data[pidx,:,tidx] > conservative_cutoff, zero_lidx, mask_opening, consec_only, max_holes,\
+                cur_try_mask = corr_data[pidx,:,tidx] > conservative_cutoff
+                cur_use_mask[:,tidx] = self._tunemask_pixel(cur_try_mask, zero_lidx, mask_opening, consec_only, max_holes,\
                                                             symm_only, signed_lags, corrdata=corr_data[pidx,:,tidx], generous_cutoff=generous_cutoff)
                 # Perform linear fit
                 cur_dt = np.true_divide(lagList[cur_use_mask[:,tidx]], self.GetFPS()*1.0/self.corr_maps.imgRange[2])
@@ -830,8 +833,8 @@ class VelMaps():
         -------
         use_mask : 1D boolean array. Mask to be used for linear fit
         """
-        
         temp_mask = np.asarray(try_mask, dtype=bool)
+        print('....DEBUG: input mask has shape' + str(temp_mask.shape))
         if (mask_opening is not None and np.count_nonzero(try_mask) > 2):
             for cur_open_range in range(mask_opening, 2, -1):
                 # remove thresholding noise by removing N-lag-wide unmasked domains
