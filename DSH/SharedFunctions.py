@@ -138,10 +138,10 @@ def LockPrint(strOut, lock, silent=False):
         else:
             print(strOut)
 
-def LogWrite(strOut, fLog, lock=None, flushAfter=True, silent=True):
+def LogWrite(strOut, fLog, lock=None, flushAfter=True, silent=True, add_prefix='\n'):
     if fLog is not None:
         LockAcquire(lock)
-        fLog.write(strOut)
+        fLog.write(add_prefix + strOut)
         if flushAfter:
             fLog.flush()
         LockRelease(lock)

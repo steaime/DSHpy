@@ -314,7 +314,7 @@ class CorrMaps():
         return len(mifiles)
     
     def GetCorrTimetrace(self, pxLocs, zRange=None, lagList=None, excludeLags=[], lagFlip=False, returnCoords=False,\
-                         squeezeResult=True, readConsecutive=1, lock=None, mi_locks=None):
+                         squeezeResult=True, readConsecutive=1, lock=None, mi_locks=None, fLog=None, pid_str=''):
         """Returns (t, tau) correlations for a given set of pixels
         
         Parameters
@@ -369,14 +369,14 @@ class CorrMaps():
         
         tvalues = list(range(*self.cmap_mifiles[1].Validate_zRange(zRange)))
         res = self.GetCorrValues(pxLocs, tvalues, lagList, lagFlip=lagFlip, do_squeeze=squeezeResult, readConsecutive=readConsecutive,\
-                                 lock=lock, mi_locks=mi_locks)
+                                 lock=lock, mi_locks=mi_locks, fLog=fLog, pid_str=pid_str)
         
         if returnCoords:
             return res, tvalues, lagList, lagFlip
         else:
             return res
         
-    def GetCorrValues(self, pxLocs, tList, lagList, lagFlip=None, do_squeeze=True, readConsecutive=1, lock=None, mi_locks=None):
+    def GetCorrValues(self, pxLocs, tList, lagList, lagFlip=None, do_squeeze=True, readConsecutive=1, lock=None, mi_locks=None, fLog=None, pid_str=''):
         """Get correlation values relative to a bunch of pixel location, time points and lags
         
         Parameters
@@ -416,8 +416,11 @@ class CorrMaps():
                 cur_lock = False
                 if mi_locks is not None:
                     if len(mi_locks)>cur_midx:
+                        if mi_locks[cur_midx].locked():
+                            sf.LogWrite(pid_str + ' -- Waiting for MIfile #' + str(cur_midx) + ' to be unlocked...')
                         mi_locks[cur_midx].acquire()
                         cur_lock=True
+                        sf.LogWrite(pid_str + ' -- Locking and reading MIfile #' + str(cur_midx))
                 for tidx in range(res.shape[2]):
                     if lagFlip[lidx]:
                         if tList[tidx] >= lagList[lidx]:
@@ -433,6 +436,7 @@ class CorrMaps():
                                        lock=lock)
                 if cur_lock:
                     mi_locks[cur_midx].release()
+                    sf.LogWrite(pid_str + ' -- Releasing MIfile #' + str(cur_midx))
         if readConsecutive>1:
             res = np.moveaxis(res, -1, 1)
             new_shape = (res.shape[0]*res.shape[1], res.shape[2], res.shape[3])

@@ -55,8 +55,7 @@ if __name__ == '__main__':
                         print('    - Computing correlation maps (multiprocess mode to be implemented)')
                     corr_maps.Compute(silent=True, return_maps=False)
                     
-                # Calculate velocity maps
-                if (('-skip_vmap' not in cmd_list) or (num_proc > 1 and '-skip_vmap_assemble' not in cmd_list)):
+                if (('-skip_vmap' not in cmd_list) or (num_proc > 1 and '-skip_vmap_assemble' not in cmd_list) or ('-skip_displ' not in cmd_list) or ('-skip_grad' not in cmd_list)):
                     
                     # Read options for velocity calculation
                     vmap_kw = VelMaps._get_kw_from_config(conf, section='velmap_parameters')
@@ -64,6 +63,7 @@ if __name__ == '__main__':
                     # Initialize MelMaps object
                     vel_maps = VelMaps.VelMaps(corr_maps, **SharedFunctions.filter_kwdict_funcparams(vmap_kw, VelMaps.VelMaps.__init__))
                     
+                # Calculate velocity maps
                 if ('-skip_vmap' not in cmd_list):
                     
                     if (num_proc == 1):
@@ -81,6 +81,12 @@ if __name__ == '__main__':
                     if ('-silent' not in cmd_list):
                         print('    - Assembling velocity maps from multiprocess outputs')
                     vel_maps.AssembleMultiproc(os.path.join(out_folder, '_vMap.dat'))
-                
+                    
+                if ('-skip_displ' not in cmd_list):
+                    vel_maps.CalcDisplacements()
+                    
+                if ('-skip_grad' not in cmd_list):
+                    vel_maps.CalcGradients()
+                    
                 if ('-silent' not in cmd_list):
                     print('   ...all done!')

@@ -491,7 +491,7 @@ class VelMaps():
         vmap = self.ProcessMultiPixel(pxLoc=[pxLoc], readConsecutive=numPixels, tRange=tRange, signed_lags=signed_lags,\
                                       symm_only=symm_only, consec_only=consec_only, max_holes=max_holes, mask_opening=mask_opening,\
                                       conservative_cutoff=conservative_cutoff, generous_cutoff=generous_cutoff,\
-                                      method=method, simpleOut=True, lock=lock, mi_locks=mi_locks, fLog=fLog)
+                                      method=method, simpleOut=True, lock=lock, mi_locks=mi_locks, fLog=fLog, pid_str=file_suffix)
         vmap = np.swapaxes(vmap, 0, 1)
         vmap.reshape(_MapShape)
         out_filename = os.path.join(self.outFolder, '_vMap' + str(file_suffix) + '.dat')
@@ -562,7 +562,7 @@ class VelMaps():
         sf.LogWrite(pid_str + ' -- Data loading...', fLog, lock=lock, silent=True)
         corr_data, tvalues, lagList, lagFlip = self.corr_maps.GetCorrTimetrace(pxLoc, zRange=tRange, lagFlip='BOTH',\
                                                       returnCoords=True, squeezeResult=False, readConsecutive=readConsecutive,\
-                                                      lock=lock, mi_locks=mi_locks)
+                                                      lock=lock, mi_locks=mi_locks, fLog=fLog, pid_str=pid_str)
         sf.LogWrite(pid_str + ' -- Data loaded!', fLog, lock=lock, silent=True)
 
 
