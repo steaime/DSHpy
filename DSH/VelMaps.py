@@ -633,7 +633,7 @@ class VelMaps():
             corr_data, tvalues, lagList, lagFlip = self.corr_maps.GetCorrTimetrace(pxLoc, zRange=tRange, lagFlip='BOTH',\
                                                           returnCoords=True, squeezeResult=False, readConsecutive=readConsecutive, skipGet=True)
         else:
-            corr_data, tvalues, lagList, lagFlip = *corrTT
+            corr_data, tvalues, lagList, lagFlip = corrTT[0], corrTT[1], corrTT[2], corrTT[3]
 
 
         lagList = np.asarray(lagList)

@@ -28,6 +28,7 @@ if __name__ == '__main__':
         # Read global section
         conf = Config.Config(cur_inp)
         num_proc = conf.Get('global', 'n_proc', 1, int)
+        px_per_chunk = conf.Get('global', 'px_per_proc', 1, int)
         kernel_specs = conf.Get('global', 'kernel_specs')
         lag_list = conf.Get('global', 'lag_list', [], int)
         froot = conf.Get('global', 'root', '')
@@ -73,7 +74,7 @@ if __name__ == '__main__':
                     else:
                         if ('-silent' not in cmd_list):
                             print('    - Computing velocity maps (splitting computaton in {0} processes)'.format(num_proc))
-                        vel_maps.ComputeMultiproc(num_proc, assemble_after=False,\
+                        vel_maps.ComputeMultiproc(num_proc, px_per_chunk, assemble_after=False,\
                                                   **SharedFunctions.filter_kwdict_funcparams(vmap_kw, VelMaps.VelMaps.ComputeMultiproc))
                                             
                 if (num_proc > 1 and '-skip_vmap_assemble' not in cmd_list):
