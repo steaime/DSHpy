@@ -259,7 +259,7 @@ class CorrMaps():
         else:
             return None
     
-    def GetCorrMaps(self, openMIfiles=True, getAutocorr=True, check_lagtimes=False):
+    def GetCorrMaps(self, openMIfiles=True, getAutocorr=True, check_lagtimes=False, lock=None):
         """Searches for MIfile correlation maps
         
         Parameters
@@ -276,6 +276,7 @@ class CorrMaps():
         lag_list: list of lagtimes
         """
         
+        sf.LockAcquire(lock)
         if not self._corrmaps_loaded:
 
             assert os.path.isdir(self.outFolder), 'Correlation map folder ' + str(self.outFolder) + ' not found.'
@@ -301,14 +302,19 @@ class CorrMaps():
                         print('WARNING: no correlation map found for lagtime ' + str(cur_lag))
                         
             self._corrmaps_loaded = True
+        sf.LockRelease(lock)
         
         if (self.all_lagtimes[0]==0 and getAutocorr==False):
             return self.conf_cmaps, [None] + self.cmap_mifiles[1:], self.all_lagtimes
         else:
             return self.conf_cmaps, self.cmap_mifiles, self.all_lagtimes
     
+    def GetCorrMapsNumber(self):
+        _, mifiles, _ = self.GetCorrMaps()
+        return len(mifiles)
+    
     def GetCorrTimetrace(self, pxLocs, zRange=None, lagList=None, excludeLags=[], lagFlip=False, returnCoords=False,\
-                         squeezeResult=True, readConsecutive=1):
+                         squeezeResult=True, readConsecutive=1, lock=None, mi_locks=None):
         """Returns (t, tau) correlations for a given set of pixels
         
         Parameters
@@ -327,6 +333,7 @@ class CorrMaps():
         readConsecutive : positive integer. Number of consecutive pixels to read starting from each pxLoc
                           if >1 the output will still be a 3D array, but the first dimension will be
                           len(pxLoc) x readConsecutive
+        lock :            lock semaphore for multiprocessing i/o
         
         Returns
         -------
@@ -340,7 +347,7 @@ class CorrMaps():
                           if signle boolean values, all values are interpreted as equally flipped
         """
         
-        self.GetCorrMaps()
+        self.GetCorrMaps(lock=lock)
         if lagList is None:
             lagList = self.all_lagtimes
         lagSet = (set(lagList) & set(self.all_lagtimes)) - set(excludeLags)
@@ -361,14 +368,15 @@ class CorrMaps():
             lagList.sort(reverse=lagFlip)
         
         tvalues = list(range(*self.cmap_mifiles[1].Validate_zRange(zRange)))
-        res = self.GetCorrValues(pxLocs, tvalues, lagList, lagFlip=lagFlip, do_squeeze=squeezeResult, readConsecutive=readConsecutive)
+        res = self.GetCorrValues(pxLocs, tvalues, lagList, lagFlip=lagFlip, do_squeeze=squeezeResult, readConsecutive=readConsecutive,\
+                                 lock=lock, mi_locks=mi_locks)
         
         if returnCoords:
             return res, tvalues, lagList, lagFlip
         else:
             return res
         
-    def GetCorrValues(self, pxLocs, tList, lagList, lagFlip=None, do_squeeze=True, readConsecutive=1):
+    def GetCorrValues(self, pxLocs, tList, lagList, lagFlip=None, do_squeeze=True, readConsecutive=1, lock=None, mi_locks=None):
         """Get correlation values relative to a bunch of pixel location, time points and lags
         
         Parameters
@@ -385,7 +393,7 @@ class CorrMaps():
                           if >1 the output will still be a 3D array, but the first dimension will be
                           len(pxLoc) x readConsecutive
         """
-        self.GetCorrMaps()
+        self.GetCorrMaps(lock=lock)
         if (type(pxLocs[0]) not in [list, tuple, np.ndarray]):
             pxLocs = [pxLocs]
         if (type(tList) not in [list, tuple, np.ndarray]):
@@ -402,8 +410,14 @@ class CorrMaps():
             res_shape = (len(pxLocs), len(lagList), len(tList))
         res = np.ones(res_shape)*np.nan
         for lidx in range(res.shape[1]):
-            cur_mifile = self.cmap_mifiles[self.all_lagtimes.index(lagList[lidx])]
+            cur_midx = self.all_lagtimes.index(lagList[lidx])
+            cur_mifile = self.cmap_mifiles[cur_midx]
             if cur_mifile is not None:
+                cur_lock = False
+                if mi_locks is not None:
+                    if len(mi_locks)>cur_midx:
+                        mi_locks[cur_midx].acquire()
+                        cur_lock=True
                 for tidx in range(res.shape[2]):
                     if lagFlip[lidx]:
                         if tList[tidx] >= lagList[lidx]:
@@ -415,7 +429,10 @@ class CorrMaps():
                     if img_idx is not None:
                         for pidx in range(res.shape[0]):
                             res[pidx, lidx, tidx] = cur_mifile._read_pixels(px_num=readConsecutive,\
-                                       seek_pos=cur_mifile._get_offset(img_idx=img_idx, row_idx=pxLocs[pidx][0], col_idx=pxLocs[pidx][1]))
+                                       seek_pos=cur_mifile._get_offset(img_idx=img_idx, row_idx=pxLocs[pidx][0], col_idx=pxLocs[pidx][1]),\
+                                       lock=lock)
+                if cur_lock:
+                    mi_locks[cur_midx].release()
         if readConsecutive>1:
             res = np.moveaxis(res, -1, 1)
             new_shape = (res.shape[0]*res.shape[1], res.shape[2], res.shape[3])

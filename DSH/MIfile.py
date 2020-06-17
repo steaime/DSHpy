@@ -411,9 +411,9 @@ class MIfile():
         
         Parameters
         ----------
-        px_num : number of pixels to read
+        px_num :    number of pixels to read
         seek_pos : if None, start reading from current handle position
-                    otherwise, offset position (in bytes) from beginning of file
+                   otherwise, offset position (in bytes) from beginning of file
         
         Returns
         -------

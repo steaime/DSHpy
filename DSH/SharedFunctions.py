@@ -120,3 +120,29 @@ def ExtractIndexFromStrings(StringList, index_pos=0, index_notfound=-1):
 def filter_kwdict_funcparams(my_dict, my_func):
     return {k: v for k, v in my_dict.items() \
             if k in [p.name for p in inspect.signature(my_func).parameters.values()]}
+
+def LockAcquire(lock):
+    if (lock is not None): 
+        lock.acquire()
+
+def LockRelease(lock):
+    if (lock is not None): 
+        lock.release()
+
+def LockPrint(strOut, lock, silent=False):
+    if not silent:
+        if (lock is not None): 
+            lock.acquire()
+            print(strOut)
+            lock.release()
+        else:
+            print(strOut)
+
+def LogWrite(strOut, fLog, lock=None, flushAfter=True, silent=True):
+    if fLog is not None:
+        LockAcquire(lock)
+        fLog.write(strOut)
+        if flushAfter:
+            fLog.flush()
+        LockRelease(lock)
+    LockPrint(strOut, lock, silent)

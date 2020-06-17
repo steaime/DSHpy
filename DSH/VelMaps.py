@@ -4,8 +4,9 @@ import bisect
 import scipy.special as ssp
 from scipy import stats
 from scipy.ndimage import binary_opening
+import datetime
 import time
-from multiprocessing import Process
+from multiprocessing import Process, Lock
 
 import emcee
 import pandas as pd
@@ -341,23 +342,40 @@ class VelMaps():
         assembled 3D velocity map, if assemble_after==True
         """
         
-        if not self._loaded_metadata:
-            self._load_metadata_from_corr()
-            
+        self._load_metadata_from_corr()
+        
+        
         tot_num_px = self.ImageHeight()*self.ImageWidth()
         px_per_proc = tot_num_px // numProcesses
+        
+        fLog = open(os.path.join(self.outFolder, 'vmap.log'), 'w')
+        strLog = 'Multiprocess VelMap computation started : ' + str(datetime.datetime.now())
+        strLog += '\nProcessing of ' + str(tot_num_px) + ' pixels will be split into ' + str(numProcesses) + ' processes'
+        strLog += '\nPID\tpx_start\trow\tcol\tpx_num'
         all_startLoc = []
         all_numPx = []
         start_px = 0
         for pid in range(numProcesses):
-            all_startLoc.append(np.unravel_index(start_px, self.ImageShape()))
-            all_numPx.append(min(px_per_proc, tot_num_px-start_px))
+            cur_px_num = min(px_per_proc, tot_num_px-start_px)
+            cur_px_loc = np.unravel_index(start_px, self.ImageShape())
+            all_startLoc.append(cur_px_loc)
+            all_numPx.append(cur_px_num)
+            strLog += '\n' + str(pid) + '\t' + str(start_px) + '\t' + str(cur_px_loc[0]) +\
+                        '\t' + str(cur_px_loc[1]) + '\t' + str(cur_px_num)
             start_px = start_px + px_per_proc
+
+        fLog.write(strLog)
+        fLog.flush()
+        
+        global_lock = Lock()
+        mi_lock_list = []
+        for midx in range(self.corr_maps.GetCorrMapsNumber()):
+            mi_lock_list.append(Lock())
         proc_list = []
         for pid in range(numProcesses):
             cur_p = Process(target=self.Compute, args=(all_startLoc[pid], all_numPx[pid], None, '_'+str(pid).zfill(2), signed_lags,\
                                                        symm_only, consec_only, max_holes, mask_opening, conservative_cutoff,\
-                                                       generous_cutoff, method, True))
+                                                       generous_cutoff, method, True, global_lock, mi_lock_list, fLog))
             cur_p.start()
             proc_list.append(cur_p)
         for cur_p in proc_list:
@@ -365,6 +383,8 @@ class VelMaps():
         
         if assemble_after:
             return self.AssembleMultiproc()
+        
+        fLog.close()
 
     def AssembleMultiproc(self, outFileName, out_folder=None):
         """Assembles output from multiprocess calculation in one final output file
@@ -374,8 +394,7 @@ class VelMaps():
         out_folder : folder where to search for partial velocity maps to assemble and where to save final output
                      if None, self.outFolder will be used
         """
-        if not self._loaded_metadata:
-            self._load_metadata_from_corr()
+        self._load_metadata_from_corr()
         if (out_folder is None):
             out_folder = self.outFolder
         partial_vmap_fnames = sf.FindFileNames(out_folder, Prefix='_vMap_', Ext='.dat', Sort='ASC', AppendFolder=True)
@@ -393,41 +412,43 @@ class VelMaps():
 
     def Compute(self, pxLoc=[0,0], numPixels=-1, tRange=None, file_suffix='', signed_lags=False, symm_only=False, consec_only=True,\
                           max_holes=0, mask_opening=None, conservative_cutoff=0.3, generous_cutoff=0.15,\
-                          method='lstsq', silent=True):
+                          method='lstsq', silent=True, lock=None, mi_locks=None, fLog=None):
         """Computes velocity maps
         
         Parameters
         ----------
-        pxLoc: [row_index, col_index] coordinates of first pixel to be analyzed
-        numPixels : Number of consecutive pixels to process starting from each pxLoc
-                    if >1 the output will still be a 3D array, but the first dimension will be
-                    len(pxLoc) x readConsecutive. 
-                    if <0 numPixels will be set to the total number of pixels per image
-        tRange : time range. If None, self.tRange will be used. Use None for single process computation
-                Set it to subset of total images for multiprocess computation
+        pxLoc:        [row_index, col_index] coordinates of first pixel to be analyzed
+        numPixels :   Number of consecutive pixels to process starting from each pxLoc
+                      if >1 the output will still be a 3D array, but the first dimension will be
+                      len(pxLoc) x readConsecutive. 
+                      if <0 numPixels will be set to the total number of pixels per image
+        tRange :      time range. If None, self.tRange will be used. Use None for single process computation
+                      Set it to subset of total images for multiprocess computation
         file_suffix : suffix to be appended to filename to differentiate output from multiple processes
-        silent : bool. If set to False, procedure will print to output every time steps it goes through. 
-                otherwise, it will run silently
-        return_err : bool. if True, return mean squred error on the fit
+        silent :      bool. If set to False, procedure will print to output every time steps it goes through. 
+                      otherwise, it will run silently
+        return_err :  bool. if True, return mean squred error on the fit
+        lock :        lock semaphore for general operations on class
+        mi_locks :    list of locks, one per correlation map, protecting reading from individual MIfiles
                 
         Returns
         -------
         res_3D : 3D velocity map
         """
         
-        if not silent:
-            start_time = time.time()
-            print('Computing velocity maps...')
+        start_time = time.time()
+        sf.LogWrite(file_suffix + ' -- Start computing velocity maps...', fLog, lock=lock, silent=silent)
         
-        if not self._loaded_metadata:
-            self._load_metadata_from_corr()
+        self._load_metadata_from_corr(lock=lock)
         
         if (tRange is None):
             tRange = self.tRange
         else:
             tRange = self.cmap_mifiles[1].Validate_zRange(tRange)
             if (self.mapMetaData.HasOption('MIfile', 'fps')):
+                sf.LockAcquire(lock)
                 self.mapMetaData.Set('MIfile', 'fps', str(self.GetFPS() * 1.0/self.tRange[2]))
+                sf.LockRelease(lock)
         if (tRange is None):
             numFrames = self.ImageNumber()
         else:
@@ -462,25 +483,28 @@ class VelMaps():
                 'px_size' : self.GetPixelSize()
                 }
 
+        sf.LockAcquire(lock)
         self.ExportConfig(os.path.join(self.outFolder, 'VelMapsConfig' + str(file_suffix) + '.ini'), vmap_options, mapMedatada)
+        sf.LockRelease(lock)
 
         # Prepare memory
         vmap = self.ProcessMultiPixel(pxLoc=[pxLoc], readConsecutive=numPixels, tRange=tRange, signed_lags=signed_lags,\
                                       symm_only=symm_only, consec_only=consec_only, max_holes=max_holes, mask_opening=mask_opening,\
                                       conservative_cutoff=conservative_cutoff, generous_cutoff=generous_cutoff,\
-                                      method=method, simpleOut=True)
+                                      method=method, simpleOut=True, lock=lock, mi_locks=mi_locks, fLog=fLog)
         vmap = np.swapaxes(vmap, 0, 1)
         vmap.reshape(_MapShape)
-        MI.MIfile(os.path.join(self.outFolder, '_vMap' + str(file_suffix) + '.dat'), mapMedatada).WriteData(vmap)
+        out_filename = os.path.join(self.outFolder, '_vMap' + str(file_suffix) + '.dat')
+        sf.LogWrite(file_suffix + ' -- Now saving output with shape ' + str(vmap.shape) + ' to file ' + str(out_filename), fLog, lock=lock, silent=silent)
+        MI.MIfile(out_filename, mapMedatada).WriteData(vmap)
         
-        if not silent:
-            print('Procedure completed in {0:.1f} seconds!'.format(time.time()-start_time))
+        sf.LogWrite(file_suffix + ' -- Procedure completed in {0:.1f} seconds!'.format(time.time()-start_time), fLog, lock=lock, silent=silent)
             
         return vmap
 
     def ProcessMultiPixel(self, pxLoc, readConsecutive=1, tRange=None, signed_lags=False, symm_only=False, consec_only=True,\
                           max_holes=0, mask_opening=None, conservative_cutoff=0.3, generous_cutoff=0.15,\
-                          method='lstsq', simpleOut=True):
+                          method='lstsq', simpleOut=True, lock=None, mi_locks=None, fLog=None, pid_str=''):
         """Computes v(t) for one single pixel
         
         Parameters
@@ -514,6 +538,8 @@ class VelMaps():
                     Note: for parabolic profiles, the first correlation minimum is 0.083, 
                     the first maximum after that is 0.132. Don't go below that!
         method : 'linfit'|'lstsq'|'lstsq_wint'|'mean'
+        lock :      lock semaphore for multiprocessing i/o
+        pid_str :   process identifier for multiprocess logging
         
         Returns
         -------
@@ -527,15 +553,19 @@ class VelMaps():
             mask : 2D array with (t, tau) datapoints actually used in linear fit
         """
 
-        if not self._loaded_metadata:
-            self._load_metadata_from_corr()
+        self._load_metadata_from_corr(lock=lock)
 
         if tRange is None:
             tRange = self.tRange
 
         # Load correlation data. Set central row (d0) to ones and set zero correlations to NaN
+        sf.LogWrite(pid_str + ' -- Data loading...', fLog, lock=lock, silent=True)
         corr_data, tvalues, lagList, lagFlip = self.corr_maps.GetCorrTimetrace(pxLoc, zRange=tRange, lagFlip='BOTH',\
-                                                      returnCoords=True, squeezeResult=False, readConsecutive=readConsecutive)
+                                                      returnCoords=True, squeezeResult=False, readConsecutive=readConsecutive,\
+                                                      lock=lock, mi_locks=mi_locks)
+        sf.LogWrite(pid_str + ' -- Data loaded!', fLog, lock=lock, silent=True)
+
+
         lagList = np.asarray(lagList)
         zero_lidx = int((corr_data.shape[1]-1)/2)
         corr_data[:,zero_lidx,:] = np.ones_like(corr_data[:,0,:])
@@ -692,23 +722,27 @@ class VelMaps():
         return sampler_corr.chain
 
         
-    def _load_metadata_from_corr(self):
+    def _load_metadata_from_corr(self, lock=None, force_reload=False):
         
-        self.confParams, self.cmap_mifiles, self.lagTimes = self.corr_maps.GetCorrMaps(getAutocorr=False)
-
-        # NOTE: first element of self.cmap_mifiles will be None instead of d0 (we don't need d0 to compute velocity maps)
-        self.mapMetaData = cf.Config()
-        if (len(self.cmap_mifiles) > 1):
-            self.mapMetaData.Import(self.cmap_mifiles[1].GetMetadata().copy(), section_name='MIfile')
-            self.MapShape = self.cmap_mifiles[1].GetShape()
-            self.mapMetaData.Set('MIfile', 'shape', str(list(self.MapShape)))
-            self.tRange = self.cmap_mifiles[1].Validate_zRange(self.tRange)
-            if (self.mapMetaData.HasOption('MIfile', 'fps')):
-                self.mapMetaData.Set('MIfile', 'fps', str(self.GetFPS() * 1.0/self.tRange[2]))
-        else:
-            print('WARNING: no correlation maps found in folder ' + str(self.corr_maps.outFolder))
+        sf.LockAcquire(lock)
+        if (force_reload or self._loaded_metadata==False):
             
-        self._loaded_metadata = True
+            self.confParams, self.cmap_mifiles, self.lagTimes = self.corr_maps.GetCorrMaps(getAutocorr=False)
+    
+            # NOTE: first element of self.cmap_mifiles will be None instead of d0 (we don't need d0 to compute velocity maps)
+            self.mapMetaData = cf.Config()
+            if (len(self.cmap_mifiles) > 1):
+                self.mapMetaData.Import(self.cmap_mifiles[1].GetMetadata().copy(), section_name='MIfile')
+                self.MapShape = self.cmap_mifiles[1].GetShape()
+                self.mapMetaData.Set('MIfile', 'shape', str(list(self.MapShape)))
+                self.tRange = self.cmap_mifiles[1].Validate_zRange(self.tRange)
+                if (self.mapMetaData.HasOption('MIfile', 'fps')):
+                    self.mapMetaData.Set('MIfile', 'fps', str(self.GetFPS() * 1.0/self.tRange[2]))
+            else:
+                print('WARNING: no correlation maps found in folder ' + str(self.corr_maps.outFolder))
+                
+            self._loaded_metadata = True
+        sf.LockRelease(lock)
     
     
     def _tunemask_pixel(self, try_mask, lagzero_idx, mask_opening, consec_only, max_holes, symm_only, signed_lags,\
