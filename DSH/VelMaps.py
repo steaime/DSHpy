@@ -562,7 +562,7 @@ class VelMaps():
         sf.LogWrite(pid_str + ' -- Data loading...', fLog, lock=lock, silent=True)
         corr_data, tvalues, lagList, lagFlip = self.corr_maps.GetCorrTimetrace(pxLoc, zRange=tRange, lagFlip='BOTH',\
                                                       returnCoords=True, squeezeResult=False, readConsecutive=readConsecutive,\
-                                                      lock=lock, mi_locks=mi_locks, fLog=fLog, pid_str=pid_str)
+                                                      lock=lock, mi_locks=mi_locks, fLog=fLog, pid_str=pid_str, skipGet=True)
         sf.LogWrite(pid_str + ' -- Data loaded!', fLog, lock=lock, silent=True)
 
 
