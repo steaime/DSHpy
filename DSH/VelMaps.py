@@ -413,7 +413,7 @@ class VelMaps():
         num_epoch = 0
         while (np.max(all_remainingPx) > 0):
             num_epoch += 1
-            fLog.write('\nEpoch ' + str(num_epoch) + ': processing ' + str(px_per_chunk) + ' per process...')
+            fLog.write('\nEpoch ' + str(num_epoch) + ': processing ' + str(px_per_chunk) + ' pixels per process...')
             proc_list = []
             for pid in range(numProcesses):
                 cur_read = min(px_per_chunk, all_remainingPx[pid])
@@ -834,7 +834,7 @@ class VelMaps():
         use_mask : 1D boolean array. Mask to be used for linear fit
         """
         temp_mask = np.asarray(try_mask, dtype=bool)
-        print('....DEBUG: input mask has shape' + str(temp_mask.shape))
+        #print('....DEBUG: input mask has shape' + str(temp_mask.shape))
         if (mask_opening is not None and np.count_nonzero(try_mask) > 2):
             for cur_open_range in range(mask_opening, 2, -1):
                 # remove thresholding noise by removing N-lag-wide unmasked domains

@@ -427,9 +427,9 @@ class CorrMaps():
         if readConsecutive>1:
             res = np.moveaxis(res, -1, 1)
             new_shape = (res.shape[0]*res.shape[1], res.shape[2], res.shape[3])
-            print('DEBUG: reading ' + str(readConsecutive) + ' consecutive pixels, reshaping result from ' + str(res.shape) + ' to ' + str(new_shape))
-            res.reshape(new_shape)
-            print('DEBUG: final shape is ' + str(res.shape))
+            #print('DEBUG: reading ' + str(readConsecutive) + ' consecutive pixels, reshaping result from ' + str(res.shape) + ' to ' + str(new_shape))
+            res = res.reshape(new_shape)
+            #print('DEBUG: final shape is ' + str(res.shape))
             
         if do_squeeze:
             return np.squeeze(res)
