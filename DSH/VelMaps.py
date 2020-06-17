@@ -325,17 +325,18 @@ class VelMaps():
         
         return self.conf_vmaps, self.vmap_mifile
 
-    def ComputeMultiproc(self, numProcesses, signed_lags=False, symm_only=False, consec_only=True,\
+    def ComputeMultiproc(self, numProcesses, px_per_chunk, signed_lags=False, symm_only=False, consec_only=True,\
                           max_holes=0, mask_opening=None, conservative_cutoff=0.3, generous_cutoff=0.15,\
                           method='lstsq', assemble_after=True):
         """Computes correlation maps in a multiprocess fashion
         
         Parameters
         ----------
-        numProcesses : number of processes to split the computation
-                        every process will be given a fraction of times
+        numProcesses :   number of processes to split the computation
+                         every process will be given a fraction of times
+        px_per_chunk :   number of pixels processed by each process at a time
         assemble_after : if true, after the process assemble output in
-                        one file with full correlations
+                         one file with full correlations
         
         Returns
         -------
@@ -352,39 +353,106 @@ class VelMaps():
         strLog = 'Multiprocess VelMap computation started : ' + str(datetime.datetime.now())
         strLog += '\nProcessing of ' + str(tot_num_px) + ' pixels will be split into ' + str(numProcesses) + ' processes'
         strLog += '\nPID\tpx_start\trow\tcol\tpx_num'
+        
         all_startLoc = []
         all_numPx = []
+        all_miout = []
+        all_remainingPx = []
         start_px = 0
+        
         for pid in range(numProcesses):
             cur_px_num = min(px_per_proc, tot_num_px-start_px)
             cur_px_loc = np.unravel_index(start_px, self.ImageShape())
-            all_startLoc.append(cur_px_loc)
+            all_startLoc.append(start_px)
             all_numPx.append(cur_px_num)
+            all_remainingPx.append(cur_px_num)
             strLog += '\n' + str(pid) + '\t' + str(start_px) + '\t' + str(cur_px_loc[0]) +\
                         '\t' + str(cur_px_loc[1]) + '\t' + str(cur_px_num)
             start_px = start_px + px_per_proc
 
+            if (self.tRange is None):
+                numFrames = self.ImageNumber()
+            else:
+                numFrames = len(list(range(*self.tRange)))
+            _MapShape = (all_numPx[pid], 1, numFrames)
+            
+            vmap_options = {
+                    'z_profile' : self.zProfile,
+                    'q_value' : self.qValue,
+                    'px_loc' : list(np.unravel_index(all_startLoc[pid], self.ImageShape())),
+                    'num_pixels' : all_numPx[pid],
+                    'signed_lags' : signed_lags,
+                    'symm_only' : symm_only,
+                    'consec_only' : consec_only,
+                    'max_holes' : max_holes,
+                    'conservative_cutoff' : conservative_cutoff,
+                    'generous_cutoff' : generous_cutoff,
+                    'method' : method,
+                    'reshape' : False,
+                    }
+            if (mask_opening is not None):
+                vmap_options['mask_opening'] = mask_opening
+            if (self.tRange is not None):
+                vmap_options['t_range'] = list(self.tRange)
+            
+            mapMedatada = {
+                    'hdr_len' : 0,
+                    'shape' : list(_MapShape),
+                    'px_format' : self.GetPixelFormat(),
+                    'fps' : self.GetFPS(),
+                    'px_size' : self.GetPixelSize()
+                    }
+    
+            self.ExportConfig(os.path.join(self.outFolder, 'VelMapsConfig_' + str(pid).zfill(2) + '.ini'), vmap_options, mapMedatada)
+            all_miout.append(MI.MIfile(os.path.join(self.outFolder, '_vMap_' + str(pid).zfill(2) + '.dat'), mapMedatada))
+
+        strLog += '\nAll processes configured, MIfiles opened for output. Now starting multiprocess computation'
         fLog.write(strLog)
         fLog.flush()
         
-        global_lock = Lock()
-        mi_lock_list = []
-        for midx in range(self.corr_maps.GetCorrMapsNumber()):
-            mi_lock_list.append(Lock())
-        proc_list = []
-        for pid in range(numProcesses):
-            cur_p = Process(target=self.Compute, args=(all_startLoc[pid], all_numPx[pid], None, '_'+str(pid).zfill(2), signed_lags,\
-                                                       symm_only, consec_only, max_holes, mask_opening, conservative_cutoff,\
-                                                       generous_cutoff, method, True, global_lock, mi_lock_list, fLog))
-            cur_p.start()
-            proc_list.append(cur_p)
-        for cur_p in proc_list:
-            cur_p.join()
+        num_epoch = 0
+        while (np.max(all_remainingPx) > 0):
+            num_epoch += 1
+            fLog.write('\nEpoch ' + str(num_epoch) + ': processing ' + str(px_per_chunk) + ' per process...')
+            proc_list = []
+            for pid in range(numProcesses):
+                cur_read = min(px_per_chunk, all_remainingPx[pid])
+                if cur_read > 0:
+                    all_remainingPx[pid] -= cur_read
+                    fLog.write('\nProcess ' + str(pid).zfill(2) + ': processing ' + str(cur_read) + ' pixels (' + str(all_remainingPx[pid]) + ' remaining)')
+                    fLog.write('\n            Now reading correlation data starting from pixel ' + str(np.unravel_index(all_startLoc[pid], self.ImageShape())))
+                    fLog.flush()
+                    corr_data, tvalues, lagList, lagFlip = self.corr_maps.GetCorrTimetrace(np.unravel_index(all_startLoc[pid], self.ImageShape()),\
+                                                                                           zRange=self.tRange, lagFlip='BOTH', returnCoords=True,\
+                                                                                           squeezeResult=False, readConsecutive=cur_read, skipGet=True)
+                    cur_p = Process(target=self.Compute, args=(np.unravel_index(all_startLoc[pid], self.ImageShape()), cur_read,\
+                                                               None, '_'+str(pid).zfill(2), signed_lags,\
+                                                               symm_only, consec_only, max_holes, mask_opening, conservative_cutoff,\
+                                                               generous_cutoff, method, True, False, all_miout[pid],\
+                                                               [corr_data, tvalues, lagList, lagFlip]))
+                    all_startLoc[pid] += cur_read
+                    cur_p.start()
+                    fLog.write('\n            ...process started!')
+                    proc_list.append(cur_p)
+                else:
+                    fLog.write('\nProcess ' + str(pid).zfill(2) + ':  no leftover pixels.')
+                    
+            for cur_p in proc_list:
+                cur_p.join()
         
+        for cur_mi in all_miout:
+            cur_mi.Close()
+            
         if assemble_after:
-            return self.AssembleMultiproc()
+            fLog.write('\nFinal step: assembling multiprocess output')
+            res = self.AssembleMultiproc()
+        else:
+            res = None
         
+        fLog.write('\nVelocity maps completed : ' + str(datetime.datetime.now()))
         fLog.close()
+        
+        return res
 
     def AssembleMultiproc(self, outFileName, out_folder=None):
         """Assembles output from multiprocess calculation in one final output file
@@ -412,7 +480,7 @@ class VelMaps():
 
     def Compute(self, pxLoc=[0,0], numPixels=-1, tRange=None, file_suffix='', signed_lags=False, symm_only=False, consec_only=True,\
                           max_holes=0, mask_opening=None, conservative_cutoff=0.3, generous_cutoff=0.15,\
-                          method='lstsq', silent=True, lock=None, mi_locks=None, fLog=None):
+                          method='lstsq', silent=True, mapReshape=True, MIfile_out=None, corrTT=None):
         """Computes velocity maps
         
         Parameters
@@ -427,84 +495,87 @@ class VelMaps():
         file_suffix : suffix to be appended to filename to differentiate output from multiple processes
         silent :      bool. If set to False, procedure will print to output every time steps it goes through. 
                       otherwise, it will run silently
-        return_err :  bool. if True, return mean squred error on the fit
-        lock :        lock semaphore for general operations on class
-        mi_locks :    list of locks, one per correlation map, protecting reading from individual MIfiles
+        mapReshape :  if True, output will have the form (time, space). if false, it will be (space, time)
+        MIfile_out :  MIfile for writing (appending) output. If None, new file will be created
                 
         Returns
         -------
         res_3D : 3D velocity map
         """
         
-        start_time = time.time()
-        sf.LogWrite(file_suffix + ' -- Start computing velocity maps...', fLog, lock=lock, silent=silent)
+        if not silent:
+            start_time = time.time()
+            print(file_suffix + ' -- Start computing velocity maps...')
         
-        self._load_metadata_from_corr(lock=lock)
+        self._load_metadata_from_corr()
         
         if (tRange is None):
             tRange = self.tRange
         else:
             tRange = self.cmap_mifiles[1].Validate_zRange(tRange)
             if (self.mapMetaData.HasOption('MIfile', 'fps')):
-                sf.LockAcquire(lock)
                 self.mapMetaData.Set('MIfile', 'fps', str(self.GetFPS() * 1.0/self.tRange[2]))
-                sf.LockRelease(lock)
         if (tRange is None):
             numFrames = self.ImageNumber()
         else:
             numFrames = len(list(range(*tRange)))
         if (numPixels < 0):
             numPixels = self.ImageHeight()*self.ImageWidth()
-        _MapShape = (numFrames, 1, numPixels)
+        if mapReshape:
+            _MapShape = (numFrames, 1, numPixels)
+        else:
+            _MapShape = (numPixels, 1, numFrames)
         
-        vmap_options = {
-                'z_profile' : self.zProfile,
-                'q_value' : self.qValue,
-                'px_loc' : list(pxLoc),
-                'num_pixels' : numPixels,
-                'signed_lags' : signed_lags,
-                'symm_only' : symm_only,
-                'consec_only' : consec_only,
-                'max_holes' : max_holes,
-                'conservative_cutoff' : conservative_cutoff,
-                'generous_cutoff' : generous_cutoff,
-                'method' : method,
-                }
-        if (mask_opening is not None):
-            vmap_options['mask_opening'] = mask_opening
-        if (tRange is not None):
-            vmap_options['t_range'] = list(tRange)
-        
-        mapMedatada = {
-                'hdr_len' : 0,
-                'shape' : list(_MapShape),
-                'px_format' : self.GetPixelFormat(),
-                'fps' : self.GetFPS(),
-                'px_size' : self.GetPixelSize()
-                }
-
-        sf.LockAcquire(lock)
-        self.ExportConfig(os.path.join(self.outFolder, 'VelMapsConfig' + str(file_suffix) + '.ini'), vmap_options, mapMedatada)
-        sf.LockRelease(lock)
+        if MIfile_out is None:
+            vmap_options = {
+                    'z_profile' : self.zProfile,
+                    'q_value' : self.qValue,
+                    'px_loc' : list(pxLoc),
+                    'num_pixels' : numPixels,
+                    'signed_lags' : signed_lags,
+                    'symm_only' : symm_only,
+                    'consec_only' : consec_only,
+                    'max_holes' : max_holes,
+                    'conservative_cutoff' : conservative_cutoff,
+                    'generous_cutoff' : generous_cutoff,
+                    'method' : method,
+                    'reshape' : mapReshape,
+                    }
+            if (mask_opening is not None):
+                vmap_options['mask_opening'] = mask_opening
+            if (tRange is not None):
+                vmap_options['t_range'] = list(tRange)
+            
+            mapMedatada = {
+                    'hdr_len' : 0,
+                    'shape' : list(_MapShape),
+                    'px_format' : self.GetPixelFormat(),
+                    'fps' : self.GetFPS(),
+                    'px_size' : self.GetPixelSize()
+                    }
+    
+            self.ExportConfig(os.path.join(self.outFolder, 'VelMapsConfig' + str(file_suffix) + '.ini'), vmap_options, mapMedatada)
 
         # Prepare memory
         vmap = self.ProcessMultiPixel(pxLoc=[pxLoc], readConsecutive=numPixels, tRange=tRange, signed_lags=signed_lags,\
                                       symm_only=symm_only, consec_only=consec_only, max_holes=max_holes, mask_opening=mask_opening,\
                                       conservative_cutoff=conservative_cutoff, generous_cutoff=generous_cutoff,\
-                                      method=method, simpleOut=True, lock=lock, mi_locks=mi_locks, fLog=fLog, pid_str=file_suffix)
-        vmap = np.swapaxes(vmap, 0, 1)
+                                      method=method, simpleOut=True, corrTT=corrTT)
+        if mapReshape:
+            vmap = np.swapaxes(vmap, 0, 1)
         vmap.reshape(_MapShape)
-        out_filename = os.path.join(self.outFolder, '_vMap' + str(file_suffix) + '.dat')
-        sf.LogWrite(file_suffix + ' -- Now saving output with shape ' + str(vmap.shape) + ' to file ' + str(out_filename), fLog, lock=lock, silent=silent)
-        MI.MIfile(out_filename, mapMedatada).WriteData(vmap)
+        if MIfile_out is None:
+            MIfile_out = MI.MIfile(os.path.join(self.outFolder, '_vMap' + str(file_suffix) + '.dat'), mapMedatada)
+        MIfile_out.WriteData(vmap, closeAfter=(MIfile_out is not None))
         
-        sf.LogWrite(file_suffix + ' -- Procedure completed in {0:.1f} seconds!'.format(time.time()-start_time), fLog, lock=lock, silent=silent)
+        if not silent:
+            print(file_suffix + ' -- Procedure completed in {0:.1f} seconds!'.format(time.time()-start_time))
             
         return vmap
 
     def ProcessMultiPixel(self, pxLoc, readConsecutive=1, tRange=None, signed_lags=False, symm_only=False, consec_only=True,\
                           max_holes=0, mask_opening=None, conservative_cutoff=0.3, generous_cutoff=0.15,\
-                          method='lstsq', simpleOut=True, lock=None, mi_locks=None, fLog=None, pid_str=''):
+                          method='lstsq', simpleOut=True, corrTT=None):
         """Computes v(t) for one single pixel
         
         Parameters
@@ -538,8 +609,7 @@ class VelMaps():
                     Note: for parabolic profiles, the first correlation minimum is 0.083, 
                     the first maximum after that is 0.132. Don't go below that!
         method : 'linfit'|'lstsq'|'lstsq_wint'|'mean'
-        lock :      lock semaphore for multiprocessing i/o
-        pid_str :   process identifier for multiprocess logging
+        corrTT :    correlation timetrace. If None it will be loaded from CorrMaps.GetCorrTimetrace()
         
         Returns
         -------
@@ -553,17 +623,17 @@ class VelMaps():
             mask : 2D array with (t, tau) datapoints actually used in linear fit
         """
 
-        self._load_metadata_from_corr(lock=lock)
+        self._load_metadata_from_corr()
 
         if tRange is None:
             tRange = self.tRange
 
         # Load correlation data. Set central row (d0) to ones and set zero correlations to NaN
-        sf.LogWrite(pid_str + ' -- Data loading...', fLog, lock=lock, silent=True)
-        corr_data, tvalues, lagList, lagFlip = self.corr_maps.GetCorrTimetrace(pxLoc, zRange=tRange, lagFlip='BOTH',\
-                                                      returnCoords=True, squeezeResult=False, readConsecutive=readConsecutive,\
-                                                      lock=lock, mi_locks=mi_locks, fLog=fLog, pid_str=pid_str, skipGet=True)
-        sf.LogWrite(pid_str + ' -- Data loaded!', fLog, lock=lock, silent=True)
+        if corrTT is None:
+            corr_data, tvalues, lagList, lagFlip = self.corr_maps.GetCorrTimetrace(pxLoc, zRange=tRange, lagFlip='BOTH',\
+                                                          returnCoords=True, squeezeResult=False, readConsecutive=readConsecutive, skipGet=True)
+        else:
+            corr_data, tvalues, lagList, lagFlip = *corrTT
 
 
         lagList = np.asarray(lagList)
