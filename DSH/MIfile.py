@@ -4,11 +4,12 @@ import sys
 import struct
 import collections
 from DSH import Config as cf
+from DSH import SharedFunctions as sf
 
 _data_depth = {'b':1, 'B':1, '?':1, 'h':2, 'H':2, 'i':4, 'I':4, 'f':4, 'd':8}
 _data_types = {'b':np.int8, 'B':np.uint8, '?':bool, 'h':np.int16, 'H':np.uint16, 'i':np.int32, 'I':np.uint32, 'f':np.float32, 'd':np.float64}
 
-def MergeMIfiles(MergedFileName, MIfileList, MergedMetadataFile=None, MergeAxis=0, FinalShape=None):
+def MergeMIfiles(MergedFileName, MIfileList, MergedMetadataFile=None, MergeAxis=0, MoveAxes=[], FinalShape=None):
     """Merge multiple image files into one image file
     
     Parameters
@@ -17,17 +18,24 @@ def MergeMIfiles(MergedFileName, MIfileList, MergedMetadataFile=None, MergeAxis=
     MIfileList : list of MIfile objects or of 2-element list [MIfilename, MedatData]
                  Image shape and pixel format must be the same for all MIfiles
     MergedMetadataFile : if not None, export metadata of merged file
-    MergeAxis : Stitch MIfiles along specific axis.
-                Default is 0 (z axis or time). MIfiles need to have the same shape
-                along the other axes
-    FinalShape : if not None, reshape final output to given shape
-                Shape along the merged axis will be disregarded and automatically computed
-                (can set this to -1)
+    MergeAxis :  Stitch MIfiles along specific axis.
+                 Default is 0 (z axis or time). MIfiles need to have the same shape
+                 along the other axes
+    MoveAxes :   list of couples of indices, of the form (ax_pos, ax_dest)
+                 If not empty, after merging and before writing to output file, do a series of
+                 np.moveaxis(res, ax_pos, ax_dest) moves
+    FinalShape : if not None, reshape final output (eventually after moving axes) to given shape
+                 Shape along the merged axis will be disregarded and automatically computed
+                 (can set this to -1)
                  
     Returns
     -------
     outMIfile : merged MIfile 
     """
+    
+    if (len(MoveAxes)>0):
+        if (type(MoveAxes[0]) is int):
+            MoveAxes = [MoveAxes]
     
     # Load all MIfiles and generate output metadata
     mi_in_list = []
@@ -66,8 +74,10 @@ def MergeMIfiles(MergedFileName, MIfileList, MergedMetadataFile=None, MergeAxis=
                 raise IOError('MIfiles should all have the same pixel format')
     
     if (FinalShape is not None):
-        re_shape = FinalShape.copy()
+        re_shape = list(FinalShape.copy())
         re_shape[MergeAxis] = int(np.prod(out_meta['shape']) / (re_shape[MergeAxis-1]*re_shape[MergeAxis-2]))
+        for move in MoveAxes:
+            re_shape = sf.MoveListElement(re_shape, move[0], move[1])
         if (np.prod(re_shape)!=np.prod(out_meta['shape'])):
             raise ValueError('An error occurred trying to reshape MIfile of shape ' + str(out_meta['shape']) +\
                              ' into shape ' + str(re_shape) + ': pixel number is not conserved (' + str(np.prod(re_shape)) +\
@@ -80,7 +90,7 @@ def MergeMIfiles(MergedFileName, MIfileList, MergedMetadataFile=None, MergeAxis=
         conf.Export(MergedMetadataFile)
     
     outMIfile = MIfile(MergedFileName, out_meta)
-    if (MergeAxis==0):
+    if (MergeAxis==0 and len(MoveAxes)==0):
         for cur_mifile in mi_in_list:
             outMIfile.WriteData(cur_mifile.Read(closeAfter=True), closeAfter=False)
         outMIfile.Close()
@@ -88,7 +98,11 @@ def MergeMIfiles(MergedFileName, MIfileList, MergedMetadataFile=None, MergeAxis=
         write_data = mi_in_list[0].Read(closeAfter=True)
         for midx in range(1, len(mi_in_list)):
             write_data = np.append(write_data, cur_mifile.Read(closeAfter=True), axis=MergeAxis)
+        for move in MoveAxes:
+            write_data = np.moveaxis(write_data, move[0], move[1])
         outMIfile.WriteData(write_data, closeAfter=True)
+    
+    return outMIfile
 
 def ValidateROI(ROI, ImageShape, replaceNone=False):
     """Validates a Region Of Interest (ROI)

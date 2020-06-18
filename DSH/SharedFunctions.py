@@ -146,3 +146,9 @@ def LogWrite(strOut, fLog, lock=None, flushAfter=True, silent=True, add_prefix='
             fLog.flush()
         LockRelease(lock)
     LockPrint(strOut, lock, silent)
+
+def MoveListElement(lst, old_idx, new_idx):
+    if (new_idx < 0):
+        new_idx += len(lst)+1
+    lst.insert(new_idx, lst.pop(old_idx))
+    return lst

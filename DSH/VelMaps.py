@@ -3,7 +3,7 @@ import numpy as np
 import bisect
 import scipy.special as ssp
 from scipy import stats
-from scipy.ndimage import binary_opening
+from scipy import ndimage as nd
 import datetime
 import time
 from multiprocessing import Process
@@ -32,13 +32,11 @@ def log_prior_corr(param_guess, prior_avg_params, prior_std_params, reg_param):
     if reg_param<=0:
         res = 0
     else:
-        v_grad = np.diff(param_guess[2:])
-        rel_grad = np.true_divide(v_grad, param_guess[2:-1])
-        #del_gradgrad = np.diff(rel_grad)
-        res = -reg_param * np.sum(np.square(rel_grad))
+        v_gradgrad = np.diff(np.diff(param_guess[2:]))
+        res = -reg_param * np.nanmean(np.square(v_gradgrad))/np.nanmean(param_guess[2:])**2
     if prior_avg_params is not None:
-        residual = np.square(np.subtract(param_guess, prior_avg_params))
-        chi_square = np.nansum(np.true_divide(residual,np.square(prior_std_params)))
+        chi_square = np.nansum(np.true_divide(np.square(np.subtract(param_guess, prior_avg_params)),\
+                                              np.square(prior_std_params)))
         constant = np.nansum(np.log(np.true_divide(1.0, np.sqrt(np.multiply(2.0*np.pi,np.square(prior_std_params))))))
         res += constant - 0.5*chi_square
     return res
@@ -59,10 +57,8 @@ def log_likelihood_corr(param_guess, corr_func, obs_corr, obs_err, lagtimes, dt,
     """
     # Displacement matrix
     cur_corr = corr_func(compute_displ_multilag(param_guess[2:], lagtimes, dt), q, param_guess[0], param_guess[1])
-    # Residual matrix
-    residual = np.square(np.subtract(cur_corr, obs_corr))
     # Chi square = Residual/Variance (must use nansum, there are NaNs in the displacement matrix)
-    chi_square = np.nansum(np.true_divide(residual,np.square(obs_err)))
+    chi_square = np.nansum(np.true_divide(np.square(np.subtract(cur_corr, obs_corr)), np.square(obs_err)))
     # This constant is 1/sqrt(2 pi sigma^2), the Gaussian normalization
     constant = np.nansum(np.log(np.true_divide(1.0, np.sqrt(np.multiply(2.0*np.pi,np.square(obs_err))))))
     return constant - 0.5*chi_square
@@ -199,6 +195,26 @@ def invert_monotonic(data, _lut, overflow_to_nan=False):
                 index = bisect.bisect_left(_lut[1], data[i])
                 res[i] = _lut[0][min(index, len(_lut[0])-1)]
     return res
+
+def NearestReplace(data, invalid=None):
+    """
+    Replace the value of invalid 'data' cells (indicated by 'invalid') 
+    by the value of the nearest valid data cell
+
+    Parameters
+    ----------
+    data:    numpy array of any dimension
+    invalid: a binary array of same shape as 'data'. 
+             data value are replaced where invalid is True
+             If None (default), use: invalid  = np.isnan(data)
+
+    Returns
+    -------
+    Return a filled array. 
+    """    
+    if invalid is None: invalid = np.isnan(data)
+    ind = nd.distance_transform_edt(invalid, return_distances=False, return_indices=True)
+    return data[tuple(ind)]
 
 def _get_kw_from_config(conf=None, section='velmap_parameters'):
     # Read options for velocity calculation from DSH.Config object
@@ -349,6 +365,7 @@ class VelMaps():
         tot_num_px = self.ImageHeight()*self.ImageWidth()
         px_per_proc = tot_num_px // numProcesses
         
+        start_time = time.time()
         fLog = open(os.path.join(self.outFolder, 'vmap.log'), 'w')
         strLog = 'Multiprocess VelMap computation started : ' + str(datetime.datetime.now())
         strLog += '\nProcessing of ' + str(tot_num_px) + ' pixels will be split into ' + str(numProcesses) + ' processes'
@@ -413,20 +430,19 @@ class VelMaps():
         num_epoch = 0
         while (np.max(all_remainingPx) > 0):
             num_epoch += 1
-            fLog.write('\nEpoch ' + str(num_epoch) + ': processing ' + str(px_per_chunk) + ' pixels per process...')
+            fLog.write('\nLoop ' + str(num_epoch) + ': processing ' + str(px_per_chunk) + ' pixels per process...')
             proc_list = []
             for pid in range(numProcesses):
                 cur_read = min(px_per_chunk, all_remainingPx[pid])
                 if cur_read > 0:
                     all_remainingPx[pid] -= cur_read
-                    fLog.write('\nProcess ' + str(pid).zfill(2) + ': processing ' + str(cur_read) + ' pixels (' + str(all_remainingPx[pid]) + ' remaining)')
-                    fLog.write('\n            Now reading correlation data starting from pixel ' + str(np.unravel_index(all_startLoc[pid], self.ImageShape())))
+                    fLog.write('\n  P' + str(pid).zfill(2) + ': processing ' + str(cur_read) + ' px starting from ' +\
+                               str(np.unravel_index(all_startLoc[pid], self.ImageShape())) + ' (' + str(all_remainingPx[pid]) + ' left)' +\
+                               ' -- {0:.1f} minutes elapsed'.format((time.time()-start_time) *1.0/60))
                     fLog.flush()
                     corr_data, tvalues, lagList, lagFlip = self.corr_maps.GetCorrTimetrace(np.unravel_index(all_startLoc[pid], self.ImageShape()),\
                                                                                            zRange=self.tRange, lagFlip='BOTH', returnCoords=True,\
                                                                                            squeezeResult=False, readConsecutive=cur_read, skipGet=True)
-                    fLog.write('\n            ...read data. Correlation matrix has shape ' + str(corr_data.shape))
-                    fLog.flush()
                     cur_p = Process(target=self.Compute, args=(np.unravel_index(all_startLoc[pid], self.ImageShape()), cur_read,\
                                                                None, '_'+str(pid).zfill(2), signed_lags,\
                                                                symm_only, consec_only, max_holes, mask_opening, conservative_cutoff,\
@@ -476,8 +492,8 @@ class VelMaps():
                 raise IOError('vMap metadata file ' + str(partial_vmap_config_fname) + ' not found.')
             vmap_config = cf.Config(partial_vmap_config_fname)
             vmap_mi_files.append(MI.MIfile(partial_vmap_fnames[fidx], vmap_config.ToDict(section='velmap_metadata')))
-        combined_corrmap = MI.MergeMIfiles(outFileName, vmap_mi_files, os.path.join(out_folder, '_vMap_metadata.ini'), MergeAxis=-1,\
-                                           FinalShape=self.MapShape)
+        combined_corrmap = MI.MergeMIfiles(outFileName, vmap_mi_files, os.path.join(out_folder, '_vMap_metadata.ini'), MergeAxis=0,\
+                                           MoveAxes=[(-1, 0)], FinalShape=self.MapShape)
         return combined_corrmap
 
     def Compute(self, pxLoc=[0,0], numPixels=-1, tRange=None, file_suffix='', signed_lags=False, symm_only=False, consec_only=True,\
@@ -838,7 +854,7 @@ class VelMaps():
         if (mask_opening is not None and np.count_nonzero(try_mask) > 2):
             for cur_open_range in range(mask_opening, 2, -1):
                 # remove thresholding noise by removing N-lag-wide unmasked domains
-                cur_mask_denoise = binary_opening(try_mask, structure=np.ones(cur_open_range))
+                cur_mask_denoise = nd.binary_opening(try_mask, structure=np.ones(cur_open_range))
                 if (np.count_nonzero(try_mask) > 2):
                     temp_mask = cur_mask_denoise
                     break
@@ -1113,18 +1129,35 @@ class VelMaps():
         
         return res_vavg
 
-    def CalcDisplacements(self):
+    def CalcDisplacements(self, nan_interp='xy'):
         """Integrate velocities to compute total displacements since the beginning of the experiment
+        
+        Parameters
+        ----------
+        nan_interp : 'z'|'xy'|'xyz'
+                     remove NaNs by replacing them with the nearest valid value
+                     'z': search for valid value along the z axis (same pixel, nearby times)
+                     'xy': search for valid value in the xy plane (same time, nearby pixels)
+                     'xyz': search for valid value in 3D (not recommended)
         """
 
         # Read full velocity map to memory
         vmap_mifile = self.GetMIfile()
         vmap_data = vmap_mifile.Read()
+        if (nan_interp=='xyz'):
+            vmap_data = NearestReplace(vmap_data)
+        elif (nan_interp=='z'):
+            for row in range(vmap_data.shape[1]):
+                for col in range(vmap_data.shape[2]):
+                    cur_mask = np.isnan(vmap_data[:,row,col])
+                    vmap_data[:,row,col][cur_mask] = np.interp(np.flatnonzero(cur_mask), np.flatnonzero(~cur_mask), vmap_data[:,row,col][~cur_mask])
         
         displmap_data = np.empty_like(vmap_data)
         dt = 1.0/vmap_data.GetFPS()
         displmap_data[0] = np.multiply(vmap_data[0], dt)
         for tidx in range(1, displmap_data.shape[0]):
+            if (nan_interp=='xy'):
+                vmap_data[tidx] = NearestReplace(vmap_data[tidx])
             displmap_data[tidx] = np.add(displmap_data[tidx-1], np.multiply(vmap_data[tidx], dt))
 
         MI.MIfile(os.path.join(self.outFolder, '_displMap.dat'), vmap_mifile.GetMetadata()).WriteData(displmap_data)
@@ -1286,7 +1319,7 @@ class VelMaps():
                     if (self.maskOpening is not None and np.count_nonzero(cur_try_mask) > 2):
                         for cur_open_range in range(self.maskOpening, 2, -1):
                             # remove thresholding noise by removing N-lag-wide unmasked domains
-                            cur_mask_denoise = binary_opening(cur_try_mask, structure=np.ones(cur_open_range))
+                            cur_mask_denoise = nd.binary_opening(cur_try_mask, structure=np.ones(cur_open_range))
                             if (np.count_nonzero(cur_try_mask) > 2):
                                 cur_use_mask = cur_mask_denoise
                                 break
