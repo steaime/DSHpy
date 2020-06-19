@@ -482,6 +482,7 @@ class VelMaps():
         out_folder : folder where to search for partial velocity maps to assemble and where to save final output
                      if None, self.outFolder will be used
         """
+        logging.info('VelMaps.AssembleMultiproc() procedure started, saving to ' + str(outFileName))
         self._load_metadata_from_corr()
         if (out_folder is None):
             out_folder = self.outFolder
@@ -494,6 +495,7 @@ class VelMaps():
                 raise IOError('vMap metadata file ' + str(partial_vmap_config_fname) + ' not found.')
             vmap_config = cf.Config(partial_vmap_config_fname)
             vmap_mi_files.append(MI.MIfile(partial_vmap_fnames[fidx], vmap_config.ToDict(section='velmap_metadata')))
+            logging.debug('partial MIfile ' + str(partial_vmap_fnames[fidx]) + ' loaded, with metadata from config file ' + str(partial_vmap_config_fname))
         combined_corrmap = MI.MergeMIfiles(outFileName, vmap_mi_files, os.path.join(out_folder, '_vMap_metadata.ini'), MergeAxis=0,\
                                            MoveAxes=[(-1, 0)], FinalShape=self.MapShape)
         return combined_corrmap
