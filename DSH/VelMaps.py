@@ -5,8 +5,10 @@ import scipy.special as ssp
 from scipy import stats
 from scipy import ndimage as nd
 import datetime
+import logging
 import time
 from multiprocessing import Process
+
 
 import emcee
 import pandas as pd
@@ -369,7 +371,8 @@ class VelMaps():
         fLog = open(os.path.join(self.outFolder, 'vmap.log'), 'w')
         strLog = 'Multiprocess VelMap computation started : ' + str(datetime.datetime.now())
         strLog += '\nProcessing of ' + str(tot_num_px) + ' pixels will be split into ' + str(numProcesses) + ' processes'
-        strLog += '\nPID\tpx_start\trow\tcol\tpx_num'
+        logging.info(strLog)
+        strLog = '\nPID\tpx_start\trow\tcol\tpx_num\tmifile\tconfigfile'
         
         all_startLoc = []
         all_numPx = []
@@ -383,8 +386,11 @@ class VelMaps():
             all_startLoc.append(start_px)
             all_numPx.append(cur_px_num)
             all_remainingPx.append(cur_px_num)
+            mifile_name = '_vMap_' + str(pid).zfill(2) + '.dat'
+            configfile_name = 'VelMapsConfig_' + str(pid).zfill(2) + '.ini'
             strLog += '\n' + str(pid) + '\t' + str(start_px) + '\t' + str(cur_px_loc[0]) +\
-                        '\t' + str(cur_px_loc[1]) + '\t' + str(cur_px_num)
+                        '\t' + str(cur_px_loc[1]) + '\t' + str(cur_px_num) + '\t' + str(mifile_name) +\
+                        '\t' + str(configfile_name)
             start_px = start_px + px_per_proc
 
             if (self.tRange is None):
@@ -420,12 +426,11 @@ class VelMaps():
                     'px_size' : self.GetPixelSize()
                     }
     
-            self.ExportConfig(os.path.join(self.outFolder, 'VelMapsConfig_' + str(pid).zfill(2) + '.ini'), vmap_options, mapMedatada)
-            all_miout.append(MI.MIfile(os.path.join(self.outFolder, '_vMap_' + str(pid).zfill(2) + '.dat'), mapMedatada))
+            self.ExportConfig(os.path.join(self.outFolder, configfile_name), vmap_options, mapMedatada)
+            all_miout.append(MI.MIfile(os.path.join(self.outFolder, mifile_name), mapMedatada))
 
         strLog += '\nAll processes configured, MIfiles opened for output. Now starting multiprocess computation'
-        fLog.write(strLog)
-        fLog.flush()
+        logging.info(strLog)
         
         num_epoch = 0
         while (np.max(all_remainingPx) > 0):
@@ -436,10 +441,9 @@ class VelMaps():
                 cur_read = min(px_per_chunk, all_remainingPx[pid])
                 if cur_read > 0:
                     all_remainingPx[pid] -= cur_read
-                    fLog.write('\n  P' + str(pid).zfill(2) + ': processing ' + str(cur_read) + ' px starting from ' +\
+                    logging.info('\n  P' + str(pid).zfill(2) + ': processing ' + str(cur_read) + ' px starting from ' +\
                                str(np.unravel_index(all_startLoc[pid], self.ImageShape())) + ' (' + str(all_remainingPx[pid]) + ' left)' +\
                                ' -- {0:.1f} minutes elapsed'.format((time.time()-start_time) *1.0/60))
-                    fLog.flush()
                     corr_data, tvalues, lagList, lagFlip = self.corr_maps.GetCorrTimetrace(np.unravel_index(all_startLoc[pid], self.ImageShape()),\
                                                                                            zRange=self.tRange, lagFlip='BOTH', returnCoords=True,\
                                                                                            squeezeResult=False, readConsecutive=cur_read, skipGet=True)
@@ -450,10 +454,9 @@ class VelMaps():
                                                                [corr_data, tvalues, lagList, lagFlip]))
                     all_startLoc[pid] += cur_read
                     cur_p.start()
-                    fLog.write('\n            ...process started!')
                     proc_list.append(cur_p)
                 else:
-                    fLog.write('\nProcess ' + str(pid).zfill(2) + ':  no leftover pixels.')
+                    logging.info('\nProcess ' + str(pid).zfill(2) + ':  no leftover pixels.')
                     
             for cur_p in proc_list:
                 cur_p.join()
@@ -462,13 +465,12 @@ class VelMaps():
             cur_mi.Close()
             
         if assemble_after:
-            fLog.write('\nFinal step: assembling multiprocess output')
+            logging.info('\nFinal step: assembling multiprocess output')
             res = self.AssembleMultiproc()
         else:
             res = None
         
-        fLog.write('\nVelocity maps completed : ' + str(datetime.datetime.now()))
-        fLog.close()
+        logging.info('\nVelocity maps completed : ' + str(datetime.datetime.now()))
         
         return res
 
@@ -521,8 +523,9 @@ class VelMaps():
         res_3D : 3D velocity map
         """
         
+        start_time = time.time()
+        logging.info(file_suffix + ' -- Start VelMaps.Compute()...')
         if not silent:
-            start_time = time.time()
             print(file_suffix + ' -- Start computing velocity maps...')
         
         self._load_metadata_from_corr()
@@ -572,7 +575,9 @@ class VelMaps():
                     'px_size' : self.GetPixelSize()
                     }
     
-            self.ExportConfig(os.path.join(self.outFolder, 'VelMapsConfig' + str(file_suffix) + '.ini'), vmap_options, mapMedatada)
+            config_fname = 'VelMapsConfig' + str(file_suffix) + '.ini'
+            self.ExportConfig(os.path.join(self.outFolder, config_fname), vmap_options, mapMedatada)
+            
 
         # Prepare memory
         vmap = self.ProcessMultiPixel(pxLoc=[pxLoc], readConsecutive=numPixels, tRange=tRange, signed_lags=signed_lags,\
@@ -583,9 +588,20 @@ class VelMaps():
             vmap = np.swapaxes(vmap, 0, 1)
         vmap.reshape(_MapShape)
         if MIfile_out is None:
-            MIfile_out = MI.MIfile(os.path.join(self.outFolder, '_vMap' + str(file_suffix) + '.dat'), mapMedatada)
-        MIfile_out.WriteData(vmap, closeAfter=(MIfile_out is not None))
+            mifile_name = '_vMap' + str(file_suffix) + '.dat'
+            MIfile_out = MI.MIfile(os.path.join(self.outFolder, mifile_name), mapMedatada)
+            closeAfter = True
+            logging.debug('No output MIfile passed to VelMaps.Compute(): new MIfile ' + str(mifile_name) + ' created, will be closed after exporting data.')
+        else:
+            closeAfter = False
+            logging.debug('Output MIfile passed to VelMaps.Compute(), with filename ' + str(MIfile_out.FileName) +\
+                          ' Data will be written and file handle will not be closed afterwards')
+            
+        MIfile_out.WriteData(vmap, closeAfter=closeAfter)
+        logging.debug('Velocity maps of shape ' + str(vmap.shape) + ' written to MIfile ' + str(MIfile_out.FileName) +\
+                      ' MIfile.IsOpenWriting()==' + str(MIfile_out.IsOpenWriting()))
         
+        logging.info(file_suffix + ' -- VelMaps.Compute() completed in {0:.1f} seconds!'.format(time.time()-start_time))
         if not silent:
             print(file_suffix + ' -- Procedure completed in {0:.1f} seconds!'.format(time.time()-start_time))
             

@@ -1,5 +1,6 @@
 import sys
 import os
+import logging
 from DSH import Config, MIfile, CorrMaps, VelMaps, SharedFunctions
 
 
@@ -45,6 +46,11 @@ if __name__ == '__main__':
                 out_folder = os.path.join(froot, conf.Get(cur_sec, 'out_folder'))
                 img_range = conf.Get(cur_sec, 'img_range', None, int)
                 crop_roi = conf.Get(cur_sec, 'crop_roi', None, int)
+                
+                logging.basicConfig(filename=os.path.join(out_folder, 'DSH.log'),\
+                                    level=logging.DEBUG,\
+                                    format='%(asctime)s | %(levelname)s:%(message)s')
+                logging.info('Now starting analysis in folder ' + str(out_folder))
                 
                 # Initialize image and correlation files
                 mi_file = MIfile.MIfile(mi_fname, meta_fname)

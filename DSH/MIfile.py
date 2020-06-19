@@ -3,6 +3,8 @@ import numpy as np
 import sys
 import struct
 import collections
+import logging
+
 from DSH import Config as cf
 from DSH import SharedFunctions as sf
 
@@ -161,6 +163,7 @@ class MIfile():
         self.FileName = FileName
         self.ReadFileHandle = None
         self.WriteFileHandle = None
+        logging.debug('MIfile object created with filename ' + str(FileName))
         self._load_metadata(MetaData)
     
     def __repr__(self):
@@ -323,6 +326,8 @@ class MIfile():
             self.WriteFileHandle.write(buf)
     
     def WriteData(self, data_arr, closeAfter=True):
+        """Write data to file
+        """
         self.OpenForWriting()        
         if (sys.getsizeof(data_arr) > self.MaxBufferSize):
             if (sys.getsizeof(data_arr[0]) > self.MaxBufferSize):
@@ -334,10 +339,16 @@ class MIfile():
                     self.WriteFileHandle.write(self._imgs_to_bytes(data_arr[i:min(i+xsec_per_buffer, len(data_arr))], self.PixelFormat, do_flatten=True))
         else:
             self.WriteFileHandle.write(self._imgs_to_bytes(data_arr, self.PixelFormat, do_flatten=True))
+        if isinstance(data_arr, np.ndarray):
+            logging.debug('ndarray of shape ' + str(data_arr.shape) + ' successfully written to MIfile ' + str(self.FileName))
+        else:
+            logging.debug('non-ndarray of size ' + str(sys.getsizeof(data_arr)) + ' successfully written to MIfile ' + str(self.FileName))
         if (closeAfter):
             self.Close()
+            logging.debug('MIfile ' + str(self.FileName) + ' closing after writing')
         else:
             self.WriteFileHandle.flush()
+            logging.debug('MIfile ' + str(self.FileName) + ' flushing without closing after writing')
 
     def Close(self, read=True, write=True):
         if (read and self.WriteFileHandle is not None):
@@ -352,6 +363,10 @@ class MIfile():
         """
         return self.MetaData.ToDict(section='MIfile')
     
+    def IsOpenWriting(self):
+        return (self.WriteFileHandle is not None)
+    def IsOpenReading(self):
+        return (self.ReadFileHandle is not None)
     def GetFilename(self):
         return self.FileName
     def ImageNumber(self):
