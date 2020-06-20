@@ -369,7 +369,7 @@ class VelMaps():
         
         start_time = time.time()
         logging.info('Multiprocess VelMap computation started : ' + str(datetime.datetime.now()))
-        logging.info('Processing of ' + str(tot_num_px) + ' pixels will be split into ' + str(numProcesses) + ' processes')
+        logging.debug('Processing of ' + str(tot_num_px) + ' pixels will be split into ' + str(numProcesses) + ' processes')
         strLog = '\nPID\tpx_start\trow\tcol\tpx_num\tmifile\tconfigfile'
         
         all_startLoc = []
@@ -428,13 +428,13 @@ class VelMaps():
             all_miout.append(MI.MIfile(os.path.join(self.outFolder, mifile_name), mapMedatada))
 
         strLog += '\nAll processes configured, MIfiles opened for output. Now starting multiprocess computation'
-        logging.info(strLog)
+        logging.debug(strLog)
         
         num_epoch = 0
         proc_list = []
         while (np.max(all_remainingPx) > 0):
             num_epoch += 1
-            logging.info('\nLoop ' + str(num_epoch) + ': processing ' + str(px_per_chunk) + ' pixels per process...')
+            logging.debug('\nLoop ' + str(num_epoch) + ': processing ' + str(px_per_chunk) + ' pixels per process...')
             for pid in range(numProcesses):
                 cur_read = min(px_per_chunk, all_remainingPx[pid])
                 if cur_read > 0:
@@ -443,7 +443,7 @@ class VelMaps():
                         proc_list[pid].join()
                         logging.debug('Joined process ' + str(pid))
                     all_remainingPx[pid] -= cur_read
-                    logging.info('P' + str(pid).zfill(2) + ': processing ' + str(cur_read) + ' px starting from ' +\
+                    logging.debug('P' + str(pid).zfill(2) + ': processing ' + str(cur_read) + ' px starting from ' +\
                                str(np.unravel_index(all_startLoc[pid], self.ImageShape())) + ' (' + str(all_remainingPx[pid]) + ' left)' +\
                                ' -- {0:.1f} minutes elapsed'.format((time.time()-start_time) *1.0/60))
                     corr_data, tvalues, lagList, lagFlip = self.corr_maps.GetCorrTimetrace(np.unravel_index(all_startLoc[pid], self.ImageShape()),\
@@ -467,7 +467,7 @@ class VelMaps():
             cur_mi.Close()
             
         if assemble_after:
-            logging.info('\nFinal step: assembling multiprocess output')
+            logging.debug('\nFinal step: assembling multiprocess output')
             res = self.AssembleMultiproc()
         else:
             res = None
