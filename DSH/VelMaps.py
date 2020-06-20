@@ -434,14 +434,17 @@ class VelMaps():
         proc_list = []
         while (np.max(all_remainingPx) > 0):
             num_epoch += 1
-            logging.debug('\nLoop ' + str(num_epoch) + ': processing ' + str(px_per_chunk) + ' pixels per process...')
+            logging.debug('Loop ' + str(num_epoch) + ': processing ' + str(px_per_chunk) + ' pixels per process...')
             for pid in range(numProcesses):
                 cur_read = min(px_per_chunk, all_remainingPx[pid])
                 if cur_read > 0:
                     if num_epoch>1:
-                        logging.debug('Joining process ' + str(pid))
-                        proc_list[pid].join()
-                        logging.debug('Joined process ' + str(pid))
+                        if (proc_list[pid].is_alive()):
+                            logging.debug('Joining process ' + str(pid) + '...')
+                            proc_list[pid].join()
+                            logging.debug('...process ' + str(pid) + ' ended!')
+                        else:
+                            logging.debug('Process ' + str(pid) + ' has already ended. Restarting right away.')
                     all_remainingPx[pid] -= cur_read
                     logging.debug('P' + str(pid).zfill(2) + ': processing ' + str(cur_read) + ' px starting from ' +\
                                str(np.unravel_index(all_startLoc[pid], self.ImageShape())) + ' (' + str(all_remainingPx[pid]) + ' left)' +\
@@ -457,9 +460,9 @@ class VelMaps():
                     all_startLoc[pid] += cur_read
                     cur_p.start()
                     if num_epoch>1:
-                        proc_list.append(cur_p)
-                    else:
                         proc_list[pid] = cur_p
+                    else:
+                        proc_list.append(cur_p)
                 else:
                     logging.info('\nProcess ' + str(pid).zfill(2) + ':  no leftover pixels.')
         
