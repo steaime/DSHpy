@@ -306,7 +306,7 @@ class MIfile():
         exp_config.Export(metadata_filename)
         self.WriteData(mi_chunk)
     
-    def OpenForWriting(self, fName=None, WriteHeader=None):
+    def OpenForWriting(self, fName=None, WriteHeader=None, appendMode=False):
         """Open image for writing
         
         Parameters
@@ -315,20 +315,27 @@ class MIfile():
         WriteHeader : list of dictionnaries each one with two entries: format and value
             if None, no header will be written (obsolete, for backward compatibility)
         """
-        if (self.WriteFileHandle is None):
+        if (not self.IsOpenWriting()):
             if (fName is None):
                 fName = self.FileName
-            self.WriteFileHandle = open(fName, 'wb')
+            if appendMode:
+                self.WriteFileHandle = open(fName, 'ab')
+                logging.debug('MIfile ' + str(fName) + ' opened for appending')
+            else:
+                self.WriteFileHandle = open(fName, 'wb')
+                logging.debug('MIfile ' + str(fName) + ' opened for writing')
+        else:
+            logging.debug('MIfile ' + str(fName) + ' was already open')
         if (WriteHeader is not None):
             buf = bytes()
             for elem_hdr in WriteHeader:
                 buf += struct.pack(elem_hdr['format'], elem_hdr['value'])
             self.WriteFileHandle.write(buf)
     
-    def WriteData(self, data_arr, closeAfter=True):
+    def WriteData(self, data_arr, closeAfter=True, appendMode=False):
         """Write data to file
         """
-        self.OpenForWriting()        
+        self.OpenForWriting(appendMode=appendMode)        
         if (sys.getsizeof(data_arr) > self.MaxBufferSize):
             if (sys.getsizeof(data_arr[0]) > self.MaxBufferSize):
                 raise IOError('WriteMIfile is trying to write a very large array. Enhanced memory control is still under development')
@@ -364,9 +371,15 @@ class MIfile():
         return self.MetaData.ToDict(section='MIfile')
     
     def IsOpenWriting(self):
-        return (self.WriteFileHandle is not None)
+        if (self.WriteFileHandle is None):
+            return False
+        else:
+            return (not self.WriteFileHandle.closed)
     def IsOpenReading(self):
-        return (self.ReadFileHandle is not None)
+        if (self.ReadFileHandle is None):
+            return False
+        else:
+            return (not self.ReadFileHandle.closed)
     def GetFilename(self):
         return self.FileName
     def ImageNumber(self):

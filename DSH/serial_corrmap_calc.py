@@ -49,7 +49,7 @@ if __name__ == '__main__':
                 
                 logging.basicConfig(filename=os.path.join(out_folder, 'DSH.log'),\
                                     level=logging.DEBUG,\
-                                    format='%(asctime)s | %(levelname)s:%(message)s')
+                                    format='%(asctime)s | %(levelname)s : %(message)s')
                 logging.info('Now starting analysis in folder ' + str(out_folder))
                 
                 # Initialize image and correlation files

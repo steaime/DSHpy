@@ -368,10 +368,8 @@ class VelMaps():
         px_per_proc = tot_num_px // numProcesses
         
         start_time = time.time()
-        fLog = open(os.path.join(self.outFolder, 'vmap.log'), 'w')
-        strLog = 'Multiprocess VelMap computation started : ' + str(datetime.datetime.now())
-        strLog += '\nProcessing of ' + str(tot_num_px) + ' pixels will be split into ' + str(numProcesses) + ' processes'
-        logging.info(strLog)
+        logging.info('Multiprocess VelMap computation started : ' + str(datetime.datetime.now()))
+        logging.info('Processing of ' + str(tot_num_px) + ' pixels will be split into ' + str(numProcesses) + ' processes')
         strLog = '\nPID\tpx_start\trow\tcol\tpx_num\tmifile\tconfigfile'
         
         all_startLoc = []
@@ -433,15 +431,19 @@ class VelMaps():
         logging.info(strLog)
         
         num_epoch = 0
+        proc_list = []
         while (np.max(all_remainingPx) > 0):
             num_epoch += 1
-            fLog.write('\nLoop ' + str(num_epoch) + ': processing ' + str(px_per_chunk) + ' pixels per process...')
-            proc_list = []
+            logging.info('\nLoop ' + str(num_epoch) + ': processing ' + str(px_per_chunk) + ' pixels per process...')
             for pid in range(numProcesses):
                 cur_read = min(px_per_chunk, all_remainingPx[pid])
                 if cur_read > 0:
+                    if num_epoch>1:
+                        logging.debug('Joining process ' + str(pid))
+                        proc_list[pid].join()
+                        logging.debug('Joined process ' + str(pid))
                     all_remainingPx[pid] -= cur_read
-                    logging.info('\n  P' + str(pid).zfill(2) + ': processing ' + str(cur_read) + ' px starting from ' +\
+                    logging.info('P' + str(pid).zfill(2) + ': processing ' + str(cur_read) + ' px starting from ' +\
                                str(np.unravel_index(all_startLoc[pid], self.ImageShape())) + ' (' + str(all_remainingPx[pid]) + ' left)' +\
                                ' -- {0:.1f} minutes elapsed'.format((time.time()-start_time) *1.0/60))
                     corr_data, tvalues, lagList, lagFlip = self.corr_maps.GetCorrTimetrace(np.unravel_index(all_startLoc[pid], self.ImageShape()),\
@@ -454,12 +456,12 @@ class VelMaps():
                                                                [corr_data, tvalues, lagList, lagFlip]))
                     all_startLoc[pid] += cur_read
                     cur_p.start()
-                    proc_list.append(cur_p)
+                    if num_epoch>1:
+                        proc_list.append(cur_p)
+                    else:
+                        proc_list[pid] = cur_p
                 else:
                     logging.info('\nProcess ' + str(pid).zfill(2) + ':  no leftover pixels.')
-                    
-            for cur_p in proc_list:
-                cur_p.join()
         
         for cur_mi in all_miout:
             cur_mi.Close()
@@ -589,17 +591,20 @@ class VelMaps():
         if mapReshape:
             vmap = np.swapaxes(vmap, 0, 1)
         vmap.reshape(_MapShape)
+        
         if MIfile_out is None:
             mifile_name = '_vMap' + str(file_suffix) + '.dat'
             MIfile_out = MI.MIfile(os.path.join(self.outFolder, mifile_name), mapMedatada)
             closeAfter = True
+            appendMode = False
             logging.debug('No output MIfile passed to VelMaps.Compute(): new MIfile ' + str(mifile_name) + ' created, will be closed after exporting data.')
         else:
             closeAfter = False
+            appendMode = True
             logging.debug('Output MIfile passed to VelMaps.Compute(), with filename ' + str(MIfile_out.FileName) +\
-                          ' Data will be written and file handle will not be closed afterwards')
+                          ' Data will be appended and file handle will not be closed afterwards')
             
-        MIfile_out.WriteData(vmap, closeAfter=closeAfter)
+        MIfile_out.WriteData(vmap, closeAfter=closeAfter, appendMode=appendMode)
         logging.debug('Velocity maps of shape ' + str(vmap.shape) + ' written to MIfile ' + str(MIfile_out.FileName) +\
                       ' MIfile.IsOpenWriting()==' + str(MIfile_out.IsOpenWriting()))
         
