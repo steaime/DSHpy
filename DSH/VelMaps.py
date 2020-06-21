@@ -425,7 +425,9 @@ class VelMaps():
                     }
     
             self.ExportConfig(os.path.join(self.outFolder, configfile_name), vmap_options, mapMedatada)
-            all_miout.append(MI.MIfile(os.path.join(self.outFolder, mifile_name), mapMedatada))
+            cur_miout = MI.MIfile(os.path.join(self.outFolder, mifile_name), mapMedatada)
+            cur_miout.OpenForWriting(appendMode=False)
+            all_miout.append(cur_miout)
 
         strLog += '\nAll processes configured, MIfiles opened for output. Now starting multiprocess computation'
         logging.debug(strLog)
@@ -466,8 +468,9 @@ class VelMaps():
                 else:
                     logging.info('\nProcess ' + str(pid).zfill(2) + ':  no leftover pixels.')
         
-        for cur_mi in all_miout:
-            cur_mi.Close()
+        for pid in range(numProcesses):
+            proc_list[pid].join()
+            all_miout[pid].Close()
             
         if assemble_after:
             logging.debug('\nFinal step: assembling multiprocess output')
@@ -725,12 +728,17 @@ class VelMaps():
     
                 if method=='linfit':
                     if (np.max(cur_dt)==np.min(cur_dt)):
-                        if tidx>0:
-                            intercept = np.mean(interc[pidx,:tidx])
+                        if (cur_dt[0] > 0):
+                            if tidx>0:
+                                intercept = np.mean(interc[pidx,:tidx])
+                            else:
+                                intercept = 0
+                            slope = (np.nanmean(cur_dr)-intercept)*1.0/cur_dt[0]
+                            std_err = np.nan
                         else:
-                            intercept = 0
-                        slope = (np.nanmean(cur_dr)-intercept)*1.0/cur_dt[0]
-                        std_err = np.nan
+                            logging.debug('Divide by zero encountered in ProcessMultiPixel() with parameters: pxLoc=' + str(pxLoc) +\
+                                            '; pidx=' + str(pidx) + '; tidx=' + str(tidx))
+                            intercept, slope, std_err = np.nan, np.nan, np.nan
                     else:
                         slope, intercept, _, _, std_err = stats.linregress(cur_dt, cur_dr)
                 elif method=='lstsq':
@@ -1179,7 +1187,7 @@ class VelMaps():
                     vmap_data[:,row,col][cur_mask] = np.interp(np.flatnonzero(cur_mask), np.flatnonzero(~cur_mask), vmap_data[:,row,col][~cur_mask])
         
         displmap_data = np.empty_like(vmap_data)
-        dt = 1.0/vmap_data.GetFPS()
+        dt = 1.0/vmap_mifile.GetFPS()
         displmap_data[0] = np.multiply(vmap_data[0], dt)
         for tidx in range(1, displmap_data.shape[0]):
             if (nan_interp=='xy'):
