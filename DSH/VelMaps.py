@@ -736,8 +736,8 @@ class VelMaps():
                             slope = (np.nanmean(cur_dr)-intercept)*1.0/cur_dt[0]
                             std_err = np.nan
                         else:
-                            logging.debug('Divide by zero encountered in ProcessMultiPixel() with parameters: pxLoc=' + str(pxLoc) +\
-                                            '; pidx=' + str(pidx) + '; tidx=' + str(tidx))
+                            #logging.debug('Divide by zero encountered in ProcessMultiPixel() with parameters: pxLoc=' + str(pxLoc) +\
+                            #                '; pidx=' + str(pidx) + '; tidx=' + str(tidx))
                             intercept, slope, std_err = np.nan, np.nan, np.nan
                     else:
                         slope, intercept, _, _, std_err = stats.linregress(cur_dt, cur_dr)
