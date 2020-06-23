@@ -112,7 +112,7 @@ def MergeMIfiles(MergedFileName, MIfileList, MergedMetadataFile=None, MergeAxis=
         write_data = mi_in_list[0].Read(closeAfter=True)
         logging.debug('Writing buffer initialized with first MIfile (' + str(mi_in_list[0].FileName) + '). Shape is ' + str(write_data.shape))
         for midx in range(1, len(mi_in_list)):
-            cur_buf = cur_mifile.Read(closeAfter=True)
+            cur_buf = mi_in_list[midx].Read(closeAfter=True)
             write_data = np.append(write_data, cur_buf, axis=MergeAxis)
             logging.debug('MIfile #' + str(midx) + ' (' + str(mi_in_list[0].FileName) + ') with shape ' + str(cur_buf.shape) +\
                           ' appended to writing buffer along axis ' + str(MergeAxis) + '. Current shape is ' + str(write_data.shape))
