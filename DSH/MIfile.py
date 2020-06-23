@@ -38,6 +38,15 @@ def MergeMIfiles(MergedFileName, MIfileList, MergedMetadataFile=None, MergeAxis=
     if (len(MoveAxes)>0):
         if (type(MoveAxes[0]) is int):
             MoveAxes = [MoveAxes]
+    logging.info('MIfile.MergeMIfiles() procedure started. ' + str(len(MIfileList)) + ' MIfiles to be merged into ' + str(MergedFileName))
+    strLog = 'Merging along Axis ' + str(MergeAxis)
+    if len(MoveAxes)>0:
+        strLog += '; followed by np.moveaxis moves: ' + str(MoveAxes)
+    if FinalShape is None:
+        strLog += '. No final reshaping'
+    else:
+        strLog += '. Reshape output to ' + str(FinalShape)
+    logging.info(strLog)
     
     # Load all MIfiles and generate output metadata
     mi_in_list = []
@@ -48,18 +57,20 @@ def MergeMIfiles(MergedFileName, MIfileList, MergedMetadataFile=None, MergeAxis=
         'fps' : 0.0,
         'px_size' : 0.0
         }
-    for cur_mifile in MIfileList:
-        if (type(cur_mifile) is list):
-            add_mi = MIfile(cur_mifile[0], cur_mifile[1])
+    for midx in range(len(MIfileList)):
+        if (type(MIfileList[midx]) is list):
+            add_mi = MIfile(MIfileList[midx][0], MIfileList[midx][1])
+            logging.debug('MergeMIfiles(): adding new MIfile object with filename ' + str(MIfileList[midx][0]))
         else:
-            add_mi = cur_mifile
+            add_mi = MIfileList[midx]
+            logging.debug('MergeMIfiles(): adding existing MIfile object (' + str(MIfileList[midx].FileName) + ')')
         mi_in_list.append(add_mi)
+        cur_format = add_mi.DataFormat()
         cur_MIshape = add_mi.GetShape()
         if (MergeAxis < 0):
             MergeAxis += len(cur_MIshape)
         out_meta['shape'][MergeAxis] += cur_MIshape[MergeAxis]
-        cur_format = add_mi.DataFormat()
-        if (out_meta['shape'][1] == 0):
+        if (midx == 0):
             for ax in range(len(cur_MIshape)):
                 if ax!=MergeAxis:
                     out_meta['shape'][ax] = cur_MIshape[ax]
@@ -72,20 +83,20 @@ def MergeMIfiles(MergedFileName, MIfileList, MergedMetadataFile=None, MergeAxis=
                     raise IOError('Cannot merge MIfiles of shapes ' + str(out_meta['shape']) +\
                                   ' and ' + str(cur_MIshape) + ' along axis ' + str(MergeAxis) +\
                                   ' (sizes on axis ' + str(ax) + ' do not match)')
-            if (out_meta['px_format'] != cur_format):
-                raise IOError('MIfiles should all have the same pixel format')
+            assert out_meta['px_format'] == cur_format, 'MIfiles should all have the same pixel format'
+        logging.debug('Current shape is ' + str(cur_MIshape) + '. Output shape updated to ' + str(out_meta['shape']))
     
     if (FinalShape is not None):
         re_shape = list(FinalShape.copy())
         re_shape[MergeAxis] = int(np.prod(out_meta['shape']) / (re_shape[MergeAxis-1]*re_shape[MergeAxis-2]))
-        for move in MoveAxes:
-            re_shape = sf.MoveListElement(re_shape, move[0], move[1])
-        if (np.prod(re_shape)!=np.prod(out_meta['shape'])):
-            raise ValueError('An error occurred trying to reshape MIfile of shape ' + str(out_meta['shape']) +\
+        #for move in MoveAxes:
+        #    re_shape = sf.MoveListElement(re_shape, move[0], move[1])
+        assert np.prod(re_shape)==np.prod(out_meta['shape']), 'An error occurred trying to reshape MIfile of shape ' + str(out_meta['shape']) +\
                              ' into shape ' + str(re_shape) + ': pixel number is not conserved (' + str(np.prod(re_shape)) +\
-                             '!=' + str(np.prod(out_meta['shape'])) + ')!')
-        else:
-            out_meta['shape'] = list(re_shape)
+                             '!=' + str(np.prod(out_meta['shape'])) + ')!'
+        out_meta['shape'] = list(re_shape)
+        logging.debug('Output shape should be ' + str(re_shape))
+        
     if (MergedMetadataFile is not None):
         conf = cf.Config()
         conf.Import(out_meta, section_name='MIfile')
@@ -95,14 +106,21 @@ def MergeMIfiles(MergedFileName, MIfileList, MergedMetadataFile=None, MergeAxis=
     if (MergeAxis==0 and len(MoveAxes)==0):
         for cur_mifile in mi_in_list:
             outMIfile.WriteData(cur_mifile.Read(closeAfter=True), closeAfter=False)
+            logging.debug('MIfile ' + str(cur_mifile.FileName) + ' read and directly transfered to output MIfile')
         outMIfile.Close()
     else:
         write_data = mi_in_list[0].Read(closeAfter=True)
+        logging.debug('Writing buffer initialized with first MIfile (' + str(mi_in_list[0].FileName) + '). Shape is ' + str(write_data.shape))
         for midx in range(1, len(mi_in_list)):
-            write_data = np.append(write_data, cur_mifile.Read(closeAfter=True), axis=MergeAxis)
+            cur_buf = cur_mifile.Read(closeAfter=True)
+            write_data = np.append(write_data, cur_buf, axis=MergeAxis)
+            logging.debug('MIfile #' + str(midx) + ' (' + str(mi_in_list[0].FileName) + ') with shape ' + str(cur_buf.shape) +\
+                          ' appended to writing buffer along axis ' + str(MergeAxis) + '. Current shape is ' + str(write_data.shape))
         for move in MoveAxes:
             write_data = np.moveaxis(write_data, move[0], move[1])
+            logging.debug('Axis ' + str(move[0]) + ' moved to position ' + str(move[1]) + '. Current shape is ' + str(write_data.shape))
         outMIfile.WriteData(write_data, closeAfter=True)
+        logging.debug('Final buffer with shape ' + str(write_data.shape) + ' written to output MIfile ' + str(outMIfile.FileName))
     
     return outMIfile
 
@@ -315,9 +333,9 @@ class MIfile():
         WriteHeader : list of dictionnaries each one with two entries: format and value
             if None, no header will be written (obsolete, for backward compatibility)
         """
+        if (fName is None):
+            fName = self.FileName
         if (not self.IsOpenWriting()):
-            if (fName is None):
-                fName = self.FileName
             if appendMode:
                 self.WriteFileHandle = open(fName, 'ab')
                 logging.debug('MIfile ' + str(fName) + ' opened for appending')
