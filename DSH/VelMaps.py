@@ -728,7 +728,7 @@ class VelMaps():
     
                 if method=='linfit':
                     if (np.max(cur_dt)==np.min(cur_dt)):
-                        if (cur_dt[0] > 0):
+                        if (len(cur_dr)>0 and cur_dt[0] != 0):
                             if tidx>0:
                                 intercept = np.mean(interc[pidx,:tidx])
                             else:

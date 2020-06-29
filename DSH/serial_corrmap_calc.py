@@ -47,6 +47,7 @@ if __name__ == '__main__':
                 img_range = conf.Get(cur_sec, 'img_range', None, int)
                 crop_roi = conf.Get(cur_sec, 'crop_roi', None, int)
                 
+                SharedFunctions.CheckCreateFolder(out_folder)
                 logging.basicConfig(filename=os.path.join(out_folder, 'DSH.log'),\
                                     level=logging.DEBUG,\
                                     format='%(asctime)s | %(levelname)s : %(message)s')
