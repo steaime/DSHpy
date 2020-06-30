@@ -240,11 +240,13 @@ class MIfile():
         
         Parameters
         ----------
-        img_idx : index of the image, 0-based
+        img_idx : index of the image, 0-based. If -N, it will get the Nth last image
         cropROI : if None, full image is returned
                   otherwise, [topleftx (0-based), toplefty (0-based), width, height]
                   width and/or height can be -1 to signify till the end of the image
         """
+        if (img_idx<0):
+            img_idx += self.ImgNumber
         if (cropROI is None):
             return self.GetStack(start_idx=img_idx, imgs_num=1).reshape(self.ImgHeight, self.ImgWidth)
         else:

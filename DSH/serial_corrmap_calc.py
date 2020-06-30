@@ -8,13 +8,24 @@ if __name__ == '__main__':
     
     inp_fnames = []
     cmd_list = []
+    g_params = {'log_suffix':''}
+    param_kw = None
     for argidx in range(1, len(sys.argv)):
         # If it's something like -cmd, add it to the command list
         # Otherwise, assume it's the path of some input file to be read
         if (sys.argv[argidx][0] == '-'):
-            cmd_list.append(sys.argv[argidx])
+            # Special case: combinations like --param value
+            if (sys.argv[argidx][:2] == '--'):
+                param_kw = sys.argv[argidx][2:]
+            else:
+                param_kw = None
+                cmd_list.append(sys.argv[argidx])
         else:
-            inp_fnames.append(sys.argv[argidx])
+            if (param_kw is None):
+                inp_fnames.append(sys.argv[argidx])
+            else:
+                g_params[param_kw] = sys.argv[argidx]
+                param_kw = None
     if (len(inp_fnames)<=0):
         inp_fnames = [os.path.join(os.path.dirname(os.path.abspath(__file__)), 'serial_corrmap_config.ini')]
     
@@ -48,9 +59,8 @@ if __name__ == '__main__':
                 crop_roi = conf.Get(cur_sec, 'crop_roi', None, int)
                 
                 SharedFunctions.CheckCreateFolder(out_folder)
-                logging.basicConfig(filename=os.path.join(out_folder, 'DSH.log'),\
-                                    level=logging.DEBUG,\
-                                    format='%(asctime)s | %(levelname)s : %(message)s')
+                logging.basicConfig(filename=os.path.join(out_folder, 'DSH' + str(g_params['log_suffix']) + '.log'),\
+                                    level=logging.DEBUG, format='%(asctime)s | %(levelname)s:%(message)s')
                 logging.info('Now starting analysis in folder ' + str(out_folder))
                 
                 # Initialize image and correlation files
