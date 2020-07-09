@@ -124,6 +124,22 @@ def MergeMIfiles(MergedFileName, MIfileList, MergedMetadataFile=None, MergeAxis=
     
     return outMIfile
 
+def MIcrop(source_file, source_metadata, dest_file, dest_metadata, crop_zRange=None, crop_ROI=None):
+    """Crops a MIfile and saves it in a different file
+    
+    Parameters
+    ----------
+    source_file: full path of source MIfile
+    source_metadata: full path of source metadata or dictionary with metadata
+    dest_file: full path of destination MIfile
+    dest_metadata: full path where to export destination metadata
+    crop_zRange: crop zRange
+    crop_ROI: crop ROI
+    """
+    cur_mi = MIfile(source_file, source_metadata)
+    cur_mi.Export(dest_file, dest_metadata, zRange=crop_zRange, cropROI=crop_ROI)
+    
+
 def ValidateROI(ROI, ImageShape, replaceNone=False):
     """Validates a Region Of Interest (ROI)
     
@@ -224,7 +240,7 @@ class MIfile():
         """
         self.OpenForReading()
         zRange = self.Validate_zRange(zRange)
-        if (zRange[2] == 1 and cropROI is None):
+        if (zRange[2] == 1 and cropROI is None and self.gapBytes==0):
             res_3D = self.GetStack(start_idx=zRange[0], imgs_num=zRange[1]-zRange[0])
         else:
             res_3D = []
@@ -262,6 +278,8 @@ class MIfile():
         
     def GetStack(self, start_idx=0, imgs_num=-1):
         """Read contiguous image stack from MIfile
+        WARNING: there is no control on eventual gap between images.
+        unless you are sure that there is no gap, use MIfile.Read()
         
         Parameters
         ----------
@@ -317,6 +335,7 @@ class MIfile():
         mi_chunk = self.Read(zRange, cropROI)
         exp_meta = self.GetMetadata().copy()
         exp_meta['hdr_len'] = 0
+        exp_meta['gap_bytes'] = 0
         exp_meta['shape'] = list(mi_chunk.shape)
         if ('fps' in exp_meta):
             val_zRange = self.Validate_zRange(zRange)
@@ -390,6 +409,11 @@ class MIfile():
         """
         return self.MetaData.ToDict(section='MIfile')
     
+    def MetadataToDict(self, section=None):
+        """Returns dictionary with metadata
+        """
+        return self.MetaData.ToDict(section=section)
+    
     def IsOpenWriting(self):
         if (self.WriteFileHandle is None):
             return False
@@ -446,6 +470,7 @@ class MIfile():
         if (self.FileName is None):
             self.FileName = self.MetaData.Get('MIfile', 'filename', None)
         self.hdrSize = self.MetaData.Get('MIfile', 'hdr_len', 0, int)
+        self.gapBytes = self.MetaData.Get('MIfile', 'gap_bytes', 0, int)
         self.Shape = self.MetaData.Get('MIfile', 'shape', [0,0,0], int)
         self.ImgNumber = self.Shape[0]
         self.ImgHeight = self.Shape[1]
@@ -466,7 +491,7 @@ class MIfile():
         row_idx : row index (top row is #0)
         col_idx : column index (left column is #0)
         """
-        return self.hdrSize + (img_idx * self.PxPerImg + row_idx * self.ImgWidth + col_idx) * self.PixelDepth
+        return self.hdrSize + (img_idx * self.PxPerImg + row_idx * self.ImgWidth + col_idx) * self.PixelDepth + img_idx * self.gapBytes
     
     def _read_pixels(self, px_num=1, seek_pos=None):
         """Read given number of contiguous pixels from MIfile
