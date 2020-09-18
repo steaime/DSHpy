@@ -142,7 +142,7 @@ class NonAffMaps():
         
         # Search for correlation map MIfiles, skip autocorrelation maps
         fw_cmap_config, fw_cmap_mifiles, fw_cmap_lagtimes = self.cmaps_fw.GetCorrMaps(openMIfiles=True, getAutocorr=False)
-        bk_cmap_config, bk_cmap_mifiles, bk_cmap_lagtimes = self.cmaps_fw.GetCorrMaps(openMIfiles=True, getAutocorr=False)
+        bk_cmap_config, bk_cmap_mifiles, bk_cmap_lagtimes = self.cmaps_bk.GetCorrMaps(openMIfiles=True, getAutocorr=False)
         common_lags = list(set(fw_cmap_lagtimes).intersection(bk_cmap_lagtimes))
         if self.lag_range is None:
             if 0 in common_lags: common_lags.remove(0)

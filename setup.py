@@ -2,7 +2,7 @@
 from setuptools import setup
 
 setup(name='DSH',
-      version='0.3',
+      version='0.4',
       description='Analyze DSH videos',
       url='https://github.com/steaime/DSHpy',
       author='Stefano Aime, Matteo Sabato',
