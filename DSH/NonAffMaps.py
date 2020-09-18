@@ -184,8 +184,8 @@ class NonAffMaps():
                 fw_norm_factor, bk_norm_factor = 1, 1
             
             # load, normalize and eventually smooth correlation maps.
-            fw_data = np.true_divide(self.fw_cmap_mifiles[fw_lidx].Read(zRange=self.t_range, cropROI=self.cropROI, closeAfter=True), fw_norm_factor)
-            bk_data = np.true_divide(self.bk_cmap_mifiles[bk_lidx].Read(zRange=self.t_range, cropROI=self.cropROI, closeAfter=True), bk_norm_factor)
+            fw_data = np.true_divide(fw_cmap_mifiles[fw_lidx].Read(zRange=self.t_range, cropROI=self.cropROI, closeAfter=True), fw_norm_factor)
+            bk_data = np.true_divide(bk_cmap_mifiles[bk_lidx].Read(zRange=self.t_range, cropROI=self.cropROI, closeAfter=True), bk_norm_factor)
             
             if self.smooth_kernel_specs is not None:
                 Kernel3D = self.LoadKernel(self.smooth_kernel_specs)
