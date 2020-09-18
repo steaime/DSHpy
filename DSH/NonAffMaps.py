@@ -170,6 +170,8 @@ class NonAffMaps():
                     bk_norm_factor = np.mean(bk_cmap_mifiles[bk_lidx].Read(zRange=self.norm_range[:2], cropROI=self.norm_range[2:], closeAfter=False))
                 else:
                     bk_norm_data = bk_cmap_mifiles[bk_lidx].Read(zRange=self.norm_range[:2], cropROI=None, closeAfter=False)
+                    if len(bk_norm_data.shape>2):
+                        bk_norm_data = np.mean(bk_norm_data, axis=0)
                     logging.debug('shape before transformation: ' + str(bk_norm_data.shape))
                     bk_norm_data = sp.ndimage.affine_transform(bk_norm_data, tr_matrix, offset=self.trans_bk_offset,\
                                                       output_shape=bk_norm_data.shape, order=1, mode='constant', cval=1.0)
@@ -192,7 +194,9 @@ class NonAffMaps():
     
             # transform backscattered images
             if self.trans_bk is not None:
-                bk_data = sp.ndimage.affine_transform(bk_data, tr_matrix, offset=self.self.trans_bk_offset,\
+                tr_matrix3D = np.asarray([[1,0,0],[0,tr_matrix[0,0],tr_matrix[0,1]],[0,tr_matrix[1,0],tr_matrix[1,1]]])
+                tr_offset3D = np.asarray([0,self.trans_bk_offset[0],self.trans_bk_offset[1]])
+                bk_data = sp.ndimage.affine_transform(bk_data, tr_matrix3D, offset=tr_offset3D,\
                                                       output_shape=fw_data.shape, order=1, mode='constant', cval=1.0)
         
             # sigma2 = ln(forward-scattering corr / backscattering corr) * 6 / (qz_bk^2 - qz_fw^2)
