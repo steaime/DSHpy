@@ -9,6 +9,7 @@ from DSH import Config as cf
 from DSH import SharedFunctions as sf
 
 def _get_kw_from_config(conf=None, section='naffmap_parameters'):
+    logging.info('Loading NonAffMaps initialization parameter from section of a Config object : ' + str(conf))
     # Read options for velocity calculation from DSH.Config object
     def_kw = {'qz_fw':0.0,\
               'qz_bk':1.0,\
@@ -20,16 +21,19 @@ def _get_kw_from_config(conf=None, section='naffmap_parameters'):
                'smooth_kernel_specs':None,\
                'norm_range':None}
     if (conf is None):
+        logging.debug('Default configuration returned')
         return def_kw
     else:
-        return {'qz_fw':conf.Get(section, 'qz_fw', def_kw['qz_fw'], float),\
+        ret_kw = {'qz_fw':conf.Get(section, 'qz_fw', def_kw['qz_fw'], float),\
                 'qz_bk':conf.Get(section, 'qz_bk', def_kw['qz_bk'], float),\
-                'trans_bk_matrix':conf.Get(section, 'trans_bk_matrix', def_kw['trans_bk_matrix'], float),\
-                'trans_bk_offset':conf.Get(section, 'trans_bk_offset', def_kw['trans_bk_offset'], float),\
+                'trans_bk_matrix':conf.Get(section, 'trans_bk_matrix', def_kw['trans_bk_matrix'], float, silent=False),\
+                'trans_bk_offset':conf.Get(section, 'trans_bk_offset', def_kw['trans_bk_offset'], float, silent=False),\
                 't_range':conf.Get(section, 't_range', def_kw['t_range'], int),\
                 'lag_range':conf.Get(section, 'lag_range', def_kw['lag_range'], int),\
                 'smooth_kernel_specs':conf.Get(section, 'smooth_kernel_specs', def_kw['smooth_kernel_specs'], None),\
                 'norm_range':conf.Get(section, 'norm_range', def_kw['norm_range'], int)}
+        logging.debug('Return updated configuration: ' + str(ret_kw))
+        return ret_kw
 
 class NonAffMaps():
     """ Class to compute maps of out-of-plane mean square displacements comparing correlation maps from forward-scattered and back-scattered speckles
@@ -196,6 +200,7 @@ class NonAffMaps():
             
             if self.smooth_kernel_specs is not None:
                 Kernel3D = self.LoadKernel(self.smooth_kernel_specs)
+                logging.debug('Smoothing with kernel with shape ' + str(Kernel3D.shape))
                 fw_data = signal.convolve(fw_data, Kernel3D, mode='same')
                 bk_data = signal.convolve(bk_data, Kernel3D, mode='same')
                     

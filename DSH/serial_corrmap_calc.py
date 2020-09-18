@@ -143,7 +143,7 @@ if __name__ == '__main__':
                     # Initialize NonAffMaps object
                     naff_maps = NonAffMaps.NonAffMaps(CorrMaps.LoadFromConfig(os.path.join(fw_corr_folder, 'CorrMapsConfig.ini')),\
                                                       CorrMaps.LoadFromConfig(os.path.join(bk_corr_folder, 'CorrMapsConfig.ini')),\
-                                                      cur_outFolder, **SharedFunctions.filter_kwdict_funcparams(vmap_kw, VelMaps.VelMaps.__init__))
+                                                      cur_outFolder, **SharedFunctions.filter_kwdict_funcparams(naffmap_kw, NonAffMaps.NonAffMaps.__init__))
                     
                     logging.info('NonAffMaps object initialized. Now computing maps')
 
