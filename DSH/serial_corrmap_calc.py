@@ -133,8 +133,10 @@ if __name__ == '__main__':
                     bk_corr_folder = os.path.join(froot, conf.Get(cur_sec, 'cmaps_bk_folder'))
                     
                     if ('-silent' not in cmd_list):
-                        print(' - ' + str(cur_sec) + ': working in folder ' + str(mi_fname) + '...')
+                        print(' - ' + str(cur_sec) + ': working in folder ' + str(cur_outFolder) + '...')
             
+                    logging.basicConfig(filename=os.path.join(out_folder, 'DSH' + str(g_params['log_suffix']) + '.log'),\
+                                        level=logging.DEBUG, format='%(asctime)s | %(levelname)s:%(message)s')
                     logging.info('Correlation maps from folders ' + str(fw_corr_folder) + ' and ' + str(bk_corr_folder) +\
                                  ' processed to compute NonAffMaps to be saved in folder ' + str(cur_outFolder))
                     

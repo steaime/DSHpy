@@ -2,6 +2,7 @@ import os
 import numpy as np
 import scipy as sp
 from scipy import signal
+import logging
 
 from DSH import MIfile as MI
 from DSH import Config as cf
@@ -11,7 +12,8 @@ def _get_kw_from_config(conf=None, section='naffmap_parameters'):
     # Read options for velocity calculation from DSH.Config object
     def_kw = {'qz_fw':0.0,\
               'qz_bk':1.0,\
-              'trans_bk':[[1,0,0,1],[0,0]],\
+              'trans_bk_matrix':[1,0,0,1],\
+              'trans_bk_offset':[0,0],\
                't_range':None,\
                'cropROI':None,\
                'lag_range':None,\
@@ -22,8 +24,8 @@ def _get_kw_from_config(conf=None, section='naffmap_parameters'):
     else:
         return {'qz_fw':conf.Get(section, 'qz_fw', def_kw['qz_fw'], float),\
                 'qz_bk':conf.Get(section, 'qz_bk', def_kw['qz_bk'], float),\
-                'trans_bk':[conf.Get(section, 'transf_matrix', def_kw['trans_bk'][0], float),\
-                            conf.Get(section, 'transf_offset', def_kw['trans_bk'][1], float)],\
+                'trans_bk_matrix':conf.Get(section, 'trans_bk_matrix', def_kw['trans_bk_matrix'], float),\
+                'trans_bk_offset':conf.Get(section, 'trans_bk_offset', def_kw['trans_bk_offset'], float),\
                 't_range':conf.Get(section, 't_range', def_kw['t_range'], int),\
                 'lag_range':conf.Get(section, 'lag_range', def_kw['lag_range'], int),\
                 'smooth_kernel_specs':conf.Get(section, 'smooth_kernel_specs', def_kw['smooth_kernel_specs'], None),\
@@ -34,7 +36,7 @@ class NonAffMaps():
     (note: here 'forward-scattered' and 'back-scattered' are improperly used as a proxy for light scattered at small and large angles, respectively)
     """
     
-    def __init__(self, cmaps_fw, cmaps_bk, outFolder, qz_fw=0.0, qz_bk=1.0, trans_bk=None, t_range=None, cropROI=None, lag_range=None, smooth_kernel_specs=None, norm_range=None):
+    def __init__(self, cmaps_fw, cmaps_bk, outFolder, qz_fw=0.0, qz_bk=1.0, trans_bk_matrix=None, trans_bk_offset=None, t_range=None, cropROI=None, lag_range=None, smooth_kernel_specs=None, norm_range=None):
         """Initialize NonAffMaps
         
         Parameters
@@ -44,9 +46,9 @@ class NonAffMaps():
         outFolder :     Folder where maps will be saved
         qz_fw :         z component of the scattering vector for forward-scattered light
         qz_bk :         z component of the scattering vector for backscattered light
-        trans_bk :      parameter for transforming the back-scattered correlation maps to overlap them with the forward-scattered ones
-                        has to be either None (no transformation) or [Matrix, Offset], where Matrix is a 2x2 matrix and Offset is a 2D vector
-                        note: Matrix can also be flattened in a 4D array. In that case it will be reshaped
+        trans_bk_matrix : parameter for transforming the back-scattered correlation maps to overlap them with the forward-scattered ones
+                        has to be either None (no transformation), a 2x2 matrix or a 4D vector that will be reshaped into a 2x2 matrix
+        trans_bk_offset : either None or a 2D vector
         t_range :       restrict analysis to given time range [min, max, step].
                         if None, analyze full correlation maps
         cropROI :       analyze portion of the correlation maps
@@ -67,12 +69,12 @@ class NonAffMaps():
         self.outFolder = outFolder
         self.qz_fw = qz_fw
         self.qz_bk = qz_bk
-        self.trans_bk = trans_bk
-        if self.trans_bk is None:
-            self.trans_bk = [np.asarray([[1,0],[0,1]], dtype=float), np.asarray([0,0], dtype=float)]
-        else:
-            self.trans_bk = [np.reshape(np.asarray(self.trans_bk[0], dtype=float), (2,2)),\
-                             np.asarray(self.trans_bk[1], dtype=float)]
+        self.trans_bk_matrix = trans_bk_matrix
+        if self.trans_bk_matrix is None:
+            self.trans_bk_matrix = [1,0,0,1]
+        self.trans_bk_offset = trans_bk_offset
+        if self.trans_bk_offset is None:
+            self.trans_bk_offset = [0,0]
         self.t_range = t_range
         self.lag_range = lag_range
         self.cropROI = cropROI
@@ -107,7 +109,8 @@ class NonAffMaps():
                                                'norm_range' : self.norm_range,
                                                'qz_fw' : self.qz_fw,
                                                'qz_bk' : self.qz_bk,
-                                               'trans_bk' : self.trans_bk
+                                               'trans_bk_matrix' : self.trans_bk_matrix,
+                                               'trans_bk_offset' : self.trans_bk_offset
                                                },
                         'smooth_kernel' : self.smooth_kernel_specs
                        }, os.path.join(self.outFolder, 'NaffMapsConfig.ini'))
@@ -151,6 +154,10 @@ class NonAffMaps():
         # Export configuration
         self.ExportConfiguration()
         
+        if self.trans_bk_matrix is not None:
+            tr_matrix = np.reshape(np.asarray(self.trans_bk_matrix), (2,2))
+            logging.debug('Backscattered correlation maps will be transformed using matrix ' + str(tr_matrix) + ' and offset ' + str(self.trans_bk_offset))
+        
         # For each couple of correlation maps (with equal lagtime)
         for lidx in range(len(self.lagList)):
             fw_lidx = fw_cmap_lagtimes.index(self.lagList[lidx])
@@ -159,13 +166,15 @@ class NonAffMaps():
             # eventually compute normalization factors
             if self.norm_range is not None:
                 fw_norm_factor = np.mean(fw_cmap_mifiles[fw_lidx].Read(zRange=self.norm_range[:2], cropROI=self.norm_range[2:], closeAfter=False))
-                if self.trans_bk is None:
+                if self.trans_bk_matrix is None and self.trans_bk_offset is None:
                     bk_norm_factor = np.mean(bk_cmap_mifiles[bk_lidx].Read(zRange=self.norm_range[:2], cropROI=self.norm_range[2:], closeAfter=False))
                 else:
                     bk_norm_data = bk_cmap_mifiles[bk_lidx].Read(zRange=self.norm_range[:2], cropROI=None, closeAfter=False)
-                    bk_norm_data = sp.ndimage.affine_transform(bk_norm_data, self.trans_bk[0], offset=self.trans_bk[1],\
+                    logging.debug('shape before transformation: ' + str(bk_norm_data.shape))
+                    bk_norm_data = sp.ndimage.affine_transform(bk_norm_data, tr_matrix, offset=self.trans_bk_offset,\
                                                       output_shape=bk_norm_data.shape, order=1, mode='constant', cval=1.0)
                     norm_cropROI = MI.ValidateROI(self.norm_range[2:], bk_norm_data.shape, replaceNone=True)
+                    logging.debug('shape after transformation: ' + str(bk_norm_data.shape) + ' will be cropped with ROI ' + str(norm_cropROI))
                     bk_norm_factor = np.mean(bk_norm_data[norm_cropROI[1]:norm_cropROI[1]+norm_cropROI[3],\
                                                           norm_cropROI[0]:norm_cropROI[0]+norm_cropROI[2]])
                     bk_norm_data = None
@@ -183,7 +192,7 @@ class NonAffMaps():
     
             # transform backscattered images
             if self.trans_bk is not None:
-                bk_data = sp.ndimage.affine_transform(bk_data, self.trans_bk[0], offset=self.trans_bk[1],\
+                bk_data = sp.ndimage.affine_transform(bk_data, tr_matrix, offset=self.self.trans_bk_offset,\
                                                       output_shape=fw_data.shape, order=1, mode='constant', cval=1.0)
         
             # sigma2 = ln(forward-scattering corr / backscattering corr) * 6 / (qz_bk^2 - qz_fw^2)
