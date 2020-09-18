@@ -170,7 +170,7 @@ class NonAffMaps():
                     bk_norm_factor = np.mean(bk_cmap_mifiles[bk_lidx].Read(zRange=self.norm_range[:2], cropROI=self.norm_range[2:], closeAfter=False))
                 else:
                     bk_norm_data = bk_cmap_mifiles[bk_lidx].Read(zRange=self.norm_range[:2], cropROI=None, closeAfter=False)
-                    if len(bk_norm_data.shape>2):
+                    if len(bk_norm_data.shape)>2:
                         bk_norm_data = np.mean(bk_norm_data, axis=0)
                     logging.debug('shape before transformation: ' + str(bk_norm_data.shape))
                     bk_norm_data = sp.ndimage.affine_transform(bk_norm_data, tr_matrix, offset=self.trans_bk_offset,\
