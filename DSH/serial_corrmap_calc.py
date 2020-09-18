@@ -1,7 +1,7 @@
 import sys
 import os
 import logging
-from DSH import Config, MIfile, CorrMaps, VelMaps, SharedFunctions
+from DSH import Config, MIfile, CorrMaps, VelMaps, NonAffMaps, SharedFunctions
 
 
 if __name__ == '__main__':
@@ -104,7 +104,40 @@ if __name__ == '__main__':
                     vel_maps.CalcDisplacements()
                     
                 if ('-skip_grad' not in cmd_list):
-                    vel_maps.CalcGradients()
-                    
+                    vel_maps.CalcGradients()                    
+                
                 if ('-silent' not in cmd_list):
                     print('   ...all done!')
+
+                # Free up memory
+                logging.info('Analysis in folder ' + str(out_folder) + ' completed. Freeing up memory and moving on...')
+                mi_file = None
+                corr_maps = None
+                vel_maps = None
+        
+        
+        
+        if ('-skip_naff' not in cmd_list):
+            
+            # Read options for nonaffine displacement calculation
+            naffmap_kw = NonAffMaps._get_kw_from_config(conf, section='naffmap_parameters')
+            
+            # Loop through all 'nonaff_N' sections of the configuration file
+            for cur_sec in conf.GetSections():
+                if (cur_sec[:len('nonaff_')]=='nonaff_'):
+            
+                    logging.info('Correlation maps from folders ' + str(conf.Get(cur_sec, 'cmaps_fw_folder')) + ' and ' + str(conf.Get(cur_sec, 'cmaps_bk_folder')) +\
+                                 ' processed to compute NonAffMaps to be saved in folder ' + str(conf.Get(cur_sec, 'cmaps_fw_folder')))
+                    
+                    # Initialize NonAffMaps object
+                    naff_maps = NonAffMaps.NonAffMaps(CorrMaps.LoadFromConfig(os.path.join(conf.Get(cur_sec, 'cmaps_fw_folder'), 'CorrMapsConfig.ini')),\
+                                                      CorrMaps.LoadFromConfig(os.path.join(conf.Get(cur_sec, 'cmaps_bk_folder'), 'CorrMapsConfig.ini')),\
+                                                      conf.Get(cur_sec, 'cmaps_fw_folder'),\
+                                                      **SharedFunctions.filter_kwdict_funcparams(vmap_kw, VelMaps.VelMaps.__init__))
+                    
+                    logging.info('NonAffMaps object initialized. Now computing maps')
+
+                    naff_maps.Compute()
+                    
+                    logging.info('All NonAffMaps saved to folder ' + str(conf.Get(cur_sec, 'cmaps_fw_folder')))
+                    naff_maps = None

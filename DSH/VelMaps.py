@@ -289,6 +289,10 @@ class VelMaps():
         
         self._loaded_metadata = False
         self._velmaps_loaded = False
+        
+    def __del__(self):
+        self.corr_maps.CloseMaps()
+        self.CloseMaps()
 
     def ExportConfig(self, FileName, configDict, mapMedatada=None):
         # Export configuration
@@ -342,6 +346,12 @@ class VelMaps():
             self._velmaps_loaded = True
         
         return self.conf_vmaps, self.vmap_mifile
+    
+    def CloseMaps(self):
+        if self._velmaps_loaded:
+            self.vmap_mifile.Close()
+            self.vmap_mifile = None
+            self._velmaps_loaded = False        
 
     def ComputeMultiproc(self, numProcesses, px_per_chunk, signed_lags=False, symm_only=False, consec_only=True,\
                           max_holes=0, mask_opening=None, conservative_cutoff=0.3, generous_cutoff=0.15,\

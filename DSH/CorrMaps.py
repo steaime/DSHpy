@@ -125,6 +125,9 @@ class CorrMaps():
             str_res += 'NO PADDING (trimming margin=' + str(self.Kernel['size']) + ')'
         str_res += '\n|-----------------+---------------'
         return str_res
+    
+    def __del__(self):
+        self.CloseMaps()
 
     def CalcImageIndexes(self):
         """Populates the array of image indexes to be loaded (based on self.imgRange e self.lagList)
@@ -306,6 +309,14 @@ class CorrMaps():
             return self.conf_cmaps, [None] + self.cmap_mifiles[1:], self.all_lagtimes
         else:
             return self.conf_cmaps, self.cmap_mifiles, self.all_lagtimes
+    
+    def CloseMaps(self):
+        if self._corrmaps_loaded:
+            for mifile in self.cmap_mifiles:
+                mifile.Close()
+                mifile = None
+            self.cmap_mifiles = None
+            self._corrmaps_loaded = False
     
     def GetCorrMapsNumber(self):
         _, mifiles, _ = self.GetCorrMaps()

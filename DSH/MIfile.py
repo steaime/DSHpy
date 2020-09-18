@@ -6,7 +6,7 @@ import collections
 import logging
 
 from DSH import Config as cf
-from DSH import SharedFunctions as sf
+#from DSH import SharedFunctions as sf
 
 _data_depth = {'b':1, 'B':1, '?':1, 'h':2, 'H':2, 'i':4, 'I':4, 'f':4, 'd':8}
 _data_types = {'b':np.int8, 'B':np.uint8, '?':bool, 'h':np.int16, 'H':np.uint16, 'i':np.int32, 'I':np.uint32, 'f':np.float32, 'd':np.float64}
@@ -125,7 +125,10 @@ def MergeMIfiles(MergedFileName, MIfileList, MergedMetadataFile=None, MergeAxis=
     return outMIfile
 
 def MIcrop(source_file, source_metadata, dest_file, dest_metadata, crop_zRange=None, crop_ROI=None):
-    """Crops a MIfile and saves it in a different file
+    return MIcopy(source_file, source_metadata, dest_file, dest_metadata, crop_zRange=crop_zRange, crop_ROI=crop_ROI)
+
+def MIcopy(source_file, source_metadata, dest_file, dest_metadata, crop_zRange=None, crop_ROI=None):
+    """Crops or reslices a MIfile and saves it in a different file
     
     Parameters
     ----------
@@ -139,7 +142,6 @@ def MIcrop(source_file, source_metadata, dest_file, dest_metadata, crop_zRange=N
     cur_mi = MIfile(source_file, source_metadata)
     cur_mi.Export(dest_file, dest_metadata, zRange=crop_zRange, cropROI=crop_ROI)
     
-
 def ValidateROI(ROI, ImageShape, replaceNone=False):
     """Validates a Region Of Interest (ROI)
     

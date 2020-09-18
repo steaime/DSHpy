@@ -1,6 +1,7 @@
 import os
 import re
 import inspect
+import numpy as np
   
 def AllIntInStr(my_string):
     arr_str = re.findall(r'\d+', my_string)
