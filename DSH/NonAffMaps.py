@@ -138,6 +138,8 @@ class NonAffMaps():
         
         sf.CheckCreateFolder(self.outFolder)
         
+        logging.info('NonAffMaps.Compute() started! Result will be saved in folder ' + str(self.outFolder))
+        
         # Search for correlation map MIfiles, skip autocorrelation maps
         fw_cmap_config, fw_cmap_mifiles, fw_cmap_lagtimes = self.cmaps_fw.GetCorrMaps(openMIfiles=True, getAutocorr=False)
         bk_cmap_config, bk_cmap_mifiles, bk_cmap_lagtimes = self.cmaps_fw.GetCorrMaps(openMIfiles=True, getAutocorr=False)
@@ -160,6 +162,9 @@ class NonAffMaps():
         
         # For each couple of correlation maps (with equal lagtime)
         for lidx in range(len(self.lagList)):
+            
+            logging.info('Now working on lagtime ' + str(lidx) + '/' + str(len(self.lagList)) + ' (d' + str(self.lagList[lidx]) + ')')
+            
             fw_lidx = fw_cmap_lagtimes.index(self.lagList[lidx])
             bk_lidx = bk_cmap_lagtimes.index(self.lagList[lidx])
             
@@ -183,6 +188,8 @@ class NonAffMaps():
             else:
                 fw_norm_factor, bk_norm_factor = 1, 1
             
+            logging.info('Normalization factors: ' + str(fw_norm_factor) + ' (front) and ' + str(bk_norm_factor) + ' (back)')
+            
             # load, normalize and eventually smooth correlation maps.
             fw_data = np.true_divide(fw_cmap_mifiles[fw_lidx].Read(zRange=self.t_range, cropROI=self.cropROI, closeAfter=True), fw_norm_factor)
             bk_data = np.true_divide(bk_cmap_mifiles[bk_lidx].Read(zRange=self.t_range, cropROI=self.cropROI, closeAfter=True), bk_norm_factor)
@@ -191,9 +198,9 @@ class NonAffMaps():
                 Kernel3D = self.LoadKernel(self.smooth_kernel_specs)
                 fw_data = signal.convolve(fw_data, Kernel3D, mode='same')
                 bk_data = signal.convolve(bk_data, Kernel3D, mode='same')
-    
+                    
             # transform backscattered images
-            if self.trans_bk is not None:
+            if self.trans_bk_matrix is not None:
                 tr_matrix3D = np.asarray([[1,0,0],[0,tr_matrix[0,0],tr_matrix[0,1]],[0,tr_matrix[1,0],tr_matrix[1,1]]])
                 tr_offset3D = np.asarray([0,self.trans_bk_offset[0],self.trans_bk_offset[1]])
                 bk_data = sp.ndimage.affine_transform(bk_data, tr_matrix3D, offset=tr_offset3D,\
@@ -213,10 +220,15 @@ class NonAffMaps():
                     out_meta['fps'] = float(out_meta['fps']) * 1.0 / val_tRange[2]
                 exp_config = cf.Config()
                 exp_config.Import(out_meta, section_name='MIfile')
-                exp_config.Export(os.path.join(self.outFolder, 'NAffMap_metadata.ini'))
+                metadata_fname = os.path.join(self.outFolder, 'NAffMap_metadata.ini')
+                exp_config.Export(metadata_fname)
+                logging.info('Metadata exported to file ' + str(metadata_fname))
             
             # export data
-            MI.MIfile(os.path.join(self.outFolder, 'NaffMap_d' + str(self.lagList[lidx]).zfill(4) + '.dat'), self.outMetaData).WriteData(sigma2)
+            cur_fname = 'NaffMap_d' + str(self.lagList[lidx]).zfill(4) + '.dat'
+            MI.MIfile(os.path.join(self.outFolder, cur_fname), metadata_fname).WriteData(sigma2)
+            
+            logging.info('Result saved to file ' + str(cur_fname))
             
             fw_cmap_mifiles[fw_lidx].Close()
             bk_cmap_mifiles[bk_lidx].Close()
