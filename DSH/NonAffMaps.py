@@ -204,3 +204,6 @@ class NonAffMaps():
             
             # export data
             MI.MIfile(os.path.join(self.outFolder, 'NaffMap_d' + str(self.lagList[lidx]).zfill(4) + '.dat'), self.outMetaData).WriteData(sigma2)
+            
+            fw_cmap_mifiles[fw_lidx].Close()
+            bk_cmap_mifiles[bk_lidx].Close()
