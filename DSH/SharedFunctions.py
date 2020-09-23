@@ -164,7 +164,7 @@ def px_coord_arr2D(arr_shape, origin=None):
     """Creates x & y coords for the indicies in a numpy array "data".
     "origin" defaults to the center of the image. Specify origin=(0,0)
     to set the origin to the lower left corner of the image."""
-    nx, ny = arr_shape
+    ny, nx = arr_shape
     if origin is None:
         origin_x, origin_y = nx/2, ny/2
     else:
