@@ -236,8 +236,7 @@ class MIstack():
                     if img_idx is not None:
                         for pidx in range(res.shape[0]):
                             if use_mask:
-                                res[pidx, lidx, tidx] = np.true_divide(np.multiply(cur_mifile.GetImage(img_idx=img_idx, cropROI=mask_cropROI),\
-                                                                                   pxLocs[pidx]), mask_avg[pidx])
+                                res[pidx, lidx, tidx] = np.mean(np.multiply(cur_mifile.GetImage(img_idx=img_idx, cropROI=mask_cropROI), pxLocs[pidx])) * 1.0/mask_avg[pidx]
                             else:
                                 res[pidx, lidx, tidx] = cur_mifile._read_pixels(px_num=readConsecutive,\
                                            seek_pos=cur_mifile._get_offset(img_idx=img_idx, row_idx=pxLocs[pidx][0], col_idx=pxLocs[pidx][1]))
