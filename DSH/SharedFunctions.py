@@ -201,11 +201,11 @@ def PolarMaskBinary(coords, shape, center=None, common_mask=None):
         common_mask = np.ones_like(px_coord_0)
         
     for m_idx in range(len(coords)):
-        res[m_idx] += np.multiply(common_mask, np.multiply(\
+        res[m_idx] = np.add(res[m_idx], np.multiply(common_mask, np.multiply(\
                                 np.multiply(0.5 * (np.sign(np.add    (-(coords[m_idx][0]-0.5*coords[m_idx][2])+np.finfo(np.float32).eps,px_coord_0)) + 1),\
                                             0.5 * (np.sign(np.subtract((coords[m_idx][0]+0.5*coords[m_idx][2])-np.finfo(np.float32).eps,px_coord_0)) + 1)),\
                                 np.multiply(0.5 * (np.sign(np.add    (-(coords[m_idx][1]-0.5*coords[m_idx][3])+np.finfo(np.float32).eps,px_coord_1)) + 1),\
-                                            0.5 * (np.sign(np.subtract((coords[m_idx][1]+0.5*coords[m_idx][3])-np.finfo(np.float32).eps,px_coord_1)) + 1))))
+                                            0.5 * (np.sign(np.subtract((coords[m_idx][1]+0.5*coords[m_idx][3])-np.finfo(np.float32).eps,px_coord_1)) + 1)))))
     
     return res
     
