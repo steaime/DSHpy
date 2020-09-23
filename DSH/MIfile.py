@@ -453,17 +453,17 @@ class MIfile():
     def Validate_zRange(self, zRange):
         return Validate_zRange(zRange, self.ImgNumber)
     
-    def _load_metadata(self, MetaData):
+    def _load_metadata(self, meta_data):
         """Reads metadata file
         it also reads the default configuration file
         in case of duplicates, information from MetaDataFile is used
         
         Parameters
         ----------
-        MetaData : dict or filename
+        meta_data : dict or filename
         """
         default_settings = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'config_MIfile.ini')
-        self.MetaData = cf.LoadMetadata(MetaData, SectionName='MIfile', DefaultFiles=[default_settings])
+        self.MetaData = cf.LoadMetadata(meta_data, SectionName='MIfile', DefaultFiles=[default_settings])
         self.MaxBufferSize = self.MetaData.Get('settings', 'max_buffer_size', 100000000, int)
         if (self.FileName is None):
             self.FileName = self.MetaData.Get('MIfile', 'filename', None)
