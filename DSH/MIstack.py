@@ -1,5 +1,6 @@
 import os
 import numpy as np
+import logging
 from DSH import Config as cf
 from DSH import MIfile as MI
 from DSH import SharedFunctions as sf
@@ -206,6 +207,7 @@ class MIstack():
             mask_avg = []
             for midx in range(len(pxLocs)):
                 mask_avg.append(np.mean(pxLocs[midx]))
+            logging.debug('Average ROIs: ' + str(mask_avg))
         else:
             use_mask=False
         if (type(tList) not in [list, tuple, np.ndarray]):
@@ -236,7 +238,7 @@ class MIstack():
                     if img_idx is not None:
                         for pidx in range(res.shape[0]):
                             if use_mask:
-                                res[pidx, lidx, tidx] = np.mean(np.multiply(cur_mifile.GetImage(img_idx=img_idx, cropROI=mask_cropROI), pxLocs[pidx])) * 1.0/mask_avg[pidx]
+                                res[pidx, lidx, tidx] = np.nanmean(np.multiply(cur_mifile.GetImage(img_idx=img_idx, cropROI=mask_cropROI), pxLocs[pidx])) * 1.0/mask_avg[pidx]
                             else:
                                 res[pidx, lidx, tidx] = cur_mifile._read_pixels(px_num=readConsecutive,\
                                            seek_pos=cur_mifile._get_offset(img_idx=img_idx, row_idx=pxLocs[pidx][0], col_idx=pxLocs[pidx][1]))
