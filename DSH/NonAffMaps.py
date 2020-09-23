@@ -35,7 +35,7 @@ def _get_kw_from_config(conf=None, section='naffmap_parameters'):
                 'norm_range':conf.Get(section, 'norm_range', def_kw['norm_range'], int)}
         logging.debug('Return updated configuration: ' + str(ret_kw))
         return ret_kw
-
+    
 class NonAffMaps():
     """ Class to compute maps of out-of-plane mean square displacements comparing correlation maps from forward-scattered and back-scattered speckles
     (note: here 'forward-scattered' and 'back-scattered' are improperly used as a proxy for light scattered at small and large angles, respectively)

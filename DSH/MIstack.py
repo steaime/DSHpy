@@ -172,12 +172,13 @@ class MIstack():
         else:
             return res
         
-    def GetValues(self, pxLocs, tList, idx_list, do_squeeze=True, readConsecutive=1, lagFlip=None, zStep=1):
+    def GetValues(self, pxLocs, tList, idx_list, do_squeeze=True, readConsecutive=1, lagFlip=None, zStep=1, mask_cropROI=None):
         """Get values relative to a bunch of pixel location, time points and lags
         
         Parameters
         ----------
-        pxLocs:           pixel location [row, col] or list of pixel locations
+        pxLocs:           pixel location [row, col] or list of pixel locations or list of 2D binary masks
+                          In the case of binary mask, the whole image is read and averaged on the nonzero mask values
         tList :           time, in image units, or list of times
         idx_list:          MI index (must be present in self.IdxList)
                           or list of lagtimes
@@ -190,11 +191,19 @@ class MIstack():
                           or the largest (lagFlip==True) of the two times that are correlated
         zStep:            Multiplicative factor for converting MIindex into lagtime (in image units)
                           Useful whenever the current MIfile was generated processing every N images
+        mask_cropROI:     if working with masks, specify ROI to be loaded. Is shape should correspond to the mask
         """
         
         assert self._loaded, 'MIstack needs to be loaded first'
         if (type(pxLocs[0]) not in [list, tuple, np.ndarray]):
             pxLocs = [pxLocs]
+        if (len(np.array(pxLocs[0]).shape)>1):
+            use_mask=True
+            mask_avg = []
+            for midx in range(len(use_mask)):
+                mask_avg.append(np.mean(pxLocs[midx]))
+        else:
+            use_mask=False
         if (type(tList) not in [list, tuple, np.ndarray]):
             tList = [tList]
         if (type(idx_list) not in [list, tuple, np.ndarray]):
@@ -222,8 +231,12 @@ class MIstack():
                         img_idx = tList[tidx]
                     if img_idx is not None:
                         for pidx in range(res.shape[0]):
-                            res[pidx, lidx, tidx] = cur_mifile._read_pixels(px_num=readConsecutive,\
-                                       seek_pos=cur_mifile._get_offset(img_idx=img_idx, row_idx=pxLocs[pidx][0], col_idx=pxLocs[pidx][1]))
+                            if use_mask:
+                                res[pidx, lidx, tidx] = np.true_divide(np.multiply(cur_mifile.GetImage(img_idx=img_idx, cropROI=mask_cropROI),\
+                                                                                   pxLocs[pidx]), mask_avg[pidx])
+                            else:
+                                res[pidx, lidx, tidx] = cur_mifile._read_pixels(px_num=readConsecutive,\
+                                           seek_pos=cur_mifile._get_offset(img_idx=img_idx, row_idx=pxLocs[pidx][0], col_idx=pxLocs[pidx][1]))
         if readConsecutive>1:
             res = np.moveaxis(res, -1, 1)
             new_shape = (res.shape[0]*res.shape[1], res.shape[2], res.shape[3])
