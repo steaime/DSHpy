@@ -23,7 +23,7 @@ def ExportDict(dict_to_export, out_filename, section_name=None):
     conf.Import(dict_to_export, section_name=section_name)
     conf.Export(out_filename)
 
-def LoadMetadata(self, MetaData, SectionName=None, DefaultFiles=[]):
+def LoadMetadata(MetaData, SectionName=None, DefaultFiles=[]):
     
     """Reads metadata file
     it also reads the default configuration file
