@@ -104,6 +104,10 @@ class MIstack():
         assert isinstance(self.MetaData, cf.Config), 'MetaData not loaded yet: ' + str(self.MetaData)
         return self.MetaData.ToDict(section=section)
     
+    def ImageShape(self):
+        shape3D = self.MetaData.Get('MIfile', 'shape', [0,0,0], int)
+        return (shape3D[1], shape3D[2])
+    
     def CloseAll(self):
         for midx in range(len(self.MIfiles)):
             if isinstance(self.MIfiles[midx], MI.MIfile):
