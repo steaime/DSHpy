@@ -860,7 +860,14 @@ class VelMaps():
         sf.LockAcquire(lock)
         if (force_reload or self._loaded_metadata==False):
             
-            self.confParams, self.cmap_mifiles, self.lagTimes = self.corr_maps.GetCorrMaps(getAutocorr=False)
+            cmap_stack = self.corr_maps.GetCorrMaps()
+            self.confParams = cf.Duplicate(cmap_stack.MetaData)
+            self.lagTimes = cmap_stack.IdxList.copy()
+            # Get rid of autocorrelation data
+            if (cmap_stack.MIindexes()[0]==0):
+                self.cmap_mifiles = [None] + cmap_stack.MIfiles[1:]
+            else:
+                self.cmap_mifiles = cmap_stack.MIfiles
     
             # NOTE: first element of self.cmap_mifiles will be None instead of d0 (we don't need d0 to compute velocity maps)
             self.mapMetaData = cf.Config()

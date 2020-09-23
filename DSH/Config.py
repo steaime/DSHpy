@@ -1,5 +1,6 @@
 import os
 import configparser
+import collections
 import numpy as np
 import pkg_resources
 pkg_installed = {pkg.key for pkg in pkg_resources.working_set}
@@ -9,11 +10,42 @@ if 'json' in pkg_installed:
 else:
     import ast
     use_json = False
+    
+def Duplicate(other_config):
+    """ Creates a duplicate of a Config object
+    """
+    new_config = Config()
+    new_config.Import(other_config.ToDict(section=None), section_name=None)
+    return new_config
 
 def ExportDict(dict_to_export, out_filename, section_name=None):
     conf = Config()
     conf.Import(dict_to_export, section_name=section_name)
     conf.Export(out_filename)
+
+def LoadMetadata(self, MetaData, SectionName=None, DefaultFiles=[]):
+    
+    """Reads metadata file
+    it also reads the default configuration file
+    in case of duplicates, information from MetaDataFile is used
+    
+    Parameters
+    ----------
+    MetaData : dict or filename
+    SectionName : if MetaData is a filename, eventually load subsection of configuration file
+    DefaultFiles : list of full path containing default configuration parameters
+    
+    Returns
+    -------
+    outConfig : Config object containing desired metadata
+    """
+    if (type(MetaData) in [dict, collections.OrderedDict]):
+        outConfig = Config(None, defaultConfigFiles=DefaultFiles)
+        outConfig.Import(MetaData, section_name=SectionName)
+    else:
+        outConfig = Config(MetaData, defaultConfigFiles=DefaultFiles)
+    
+    return outConfig
 
 class Config():
     """Class that develops on configparser with customized methods"""

@@ -2,7 +2,6 @@ import os
 import numpy as np
 import sys
 import struct
-import collections
 import logging
 
 from DSH import Config as cf
@@ -10,6 +9,7 @@ from DSH import Config as cf
 
 _data_depth = {'b':1, 'B':1, '?':1, 'h':2, 'H':2, 'i':4, 'I':4, 'f':4, 'd':8}
 _data_types = {'b':np.int8, 'B':np.uint8, '?':bool, 'h':np.int16, 'H':np.uint16, 'i':np.int32, 'I':np.uint32, 'f':np.float32, 'd':np.float64}
+
 
 def MergeMIfiles(MergedFileName, MIfileList, MergedMetadataFile=None, MergeAxis=0, MoveAxes=[], FinalShape=None):
     """Merge multiple image files into one image file
@@ -463,11 +463,7 @@ class MIfile():
         MetaData : dict or filename
         """
         default_settings = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'config_MIfile.ini')
-        if (type(MetaData) in [dict, collections.OrderedDict]):
-            self.MetaData = cf.Config(None, defaultConfigFiles=[default_settings])
-            self.MetaData.Import(MetaData, section_name='MIfile')
-        else:
-            self.MetaData = cf.Config(MetaData, defaultConfigFiles=[default_settings])
+        self.MetaData = cf.LoadMetadata(MetaData, SectionName='MIfile', DefaultFiles=[default_settings])
         self.MaxBufferSize = self.MetaData.Get('settings', 'max_buffer_size', 100000000, int)
         if (self.FileName is None):
             self.FileName = self.MetaData.Get('MIfile', 'filename', None)

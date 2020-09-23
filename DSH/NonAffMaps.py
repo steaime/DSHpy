@@ -5,6 +5,7 @@ from scipy import signal
 import logging
 
 from DSH import MIfile as MI
+from DSH import MIstack as MIs
 from DSH import Config as cf
 from DSH import SharedFunctions as sf
 
@@ -97,6 +98,55 @@ class NonAffMaps():
             else:
                 raise ValueError('Kernel type "' + str(self.Kernel['type']) + '" not supported')
         self.lagList = None
+        self.naffMapStack = None
+
+    def __repr__(self):
+        return '<NonAffMaps class>'
+    
+    def __str__(self):
+        str_res  = '\n|-------------------|'
+        str_res += '\n| NonAffMaps class: |'
+        str_res += '\n|-------------------+---------------'
+        str_res += '\n| Forward CorrMaps  : ' + str(self.cmaps_fw.outFolder)
+        str_res += '\n| Backward CorrMaps : ' + str(self.cmaps_bk.outFolder)
+        if (self.lagList is None):
+            str_res += '\n| lag times       : [not loaded]' 
+        else:
+            str_res += '\n| lag times (' + str(len(self.lagList)).zfill(2) + ')    : ' 
+            lag_per_row = 20
+            if (len(self.lagList) <= lag_per_row):
+                str_res += str(self.lagList)
+            else:
+                str_res += '['
+                for i in range(1, len(self.lagList)):
+                    if (i % lag_per_row == 0):
+                        str_res += '\n|                    '
+                    str_res += str(self.lagList[i]) + ', '
+                str_res = str_res[:-2] + ']'
+        str_res += '\n| image range       : ' + str(self.t_range)
+        str_res += '\n| crop ROI          : ' + str(self.cropROI)
+        str_res += '\n| Transform matrix  : ' + str(self.trans_bk_matrix)
+        str_res += '\n| Transform offset  : ' + str(self.trans_bk_offset)
+        if (self.smooth_kernel_specs is None):
+            str_res += '\n| Smoothing kernel  : NONE'
+        else:
+            str_res += '\n| Smoothing kernel  : ' + str(self.smooth_kernel_specs['type'])
+            if (self.smooth_kernel_specs['type']=='Flat'):
+                str_res += '\n| Kernel size (x,y,z): ' + str([self.smooth_kernel_specs['size_xy'],\
+                                                             self.smooth_kernel_specs['size_xy'],\
+                                                             self.smooth_kernel_specs['size_z']])
+            else:
+                str_res += ' - '
+                for key in self.smooth_kernel_specs:
+                    if key not in ['type', 'padw', 'padding', 'size']:
+                        str_res += str(key) + '=' + str(self.smooth_kernel_specs[key]) + ', '
+                str_res += '\n| Kernel size       : ' + str(self.smooth_kernel_specs['size']) + ' '
+                if (self.smooth_kernel_specs['padding']):
+                    str_res += 'PADDING (width=' + str(self.smooth_kernel_specs['size']) + ')'
+                else:
+                    str_res += 'NO PADDING (trimming margin=' + str(self.smooth_kernel_specs['size']) + ')'
+        str_res += '\n|-------------------+---------------'
+        return str_res
         
     def __del__(self):
         self.cmaps_fw.CloseMaps()
@@ -145,9 +195,10 @@ class NonAffMaps():
         logging.info('NonAffMaps.Compute() started! Result will be saved in folder ' + str(self.outFolder))
         
         # Search for correlation map MIfiles, skip autocorrelation maps
-        fw_cmap_config, fw_cmap_mifiles, fw_cmap_lagtimes = self.cmaps_fw.GetCorrMaps(openMIfiles=True, getAutocorr=False)
-        bk_cmap_config, bk_cmap_mifiles, bk_cmap_lagtimes = self.cmaps_bk.GetCorrMaps(openMIfiles=True, getAutocorr=False)
-        common_lags = list(set(fw_cmap_lagtimes).intersection(bk_cmap_lagtimes))
+        
+        fw_mistack = self.cmaps_fw.GetCorrMaps(openMIfiles=True)
+        bk_mistack = self.cmaps_bk.GetCorrMaps(openMIfiles=True)
+        common_lags = list(set(fw_mistack.IdxList).intersection(bk_mistack.IdxList))
         if self.lag_range is None:
             if 0 in common_lags: common_lags.remove(0)
         else:
@@ -169,16 +220,16 @@ class NonAffMaps():
             
             logging.info('Now working on lagtime ' + str(lidx) + '/' + str(len(self.lagList)) + ' (d' + str(self.lagList[lidx]) + ')')
             
-            fw_lidx = fw_cmap_lagtimes.index(self.lagList[lidx])
-            bk_lidx = bk_cmap_lagtimes.index(self.lagList[lidx])
+            fw_lidx = fw_mistack.IdxList.index(self.lagList[lidx])
+            bk_lidx = bk_mistack.IdxList.index(self.lagList[lidx])
             
             # eventually compute normalization factors
             if self.norm_range is not None:
-                fw_norm_factor = np.mean(fw_cmap_mifiles[fw_lidx].Read(zRange=self.norm_range[:2], cropROI=self.norm_range[2:], closeAfter=False))
+                fw_norm_factor = np.mean(fw_mistack.MIfiles[fw_lidx].Read(zRange=self.norm_range[:2], cropROI=self.norm_range[2:], closeAfter=False))
                 if self.trans_bk_matrix is None and self.trans_bk_offset is None:
-                    bk_norm_factor = np.mean(bk_cmap_mifiles[bk_lidx].Read(zRange=self.norm_range[:2], cropROI=self.norm_range[2:], closeAfter=False))
+                    bk_norm_factor = np.mean(bk_mistack.MIfiles[bk_lidx].Read(zRange=self.norm_range[:2], cropROI=self.norm_range[2:], closeAfter=False))
                 else:
-                    bk_norm_data = bk_cmap_mifiles[bk_lidx].Read(zRange=self.norm_range[:2], cropROI=None, closeAfter=False)
+                    bk_norm_data = bk_mistack.MIfiles[bk_lidx].Read(zRange=self.norm_range[:2], cropROI=None, closeAfter=False)
                     if len(bk_norm_data.shape)>2:
                         bk_norm_data = np.mean(bk_norm_data, axis=0)
                     logging.debug('shape before transformation: ' + str(bk_norm_data.shape))
@@ -195,8 +246,8 @@ class NonAffMaps():
             logging.info('Normalization factors: ' + str(fw_norm_factor) + ' (front) and ' + str(bk_norm_factor) + ' (back)')
             
             # load, normalize and eventually smooth correlation maps.
-            fw_data = np.true_divide(fw_cmap_mifiles[fw_lidx].Read(zRange=self.t_range, cropROI=self.cropROI, closeAfter=True), fw_norm_factor)
-            bk_data = np.true_divide(bk_cmap_mifiles[bk_lidx].Read(zRange=self.t_range, cropROI=self.cropROI, closeAfter=True), bk_norm_factor)
+            fw_data = np.true_divide(fw_mistack.MIfiles[fw_lidx].Read(zRange=self.t_range, cropROI=self.cropROI, closeAfter=True), fw_norm_factor)
+            bk_data = np.true_divide(bk_mistack.MIfiles[bk_lidx].Read(zRange=self.t_range, cropROI=self.cropROI, closeAfter=True), bk_norm_factor)
             
             if self.smooth_kernel_specs is not None:
                 Kernel3D = self.LoadKernel(self.smooth_kernel_specs)
@@ -216,12 +267,12 @@ class NonAffMaps():
             
             # For the first lagtime, generate and export metadata
             if (lidx==0):        
-                out_meta = fw_cmap_mifiles[fw_lidx].GetMetadata().copy()
+                out_meta = fw_mistack.MIfiles[fw_lidx].GetMetadata().copy()
                 out_meta['hdr_len'] = 0
                 out_meta['gap_bytes'] = 0
                 out_meta['shape'] = list(sigma2.shape)
                 if ('fps' in out_meta):
-                    val_tRange = fw_cmap_mifiles[fw_lidx].Validate_zRange(self.t_range)
+                    val_tRange = fw_mistack.MIfiles[fw_lidx].Validate_zRange(self.t_range)
                     out_meta['fps'] = float(out_meta['fps']) * 1.0 / val_tRange[2]
                 exp_config = cf.Config()
                 exp_config.Import(out_meta, section_name='MIfile')
@@ -235,5 +286,35 @@ class NonAffMaps():
             
             logging.info('Result saved to file ' + str(cur_fname))
             
-            fw_cmap_mifiles[fw_lidx].Close()
-            bk_cmap_mifiles[bk_lidx].Close()
+            fw_mistack.MIfiles[fw_lidx].Close()
+            bk_mistack.MIfiles[bk_lidx].Close()
+    
+    def GetNaffMaps(self, openMIfiles=True):
+        """Searches for MIfile correlation maps
+        
+        Parameters
+        ----------
+        openMIfiles: if true, it opens all MIfiles for reading.
+        getAutocorr: if True, returns d0 in the list of correlation maps
+                    otherwise, returns None instead of the autocorrelation map
+        
+        Returns
+        -------
+        corr_config: configuration file for correlation maps
+        corr_mifiles: list of correlation maps, one per time delay
+        lag_list: list of lagtimes
+        """
+        
+        if (self.naffMapStack is None):
+            self.naffMapStack = MIs.LoadFolder(self.outFolder, config_fname=os.path.join(self.outFolder, 'NAffMap_metadata.ini'),\
+                                                config_section='MIfile', mi_prefix='NaffMap_d', mi_ext='.dat', mi_sort='ASC', open_mifiles=openMIfiles)
+    
+        return self.naffMapStack
+    
+    def CloseMaps(self):
+        self.naffMapStack.CloseAll()
+        self.naffMapStack = None
+    
+    def GetNaffMapsNumber(self):
+        assert (self.naffMapStack is not None), 'Correlation maps not loaded yet'
+        return self.naffMapStack.Count()
