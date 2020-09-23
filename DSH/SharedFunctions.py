@@ -215,7 +215,7 @@ def PolarMaskCoords(num_r, r_min=1.0, r_max=None, r_logspace=True, num_a=1, a_mi
     
     Parameters
     ----------
-    num_r : numer of radial sections
+    num_r : numer of radial sections (radial points will be num_r+1 to give num_r masks)
     r_min : smallest radius (pixels)
     r_max : largest radius (pixels)
     r_logspace : true/false to have radii spaced logarithmically/linearly
@@ -230,7 +230,7 @@ def PolarMaskCoords(num_r, r_min=1.0, r_max=None, r_logspace=True, num_a=1, a_mi
     """
     
     if (r_logspace):
-        RadialSlices = np.logspace(math.log(r_min, r_max), 1.0, num=num_r, base=r_max)
+        RadialSlices = np.logspace(math.log(r_min, r_max), 1.0, num=num_r+1, base=r_max)
     else:
         RadialSlices = np.linspace(r_min, r_max, num=num_r+1)
     # check that each radial slice is at least 1 px wide

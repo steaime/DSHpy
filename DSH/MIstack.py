@@ -115,7 +115,7 @@ class MIstack():
                 
                 
     def GetTimetrace(self, pxLocs, zRange=None, idx_list=None, excludeIdxs=[], returnCoords=False,\
-                         squeezeResult=True, readConsecutive=1, lagFlip=False, zStep=1):
+                         squeezeResult=True, readConsecutive=1, lagFlip=False, zStep=1, mask_cropROI=None):
         """Returns (t, tau) data for a given set of pixels
         
         Parameters
@@ -169,7 +169,7 @@ class MIstack():
             idx_list.sort(reverse=lagFlip)
         
         tvalues = list(range(*self.MIfiles[1].Validate_zRange(zRange)))
-        res = self.GetValues(pxLocs, tvalues, idx_list, do_squeeze=squeezeResult, readConsecutive=readConsecutive, lagFlip=lagFlip, zStep=zStep)
+        res = self.GetValues(pxLocs, tvalues, idx_list, do_squeeze=squeezeResult, readConsecutive=readConsecutive, lagFlip=lagFlip, zStep=zStep, mask_cropROI=mask_cropROI)
         
         if returnCoords:
             return res, tvalues, idx_list, lagFlip
@@ -204,7 +204,7 @@ class MIstack():
         if (len(np.array(pxLocs[0]).shape)>1):
             use_mask=True
             mask_avg = []
-            for midx in range(len(use_mask)):
+            for midx in range(len(pxLocs)):
                 mask_avg.append(np.mean(pxLocs[midx]))
         else:
             use_mask=False
