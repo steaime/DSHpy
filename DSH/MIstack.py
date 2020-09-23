@@ -54,7 +54,7 @@ class MIstack():
             self.LoadMetadata(MetaDataSection=MetaDataSection)
             if (len(MIfiles)>0):
                 if (isinstance(MIfiles[0],str)):
-                    self.LoadFiles(MIfiles, metadata_section=MetaDataSection, open_mifiles=OpenFiles)
+                    self.LoadFiles(MIfiles, metadata_section=MetaDataSection, open_mifiles=OpenFiles, replace_previous=True)
 
     def __del__(self):
         self.CloseAll()
@@ -191,6 +191,8 @@ class MIstack():
         zStep:            Multiplicative factor for converting MIindex into lagtime (in image units)
                           Useful whenever the current MIfile was generated processing every N images
         """
+        
+        assert self._loaded, 'MIstack needs to be loaded first'
         if (type(pxLocs[0]) not in [list, tuple, np.ndarray]):
             pxLocs = [pxLocs]
         if (type(tList) not in [list, tuple, np.ndarray]):
