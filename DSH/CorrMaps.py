@@ -297,10 +297,10 @@ class CorrMaps():
                          squeezeResult=True, readConsecutive=1, skipGet=False):
         if not skipGet:
             self.GetCorrMaps()
-        return self.cmapStack.GetTimetrace(self, pxLocs, zRange=zRange, idx_list=lagList, excludeIdxs=excludeLags, returnCoords=returnCoords,\
+        return self.cmapStack.GetTimetrace(pxLocs, zRange=zRange, idx_list=lagList, excludeIdxs=excludeLags, returnCoords=returnCoords,\
                          squeezeResult=squeezeResult, readConsecutive=readConsecutive, lagFlip=lagFlip, zStep=self.imgRange[2])
         
     def GetCorrValues(self, pxLocs, tList, lagList, lagFlip=None, do_squeeze=True, readConsecutive=1, skipGet=False):
         if not skipGet:
             self.GetCorrMaps()
-        return self.cmapStack.GetValues(self, pxLocs, tList, idx_list=lagList, do_squeeze=do_squeeze, readConsecutive=readConsecutive, lagFlip=lagFlip, zStep=self.imgRange[2])
+        return self.cmapStack.GetValues(pxLocs, tList, idx_list=lagList, do_squeeze=do_squeeze, readConsecutive=readConsecutive, lagFlip=lagFlip, zStep=self.imgRange[2])
