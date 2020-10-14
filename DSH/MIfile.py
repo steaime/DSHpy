@@ -2,6 +2,7 @@ import os
 import numpy as np
 import sys
 import struct
+import collections
 import logging
 
 from DSH import Config as cf
@@ -462,6 +463,10 @@ class MIfile():
         ----------
         meta_data : dict or filename
         """
+        if (type(meta_data) in [dict, collections.OrderedDict]):
+            logging.debug('Now loading MIfile metadata (dict with ' + str(len(meta_data)) + ' keys)')
+        else:
+            logging.debug('Now loading MIfile metadata (from filename: ' + str(meta_data) + ')')
         default_settings = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'config_MIfile.ini')
         self.MetaData = cf.LoadMetadata(meta_data, SectionName='MIfile', DefaultFiles=[default_settings])
         self.MaxBufferSize = self.MetaData.Get('settings', 'max_buffer_size', 100000000, int)

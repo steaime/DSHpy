@@ -108,7 +108,7 @@ class CorrMaps():
             str_res += str(self.lagList)
         else:
             str_res += '['
-            for i in range(1, self.numLags):
+            for i in range(0, self.numLags):
                 if (i % lag_per_row == 0):
                     str_res += '\n|                    '
                 str_res += str(self.lagList[i]) + ', '

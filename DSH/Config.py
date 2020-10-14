@@ -1,6 +1,7 @@
 import os
 import configparser
 import collections
+import logging
 import numpy as np
 import pkg_resources
 pkg_installed = {pkg.key for pkg in pkg_resources.working_set}
@@ -40,9 +41,11 @@ def LoadMetadata(MetaData, SectionName=None, DefaultFiles=[]):
     outConfig : Config object containing desired metadata
     """
     if (type(MetaData) in [dict, collections.OrderedDict]):
+        logging.debug('Appending input dictionary to section ' + str(SectionName))
         outConfig = Config(None, defaultConfigFiles=DefaultFiles)
         outConfig.Import(MetaData, section_name=SectionName)
     else:
+        logging.debug('Loading config file ' + str(SectionName))
         outConfig = Config(MetaData, defaultConfigFiles=DefaultFiles)
     
     return outConfig
