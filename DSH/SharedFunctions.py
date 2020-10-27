@@ -257,6 +257,8 @@ def azimuthalAverage(image, center=None, stddev=False, returnradii=False, return
     """
     Calculate the azimuthally averaged radial profile.
 
+    Parameters
+    ----------
     image - The 2D image
     center - The [x,y] pixel coordinates used as the center. The default is 
              None, which then uses the center of the image (including 
@@ -277,8 +279,7 @@ def azimuthalAverage(image, center=None, stddev=False, returnradii=False, return
         left,right - passed to interpnan; they set the extrapolated values
 
     If a bin contains NO DATA, it will have a NAN value because of the
-    divide-by-sum-of-weights component.  I think this is a useful way to denote
-    lack of data, but users let me know if an alternative is prefered...
+    divide-by-sum-of-weights component.
     
     """        
     
@@ -289,11 +290,6 @@ def azimuthalAverage(image, center=None, stddev=False, returnradii=False, return
         center = np.array([(x.max()-x.min())/2.0, (y.max()-y.min())/2.0])
 
     r = np.hypot(x - center[0], y - center[1])
-
-    if weights is None:
-        weights = np.ones(image.shape)
-    elif stddev:
-        raise ValueError("Weighted standard deviation is not defined.")
 
     # the 'bins' as initially defined are lower/upper bounds for each bin
     # so that values will be in [lower,upper)  
@@ -306,9 +302,16 @@ def azimuthalAverage(image, center=None, stddev=False, returnradii=False, return
     # Find out which radial bin each point in the map belongs to
     whichbin = np.digitize(r.flat,bins)
 
-    # how many per bin (i.e., histogram)?
-    # there are never any in bin 0, because the lowest index returned by digitize is 1
-    nr = np.bincount(whichbin)[1:]
+    if weights is None:
+        weights = np.ones(image.shape)
+        # how many per bin (i.e., histogram)?
+        # there are never any in bin 0, because the lowest index returned by digitize is 1
+        #nr = np.bincount(whichbin)[1:]
+        nr = np.bincount(whichbin)
+    else:
+        nr = np.array([weights.flat[whichbin==b].sum() for b in range(1,int(nbins+1))])
+        if stddev:
+            raise ValueError("Weighted standard deviation is not defined.")
 
     # recall that bins are from 1 to nbins (which is expressed in array terms by arange(nbins)+1 or xrange(1,nbins+1) )
     # radial_prof.shape = bin_centers.shape
@@ -334,3 +337,139 @@ def azimuthalAverage(image, center=None, stddev=False, returnradii=False, return
         return nr,bin_centers,radial_prof
     else:
         return radial_prof
+
+
+def convolve2d(slab, kernel, max_missing=0.9999, sciconv_mode='reflect', verbose=True):
+    '''2D convolution with missings ignored
+
+    Parameters
+    ----------
+    slab:          2d array. Input array to convolve. 
+                   Can have numpy.nan or masked values.
+    kernel:        2d array, convolution kernel, must have sizes as odd numbers.
+    max_missing:   float in (0,1), max percentage of missing in each convolution
+                   window is tolerated before a missing is placed in the result.
+    sciconv_mode:  boundary conditions used by scipy convolution
+
+    Return <result>: 2d array, convolution result. Missings are represented as
+                     numpy.nans if they are in <slab>, or masked if they are masked
+                     in <slab>.
+
+    '''
+
+    from scipy.ndimage import convolve as sciconvolve
+
+    assert np.ndim(slab)==2, "<slab> needs to be 2D."
+    assert np.ndim(kernel)==2, "<kernel> needs to be 2D."
+    assert kernel.shape[0]%2==1 and kernel.shape[1]%2==1, "<kernel> shape needs to be an odd number."
+    assert max_missing > 0 and max_missing < 1, "<max_missing> needs to be a float in (0,1)."
+
+    #--------------Get mask for missings--------------
+    if not hasattr(slab,'mask') and np.any(np.isnan(slab))==False:
+        has_missing=False
+        slab2=slab.copy()
+
+    elif not hasattr(slab,'mask') and np.any(np.isnan(slab)):
+        has_missing=True
+        slabmask=np.where(np.isnan(slab),1,0)
+        slab2=slab.copy()
+        missing_as='nan'
+
+    elif (slab.mask.size==1 and slab.mask==False) or np.any(slab.mask)==False:
+        has_missing=False
+        slab2=slab.copy()
+
+    elif not (slab.mask.size==1 and slab.mask==False) and np.any(slab.mask):
+        has_missing=True
+        slabmask=np.where(slab.mask,1,0)
+        slab2=np.where(slabmask==1,np.nan,slab)
+        missing_as='mask'
+
+    else:
+        has_missing=False
+        slab2=slab.copy()
+
+    #--------------------No missing--------------------
+    if not has_missing:
+        result=sciconvolve(slab2,kernel,mode=sciconv_mode,cval=0.)
+    else:
+        H,W=slab.shape
+        hh=int((kernel.shape[0]-1)/2)  # half height
+        hw=int((kernel.shape[1]-1)/2)  # half width
+        min_valid=(1-max_missing)*kernel.shape[0]*kernel.shape[1]
+
+        # dont forget to flip the kernel
+        kernel_flip=kernel[::-1,::-1]
+
+        result=sciconvolve(slab2,kernel,mode=sciconv_mode,cval=0.)
+        slab2=np.where(slabmask==1,0,slab2)
+
+        #------------------Get nan holes------------------
+        miss_idx=zip(*np.where(slabmask==1))
+
+        if missing_as=='mask':
+            mask=np.zeros([H,W])
+
+        for yii,xii in miss_idx:
+
+            #-------Recompute at each new nan in result-------
+            hole_ys=range(max(0,yii-hh),min(H,yii+hh+1))
+            hole_xs=range(max(0,xii-hw),min(W,xii+hw+1))
+
+            for hi in hole_ys:
+                for hj in hole_xs:
+                    hi1=max(0,hi-hh)
+                    hi2=min(H,hi+hh+1)
+                    hj1=max(0,hj-hw)
+                    hj2=min(W,hj+hw+1)
+
+                    slab_window=slab2[hi1:hi2,hj1:hj2]
+                    mask_window=slabmask[hi1:hi2,hj1:hj2]
+                    kernel_ij=kernel_flip[max(0,hh-hi):min(hh*2+1,hh+H-hi), 
+                                     max(0,hw-hj):min(hw*2+1,hw+W-hj)]
+                    kernel_ij=np.where(mask_window==1,0,kernel_ij)
+
+                    #----Fill with missing if not enough valid data----
+                    ksum=np.sum(kernel_ij)
+                    if ksum<min_valid:
+                        if missing_as=='nan':
+                            result[hi,hj]=np.nan
+                        elif missing_as=='mask':
+                            result[hi,hj]=0.
+                            mask[hi,hj]=True
+                    else:
+                        result[hi,hj]=np.sum(slab_window*kernel_ij)
+
+        if missing_as=='mask':
+            result=np.ma.array(result)
+            result.mask=mask
+
+    return result
+
+def downsample2d(inputArray, kernelSize, normArr=None):
+    '''Downsample 2d array by spatial convolution (binning on nearby pixels)
+
+    Parameters
+    ----------
+    inputArray : input 2d array to be downsampled
+    kernelSize : odd integer. It is 2N+1, where N is the number of
+                 nearest neighbors to be incorporated in each pixel
+    normArr :    2d array with same shape as inputArray (optional)
+                 If not none, inputArray is first normalized by normArr
+                 (useful for 3d subsampling)
+
+    Returns
+    -------
+    downsampled_array: 2d array with each dimension reduced by a factor kernelSize
+
+    '''
+    
+    if normArr is not None:
+        inputArray = np.true_divide(inputArray, normArr)
+    if (kernelSize==1):
+        return inputArray
+    else:
+        average_kernel = np.ones((kernelSize,kernelSize))*np.power(1.0*kernelSize, -2)
+        blurred_array = convolve2d(inputArray, average_kernel)
+        downsampled_array = blurred_array[::kernelSize,::kernelSize]
+        return downsampled_array
