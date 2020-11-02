@@ -84,6 +84,10 @@ class Kernel():
         self.Padding = padding
         if padding:
             self.convolveMode = 'same'
+            if 'boundary' not in convolve_kwargs:
+                convolve_kwargs['boundary'] = 'fill'
+            if 'fillvalue' not in convolve_kwargs:
+                convolve_kwargs['boundary'] = 0
         else:
             self.convolveMode = 'valid'
         

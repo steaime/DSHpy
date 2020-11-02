@@ -180,13 +180,13 @@ class CorrMaps():
         # 2D Kernel to convolve to spatially average images
         ker2D = self.Kernel.ToMatrix()
         # This is to properly normalize correlations at the edges
-        ConvNorm = signal.convolve2d(np.ones_like(Intensity[0]), ker2D, mode=self.convolveMode, boundary='fill', fillvalue=0)
+        ConvNorm = signal.convolve2d(np.ones_like(Intensity[0]), ker2D, mode=self.Kernel.convolveMode, **self.Kernel.convolve_kwargs)
         # Now load all images we need
         self.MIinput.OpenForReading()
         for utidx in range(len(self.UniqueIdx)):  
             Intensity[utidx] = self.MIinput.GetImage(img_idx=self.UniqueIdx[utidx], cropROI=self.cropROI)
-            AvgIntensity[utidx] = signal.convolve2d(Intensity[utidx], ker2D, mode=self.convolveMode, boundary='fill', fillvalue=0)
-            if (self.convolveMode=='same'):
+            AvgIntensity[utidx] = signal.convolve2d(Intensity[utidx], ker2D, mode=self.Kernel.convolveMode, **self.Kernel.convolve_kwargs)
+            if (self.Kernel.convolveMode=='same'):
                 AvgIntensity[utidx] = np.true_divide(AvgIntensity[utidx], ConvNorm)
         self.MIinput.Close()
         
@@ -194,7 +194,7 @@ class CorrMaps():
             print('  STEP 2: Computing contrast...')
         for tidx in range(self.outputShape[0]):
             AutoCorr[tidx] = signal.convolve2d(np.square(Intensity[self.imgIdx[tidx,0,0]]),\
-                                               ker2D, mode=self.convolveMode, boundary='fill', fillvalue=0)
+                                               ker2D, mode=self.Kernel.convolveMode, **self.Kernel.convolve_kwargs)
             if (self.Kernel['padding']):
                 AutoCorr[tidx] = np.true_divide(AutoCorr[tidx], ConvNorm)
             AutoCorr[tidx] = np.subtract(np.true_divide(AutoCorr[tidx], np.square(AvgIntensity[tidx])),1)
@@ -210,7 +210,7 @@ class CorrMaps():
             CorrMap = np.empty_like(AutoCorr)
             for tidx in range(self.imgNumber-self.lagList[lidx]):
                 CorrMap[tidx] = signal.convolve2d(np.multiply(Intensity[self.imgIdx[tidx,lidx,0]], Intensity[self.imgIdx[tidx,lidx,1]]),\
-                                                  ker2D, mode=self.convolveMode, boundary='fill', fillvalue=0)
+                                                  ker2D, mode=self.Kernel.convolveMode, **self.Kernel.convolve_kwargs)
                 if (self.Kernel['padding']):
                     CorrMap[tidx] = np.true_divide(CorrMap[tidx], ConvNorm)
                 CorrMap[tidx] = np.true_divide(np.subtract(np.true_divide(CorrMap[tidx],\
