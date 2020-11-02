@@ -80,18 +80,21 @@ class Kernel():
             self.KernelParams = self.GaussParams(sf.CheckIterableVariable(params['sigma'], n_dim))
         elif (kernel_type=='flat'):
             self.KernelParams = None
-            
-        self.Padding = padding
-        if padding:
+        
+        self.SetPadding(padding)
+        
+        if 'boundary' not in convolve_kwargs:
+            convolve_kwargs['boundary'] = 'fill'
+        if 'fillvalue' not in convolve_kwargs:
+            convolve_kwargs['fillvalue'] = 0
+        self.convolve_kwargs = convolve_kwargs
+        
+    def SetPadding(self, new_padding):
+        self.Padding = new_padding
+        if new_padding:
             self.convolveMode = 'same'
-            if 'boundary' not in convolve_kwargs:
-                convolve_kwargs['boundary'] = 'fill'
-            if 'fillvalue' not in convolve_kwargs:
-                convolve_kwargs['fillvalue'] = 0
         else:
             self.convolveMode = 'valid'
-        
-        self.convolve_kwargs = convolve_kwargs
     
     def ToDict(self):
         res = {'shape'  : self.Shape,
