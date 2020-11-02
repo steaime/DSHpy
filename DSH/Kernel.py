@@ -87,7 +87,7 @@ class Kernel():
             if 'boundary' not in convolve_kwargs:
                 convolve_kwargs['boundary'] = 'fill'
             if 'fillvalue' not in convolve_kwargs:
-                convolve_kwargs['boundary'] = 0
+                convolve_kwargs['fillvalue'] = 0
         else:
             self.convolveMode = 'valid'
         
