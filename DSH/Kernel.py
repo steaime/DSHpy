@@ -49,7 +49,7 @@ class Kernel():
         if self.Shape is not None:
             str_res += ', ' + 'x'.join(map(str, self.Shape))
             if self.Type=='Gauss':
-                str_res += ', s=(' + ';'.join(map(str, self.Shape)) + ')'
+                str_res += ', s=(' + ';'.join(map(str, self.KernelParams.sigma)) + ')'
         str_res += '>'
         return str_res
     
