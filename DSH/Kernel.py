@@ -40,17 +40,19 @@ class Kernel():
     def __repr__(self):
         str_res = '<Kernel [' + str(self.Type) + ', ' + str(self.Dimensions) + 'D]'
         if self.Shape is not None:
-            str_res += ', '
-            for i in range(len(self.Shape)):
-                if i>0:
-                    str_res += 'x'
-                str_res += str(self.Shape[i])
+            str_res += ', ' + 'x'.join(self.Shape)
         str_res += '>'
         return str_res
     
     def __str__(self):
-        return str(self.ToDict())
-            
+        str_res = '<Kernel [' + str(self.Type) + ', ' + str(self.Dimensions) + 'D]'
+        if self.Shape is not None:
+            str_res += ', ' + 'x'.join(self.Shape)
+            if self.Type=='Gauss':
+                str_res += ', s=(' + ';'.join(self.Shape) + ')'
+        str_res += '>'
+        return str_res
+    
     def Initialize(self, shape, kernel_type, params={}, n_dim=2, padding=False, convolve_kwargs={}):
         """ Initialize kernel
 

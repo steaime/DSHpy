@@ -2,7 +2,6 @@ import os
 import numpy as np
 import time
 from scipy import signal
-from DSH import Kernel as ker
 from DSH import Config as cf
 from DSH import MIfile as MI
 from DSH import MIstack as MIs
@@ -35,7 +34,7 @@ def LoadFromConfig(ConfigFile, outFolder=None):
 class CorrMaps():
     """ Class to compute correlation maps from a MIfile """
     
-    def __init__(self, MIin, outFolder, lagList, KernelSpecs, imgRange=None, cropROI=None):
+    def __init__(self, MIin, outFolder, lagList, convKernel, imgRange=None, cropROI=None):
         """Initialize CorrMaps
         
         Parameters
@@ -43,11 +42,7 @@ class CorrMaps():
         MIin : input multi image file (MIfile class)
         outFolder : output folder path. If the directory doesn't exist, it will be created
         lagList : list of lagtimes (in image units, regardless the step specified in imgRange)
-        KernelSpecs : dictionary with kernel specifications 
-                    for Gaussian kernels: {'type':'Gauss', 'sigma':std_dev, 'cutoff':sigma_cutoff, 'padding':true/false}
-                    
-                    if 'padding' is True the output will have same shape as image (or cropped ROI)
-                    otherwise it will have trimmed boundaries with thickness given by kernel cutoff
+        convKernel : DSH.Kernel object 
         imgRange : range of images to be analyzed [start_idx, end_idx, step_idx]
                     if None, all images will be analyzed
         cropROI : ROI to be analyzed: [topleftx, toplefty, width, height]
@@ -72,19 +67,11 @@ class CorrMaps():
             self.inputShape = [len(self.UniqueIdx), self.MIinput.ImageHeight(), self.MIinput.ImageWidth()]
         else:
             self.inputShape = [len(self.UniqueIdx), self.cropROI[3],self.cropROI[2]]
-        self.Kernel = KernelSpecs
-        if (self.Kernel['type']=='Gauss'):
-            self.Kernel['sigma'] = float(self.Kernel['sigma'])
-            self.Kernel['cutoff'] = float(self.Kernel['cutoff'])
-            self.Kernel['size'] = int(self.Kernel['sigma']*self.Kernel['cutoff'])
-        else:
-            raise ValueError('Kernel type "' + str(self.Kernel['type']) + '" not supported')
-        if (self.Kernel['padding']):
-            self.convolveMode = 'same'
+        self.Kernel = convKernel
+        if (convKernel.Padding):
             self.outputShape = [self.imgNumber, self.inputShape[1], self.inputShape[2]]
         else:
-            self.convolveMode = 'valid'
-            self.outputShape = [self.imgNumber, self.inputShape[1] - 2*self.Kernel['size'], self.inputShape[2] - 2*self.Kernel['size']]
+            self.outputShape = [self.imgNumber, self.inputShape[1] - convKernel.Shape[0] + 1, self.inputShape[2] - convKernel.Shape[1] + 1]
         self.outMetaData = {
                 'hdr_len' : 0,
                 'shape' : self.outputShape,
@@ -117,15 +104,7 @@ class CorrMaps():
             str_res = str_res[:-2] + ']'
         str_res += '\n| image range     : ' + str(self.imgRange)
         str_res += '\n| crop ROI        : ' + str(self.cropROI)
-        str_res += '\n| Kernel          : ' + str(self.Kernel['type']) + ' - '
-        for key in self.Kernel:
-            if key not in ['type', 'padw', 'padding', 'size']:
-                str_res += str(key) + '=' + str(self.Kernel[key]) + ', '
-        str_res += '\n| Kernel size     : ' + str(self.Kernel['size']) + ' '
-        if (self.Kernel['padding']):
-            str_res += 'PADDING (width=' + str(self.Kernel['size']) + ')'
-        else:
-            str_res += 'NO PADDING (trimming margin=' + str(self.Kernel['size']) + ')'
+        str_res += '\n| Kernel          : ' + str(self.Kernel)
         str_res += '\n|-----------------+---------------'
         return str_res
     
@@ -166,22 +145,8 @@ class CorrMaps():
                                                'img_range' : self.imgRange,
                                                'crop_roi' : self.cropROI
                                                },
-                        'kernel' : self.Kernel
+                        'kernel' : self.Kernel.ToDict(),
                        }, os.path.join(self.outFolder, 'CorrMapsConfig.ini'))
-
-    def LoadKernel(self, KernelSpecs):
-        """Computes the convolution kernel for ROI computation
-        """
-        x = np.asarray(range(-KernelSpecs['size'], KernelSpecs['size']+1))
-        y = np.asarray(range(-KernelSpecs['size'], KernelSpecs['size']+1))
-        grid = np.meshgrid(x,y)
-        if (KernelSpecs['type']=='Gauss'):
-            ker2D = np.exp(np.divide(np.square(grid[0])+np.square(grid[1]),-np.square(KernelSpecs['sigma'])))
-        else:
-            raise ValueError('Kernel type "' + str(KernelSpecs['type']) + '" not supported')
-        # Whatever kernel we are using, let's normalize so that weights has unitary integral
-        ker2D = np.true_divide(ker2D, np.sum(ker2D))
-        return ker2D
 
     def Compute(self, silent=True, return_maps=False):
         """Computes correlation maps
@@ -213,7 +178,7 @@ class CorrMaps():
         # This will contain autocorrelation data ("d0")
         AutoCorr = np.empty(self.outputShape)
         # 2D Kernel to convolve to spatially average images
-        ker2D = self.LoadKernel(self.Kernel)
+        ker2D = self.Kernel.ToMatrix()
         # This is to properly normalize correlations at the edges
         ConvNorm = signal.convolve2d(np.ones_like(Intensity[0]), ker2D, mode=self.convolveMode, boundary='fill', fillvalue=0)
         # Now load all images we need
