@@ -2,6 +2,7 @@ import os
 import numpy as np
 import time
 from scipy import signal
+from DSH import Kernel as ker
 from DSH import Config as cf
 from DSH import MIfile as MI
 from DSH import MIstack as MIs
@@ -44,6 +45,7 @@ class CorrMaps():
         lagList : list of lagtimes (in image units, regardless the step specified in imgRange)
         KernelSpecs : dictionary with kernel specifications 
                     for Gaussian kernels: {'type':'Gauss', 'sigma':std_dev, 'cutoff':sigma_cutoff, 'padding':true/false}
+                    
                     if 'padding' is True the output will have same shape as image (or cropped ROI)
                     otherwise it will have trimmed boundaries with thickness given by kernel cutoff
         imgRange : range of images to be analyzed [start_idx, end_idx, step_idx]

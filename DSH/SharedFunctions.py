@@ -3,6 +3,7 @@ import re
 import inspect
 import numpy as np
 import math
+import collections
   
 def AllIntInStr(my_string):
     arr_str = re.findall(r'\d+', my_string)
@@ -42,6 +43,22 @@ def CheckCreateFolder(folderPath):
         print("Created folder: {0}".format(folderPath))
         os.makedirs(folderPath)
         return False
+
+def CheckIterableVariable(var, n_dim, force_length=True):
+    """ Checks if a variable is an iterable with given dimensions (n_dim). 
+    If so, returns the variable itself. Otherwise, returns a list of 
+    the variable replicated n_dim times
+    """
+    
+    assert n_dim > 0, 'Number of dimensions must be strictly positive'
+    
+    if isinstance(var, collections.abc.Iterable):
+        if force_length==True and len(var)!=n_dim:
+            return [var] * n_dim
+        else:
+            return var
+    else:
+        return [var] * n_dim
 
 '''
 Sort: None not to sort, or: 'ASC' | 'DESC' to sort output list ascending | descending
