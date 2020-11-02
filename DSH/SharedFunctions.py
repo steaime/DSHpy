@@ -44,21 +44,28 @@ def CheckCreateFolder(folderPath):
         os.makedirs(folderPath)
         return False
 
-def CheckIterableVariable(var, n_dim, force_length=True):
+def CheckIterableVariable(var, n_dim, force_length=True, cast_type=None):
     """ Checks if a variable is an iterable with given dimensions (n_dim). 
     If so, returns the variable itself. Otherwise, returns a list of 
     the variable replicated n_dim times
+    if cast_type is not None, variable will be cast into cast_type before being replicated
     """
     
     assert n_dim > 0, 'Number of dimensions must be strictly positive'
     
     if isinstance(var, collections.abc.Iterable):
         if force_length==True and len(var)!=n_dim:
-            return [var] * n_dim
+            if cast_type is None:
+                return [var] * n_dim
+            else:
+                return [cast_type(var)] * n_dim
         else:
             return var
     else:
-        return [var] * n_dim
+        if cast_type is None:
+            return [var] * n_dim
+        else:
+            return [cast_type(var)] * n_dim
 
 '''
 Sort: None not to sort, or: 'ASC' | 'DESC' to sort output list ascending | descending

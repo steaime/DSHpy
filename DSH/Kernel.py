@@ -70,7 +70,7 @@ class Kernel():
         assert kernel_type in ['Gauss', 'flat'], 'Kernel type "' + str() + '" not supported'
         
         self.Type = kernel_type
-        self.Shape = sf.CheckIterableVariable(shape, n_dim)
+        self.Shape = sf.CheckIterableVariable(shape, n_dim, cast_type=int)
         self.Dimensions = n_dim
         self.Center = np.true_divide(np.subtract(self.Shape, 1), 2)
         
@@ -110,7 +110,7 @@ class Kernel():
         else:
             coords = []
             for i in range(self.Dimensions):
-                coords.append(np.asarray(range(-self.Center[i], self.Center[i]+self.Shape[i])))
+                coords.append(np.subtract(np.asarray(range(self.Shape[i])), self.Center[i]))
             grid = np.meshgrid(*coords)
             if (self.Type=='Gauss'):
                 kerND = np.zeros_like(grid[0])
