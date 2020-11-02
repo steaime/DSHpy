@@ -195,7 +195,7 @@ class CorrMaps():
         for tidx in range(self.outputShape[0]):
             AutoCorr[tidx] = signal.convolve2d(np.square(Intensity[self.imgIdx[tidx,0,0]]),\
                                                ker2D, mode=self.Kernel.convolveMode, **self.Kernel.convolve_kwargs)
-            if (self.Kernel['padding']):
+            if (self.Kernel.Padding):
                 AutoCorr[tidx] = np.true_divide(AutoCorr[tidx], ConvNorm)
             AutoCorr[tidx] = np.subtract(np.true_divide(AutoCorr[tidx], np.square(AvgIntensity[tidx])),1)
         MI.MIfile(os.path.join(self.outFolder, 'CorrMap_d0.dat'), self.outMetaData).WriteData(AutoCorr)
@@ -211,7 +211,7 @@ class CorrMaps():
             for tidx in range(self.imgNumber-self.lagList[lidx]):
                 CorrMap[tidx] = signal.convolve2d(np.multiply(Intensity[self.imgIdx[tidx,lidx,0]], Intensity[self.imgIdx[tidx,lidx,1]]),\
                                                   ker2D, mode=self.Kernel.convolveMode, **self.Kernel.convolve_kwargs)
-                if (self.Kernel['padding']):
+                if (self.Kernel.Padding):
                     CorrMap[tidx] = np.true_divide(CorrMap[tidx], ConvNorm)
                 CorrMap[tidx] = np.true_divide(np.subtract(np.true_divide(CorrMap[tidx],\
                                                                            np.multiply(AvgIntensity[self.imgIdx[tidx,lidx,0]],\

@@ -38,14 +38,14 @@ class Kernel():
             self.Initialize(**kernel_specs)
             
     def __repr__(self):
-        str_res = '<Kernel [' + str(self.Type) + ', ' + str(self.Dimensions) + 'D]'
+        str_res = '<Kernel [' + str(self.Dimensions) + 'D ' + str(self.Type) + ']'
         if self.Shape is not None:
             str_res += ', ' + 'x'.join(map(str, self.Shape))
         str_res += '>'
         return str_res
     
     def __str__(self):
-        str_res = '<Kernel [' + str(self.Type) + ', ' + str(self.Dimensions) + 'D]'
+        str_res = '<Kernel [' + str(self.Dimensions) + 'D ' + str(self.Type) + ']'
         if self.Shape is not None:
             str_res += ', ' + 'x'.join(map(str, self.Shape))
             if self.Type=='Gauss':
