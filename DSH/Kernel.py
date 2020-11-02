@@ -117,7 +117,7 @@ class Kernel():
             coords = []
             for i in range(self.Dimensions):
                 coords.append(np.subtract(np.asarray(range(self.Shape[i])), self.Center[i]))
-            grid = np.meshgrid(*coords)
+            grid = np.meshgrid(*coords, indexing='ij')
             if (self.Type=='Gauss'):
                 kerND = np.zeros_like(grid[0])
                 for i in range(self.Dimensions):
