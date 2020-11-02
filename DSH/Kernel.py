@@ -30,6 +30,10 @@ class Kernel():
         self.Type = None
         self.Shape = None
         self.Dimensions = 0
+        self.KernelParams = None
+        self.Padding = False
+        self.convolveMode = 'valid'
+        self.convolve_kwargs = {}
         if (kernel_specs is not None):
             self.Initialize(**kernel_specs)
             
@@ -71,9 +75,9 @@ class Kernel():
         self.Center = np.true_divide(np.subtract(self.Shape, 1), 2)
         
         if (kernel_type=='Gauss'):
-            self.params = self.GaussParams(sf.CheckIterableVariable(self.params['sigma'], n_dim))
+            self.KernelParams = self.GaussParams(sf.CheckIterableVariable(params['sigma'], n_dim))
         elif (kernel_type=='flat'):
-            self.params = None
+            self.KernelParams = None
             
         self.Padding = padding
         if padding:
@@ -88,8 +92,8 @@ class Kernel():
                'type'   : self.Type,
                'n_dim'  : self.Dimensions,
                }
-        if self.params is not None:
-            res.update(self.params.ToDict())
+        if self.KernelParams is not None:
+            res.update(self.KernelParams.ToDict())
         res.update({'padding': self.Padding,
                    'convolveMode': self.convolveMode,
                    'convolve_kwargs': self.convolve_kwargs})
@@ -98,6 +102,9 @@ class Kernel():
     def ToMatrix(self):
         """Computes the convolution kernel for ROI computation
         """
+        
+        assert self.Type is not None, 'Kernel not initialized'
+        
         if (self.Type=='Flat'):
             kerND = np.ones(self.Shape)
         else:
@@ -108,7 +115,7 @@ class Kernel():
             if (self.Type=='Gauss'):
                 kerND = np.zeros_like(grid[0])
                 for i in range(self.Dimensions):
-                    kerND -= np.divide(np.square(grid[i]), 2*np.square(self.params.sigma[i]))
+                    kerND -= np.divide(np.square(grid[i]), 2*np.square(self.KernelParams.sigma[i]))
                 kerND = np.exp(kerND)
             else:
                 raise ValueError('Kernel type "' + str(self.Type) + '" not supported')
