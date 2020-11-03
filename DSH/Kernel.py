@@ -35,7 +35,7 @@ class Kernel():
         self.convolveMode = 'valid'
         self.convolve_kwargs = {}
         if (kernel_specs is not None):
-            self.Initialize(**kernel_specs)
+            self.FromDict(kernel_specs)
             
     def __repr__(self):
         str_res = '<Kernel [' + str(self.Dimensions) + 'D ' + str(self.Type) + ']'
@@ -52,6 +52,33 @@ class Kernel():
                 str_res += ', s=(' + ';'.join(map(str, self.KernelParams.sigma)) + ')'
         str_res += '>'
         return str_res
+    
+    def FromDict(self, dict_source):
+        """ Initialize kernel from dictionnary        
+
+        Parameters
+        ----------
+        dict_source : dict. Must have the following keys: ['shape', 'type', 'padding']
+        """
+        assert ('shape' in dict_source and 'type' in dict_source and 'padding' in dict_source), 'Source dict missing required keys'
+        
+        _shape   = sf.StrParse(dict_source['shape'], int)
+        _type    = str(dict_source['type'])
+        _padding = sf.StrParse(dict_source['padding'], bool)
+        if (_type=='Gauss'):
+            assert 'sigma' in dict_source, 'Gaussian kernel dict missing sigma key'
+            _params = {'sigma':sf.StrParse(dict_source['sigma'], float)}
+        else:
+            _params = {}
+        if 'n_dim' in dict_source:
+            n_dim = int(dict_source['n_dim'])
+        else:
+            n_dim = len(_shape)
+        _conv_kwargs = {}
+        if 'convolve_kwargs' in dict_source:
+            _conv_kwargs.update(sf.StrParse(dict_source['convolve_kwargs']))
+        
+        self.Initialize(_shape, _type, _params, n_dim, _padding, _conv_kwargs)
     
     def Initialize(self, shape, kernel_type, params={}, n_dim=2, padding=False, convolve_kwargs={}):
         """ Initialize kernel

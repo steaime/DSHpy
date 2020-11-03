@@ -3,14 +3,8 @@ import configparser
 import collections
 import logging
 import numpy as np
-import pkg_resources
-pkg_installed = {pkg.key for pkg in pkg_resources.working_set}
-if 'json' in pkg_installed:
-    import json
-    use_json = True
-else:
-    import ast
-    use_json = False
+
+from DSH import SharedFunctions as sf
     
 def Duplicate(other_config):
     """ Creates a duplicate of a Config object
@@ -144,37 +138,7 @@ class Config():
         variable. Can be dictionary or list.
         """
         if (self.config.has_option(sect, key)):
-            res = self.config[sect][key]
-            if (str(res)[0] in ['[','(', '{']):
-                if use_json:
-                    res = json.loads(res)
-                else:
-                    res = ast.literal_eval(res)
-            if (type(res) in [list,tuple]):
-                for i in range(len(res)):
-                    if (type(res[i]) in [list,tuple]):
-                        if (cast_type is not None):
-                            for j in range(len(res[i])):
-                                res[i][j] = cast_type(res[i][j])
-                    else:
-                        if (cast_type is not None):
-                            res[i] = cast_type(res[i])
-                        
-                return res
-            elif (cast_type is bool):
-                return self.config.getboolean(sect, key)
-            elif (cast_type is int):
-                return self.config.getint(sect, key)
-            elif (cast_type is float):
-                if (res == 'nan'):
-                    return np.nan
-                else:
-                    return self.config.getfloat(sect, key)
-            else:
-                if (cast_type is None):
-                    return res
-                else:
-                    return cast_type(res)
+            return sf.StrParse(self.config[sect][key], cast_type)
         else:
             if not silent:
                 print('"' + key + '" not found in section "' + sect + '": default value ' + str(default) + ' returned.')

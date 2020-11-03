@@ -4,6 +4,15 @@ import inspect
 import numpy as np
 import math
 import collections
+
+import pkg_resources
+pkg_installed = {pkg.key for pkg in pkg_resources.working_set}
+if 'json' in pkg_installed:
+    import json
+    use_json = True
+else:
+    import ast
+    use_json = False
   
 def AllIntInStr(my_string):
     arr_str = re.findall(r'\d+', my_string)
@@ -25,6 +34,43 @@ def LastIntInStr(my_string):
         return arr[len(arr)-1]
     else:
         return None
+
+def StrParse(my_string, cast_type=None):
+    res = my_string
+    if (str(res)[0] in ['[','(', '{']):
+        if use_json:
+            res = json.loads(res)
+        else:
+            res = ast.literal_eval(res)
+    if (type(res) in [list,tuple]):
+        for i in range(len(res)):
+            if (type(res[i]) in [list,tuple]):
+                if (cast_type is not None):
+                    for j in range(len(res[i])):
+                        res[i][j] = cast_type(res[i][j])
+            else:
+                if (cast_type is not None):
+                    res[i] = cast_type(res[i])
+        return res
+    elif (cast_type is bool):
+        if (type(res) is bool):
+            return res
+        else:
+            return str(my_string).strip().lower() in ['true', '1', 't', 'y', 'yes']
+    elif (cast_type is float):
+        if (type(res) is float):
+            return res
+        elif (res == 'nan'):
+            return np.nan
+        else:
+            return float(my_string)
+    else:
+        if (cast_type is None):
+            return res
+        elif (type(res) is cast_type):
+            return res
+        else:
+            return cast_type(res)
         
 def GetFilenameFromCompletePath(my_string):
     res = None

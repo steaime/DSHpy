@@ -2,6 +2,7 @@ import os
 import numpy as np
 import time
 from scipy import signal
+import DSH
 from DSH import Config as cf
 from DSH import MIfile as MI
 from DSH import MIstack as MIs
@@ -24,8 +25,7 @@ def LoadFromConfig(ConfigFile, outFolder=None):
     config = cf.Config(ConfigFile)
     if (outFolder is None):
         outFolder = config.Get('corrmap_parameters', 'out_folder')
-    kernel_specs = config.ToDict(section='kernel')
-    kernel_specs['padding'] = config.Get('kernel', 'padding', True, bool)
+    kernel_specs = DSH.Kernel.Kernel(config.ToDict(section='kernel'))
     return CorrMaps(MI.MIfile(None,config.ToDict(section='imgs_metadata')),\
                             outFolder, config.Get('corrmap_parameters', 'lags', [], int),\
                             kernel_specs, config.Get('corrmap_parameters', 'img_range', None, int),\
