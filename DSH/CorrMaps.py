@@ -139,6 +139,7 @@ class CorrMaps():
                     self.imgIdx[tidx, lidx, 1] = -1
     
     def ExportConfiguration(self):
+        print({'imgs_metadata' : self.MIinput.GetMetadata()})
         cf.ExportDict({'imgs_metadata' : self.MIinput.GetMetadata(),
                        'corrmap_metadata' : self.outMetaData,
                        'corrmap_parameters' : {'out_folder' : self.outFolder,
