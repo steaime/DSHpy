@@ -162,10 +162,10 @@ class Config():
                 if None, export all sections
         """
         if (section is None):
-            return self.config._sections
+            return dict(self.config._sections)
         else:
             if (self.config.has_section(section)):
-                return self.config._sections[section]
+                return dict(self.config._sections[section])
             else:
                 print('WARNING: section not found in current configuration. Available sections are: ' + str(self.GetSections()))
                 return {}
