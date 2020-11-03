@@ -3,6 +3,7 @@ import numpy as np
 import time
 from scipy import signal
 import DSH
+from DSH import Kernel
 from DSH import Config as cf
 from DSH import MIfile as MI
 from DSH import MIstack as MIs
