@@ -402,12 +402,10 @@ def radialAverage(image, nbins, center=None, r_range=None, weights=None, returna
 
     if weights is None:
         weights = np.ones_like(image)
-        norm = np.bincount(whichbin)[1:]
-    else:
-        norm = np.array([weights.flat[whichbin==b].sum() for b in range(1,int(nbins+1))])
+    norm = np.array([weights.flat[whichbin==b].sum() for b in range(1,nbins+1)])
     
     
-    ang_prof = np.array([(image*weights)[whichbin==b].sum() *1.0/norm[b-1] for b in range(1,int(nbins+1))])
+    ang_prof = np.array([(image*weights)[whichbin==b].sum() *1.0/norm[b-1] for b in range(1,nbins+1)])
 
     if interpnan:
         ang_prof = np.interp(bin_centers,bin_centers[ang_prof==ang_prof],\
@@ -472,21 +470,17 @@ def azimuthalAverage(image, center=None, stddev=False, returnradii=False, return
 
     if weights is None:
         weights = np.ones(image.shape)
-        # how many per bin (i.e., histogram)?
-        # there are never any in bin 0, because the lowest index returned by digitize is 1
-        #nr = np.bincount(whichbin)[1:]
-        nr = np.bincount(whichbin)[1:]
-    else:
-        nr = np.array([weights.flat[whichbin==b].sum() for b in range(1,int(nbins+1))])
-        if stddev:
-            raise ValueError("Weighted standard deviation is not defined.")
+    elif stddev:
+        raise ValueError("Weighted standard deviation is not defined.")
+    # normalization factor for each bin
+    nr = np.array([weights.flat[whichbin==b].sum() for b in range(1,nbins+1)])
 
     # recall that bins are from 1 to nbins (which is expressed in array terms by arange(nbins)+1 or xrange(1,nbins+1) )
     # radial_prof.shape = bin_centers.shape
     if stddev:
         radial_prof = np.array([image.flat[whichbin==b].std() for b in range(1,nbins+1)])
     else:
-        radial_prof = np.array([(image*weights).flat[whichbin==b].sum() *1.0/nr[b-1] for b in range(1,int(nbins+1))])
+        radial_prof = np.array([(image*weights).flat[whichbin==b].sum() *1.0/nr[b-1] for b in range(1,nbins+1)])
 
     #import pdb; pdb.set_trace()
 
