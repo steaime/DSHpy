@@ -287,7 +287,7 @@ def GenerateGrid2D(shape, extent=None, center=[0, 0], angle=0, coords='cartesian
     else:
         raise ValueError('Unknown coordinate system ' + str(coords))
 
-def PolarMaskBinary(coords, shape, center=None, common_mask=None, binary_res=False):
+def GeneratePolarMasks(coords, shape, center=None, common_mask=None, binary_res=False):
     """Generate a list of regions of interest, labelled either in the form of binary images, 
     each one with 0s everywhere and 1 inside the region of interest,
     or by mask index, 0-based (in this case only one mask is returned).
@@ -334,41 +334,48 @@ def PolarMaskBinary(coords, shape, center=None, common_mask=None, binary_res=Fal
     else:
         return res-1
 
-def PolarMaskCoords(r_list, a_list):
+def PolarMaskCoords(r_list, a_list, flatten_res=True):
     """Generate a list of polar masks coordinates, each mask of the form [r, a, dr, da]
     
     Parameters
     ----------
     r_list    : list of radii (in pixel units)
     a_list    : list of angles. zero angle corresponds with the +x axis direction
+    flatten_res: if True, flatten the (r, a) dimensions into a single list.
+                otherwise, return a 3D array with separate r and a axes
     
     Returns
     -------
-    mSpecs: List of [r, a, dr, da]
+    mSpecs: 2D or 3D array, depending on flatten_res. Last dimension is [r, a, dr, da]
     """
-    mSpecs = []
+    mSpecs = np.empty((len(r_list) - 1, len(a_list) - 1, 4), dtype=float)
     for r_idx in range(len(r_list) - 1):
         for a_idx in range(len(a_list) - 1):
-            mSpecs.append([0.5*(r_list[r_idx] + r_list[r_idx+1]),\
-                           0.5*(a_list[a_idx] + a_list[a_idx+1]),\
-                           r_list[r_idx+1] - r_list[r_idx],\
-                           a_list[a_idx+1] - a_list[a_idx]])
-    return mSpecs
+            mSpecs[r_idx, a_idx] = [0.5*(r_list[r_idx] + r_list[r_idx+1]),\
+                                    0.5*(a_list[a_idx] + a_list[a_idx+1]),\
+                                    r_list[r_idx+1] - r_list[r_idx],\
+                                    a_list[a_idx+1] - a_list[a_idx]]
+    if flatten_res:
+        return mSpecs.reshape(-1, mSpecs.shape[-1])
+    else:
+        return mSpecs
 
-def radialAverage(image, center=None, r_range=None, weights=None, returnangles=False):
+def radialAverage(image, nbins, center=None, r_range=None, weights=None, returnangles=False, 
+                  return_norm=False, interpnan=False, left=None, right=None):
     """
     Calculate the angular profile averaged along the radial direction.
 
     Parameters
     ----------
     image        - The 2D image
+    nbins        - Number of angular slices
     center       - The [x,y] pixel coordinates used as the center. The default is 
                    None, which then uses the center of the image (including 
                    fractional pixels).
     r_range      - [r_min, r_max], the range of radii to consider in the average.
-                   Set r_max to -1 to 
+                   Set r_max to None not to set any upper bound
     returnangles - if specified, return (radii_array,radial_profile)
-    return_na    - if specified, return number of pixels per angle *and* radius
+    return_norm  - if specified, return normalization factor *and* radius
     binsize - size of the averaging bin, in radians.
     weights - can do a weighted average instead of a simple average if this keyword parameter
         is set.  weights.shape must = image.shape.
@@ -379,10 +386,40 @@ def radialAverage(image, center=None, r_range=None, weights=None, returnangles=F
     divide-by-sum-of-weights component.
     """
     if r_range is None:
-        r_min, r_max = 0, np.linalg.norm(image.shape)
+        r_min, r_max = 0, None
     else:
         r_min, r_max = r_range
+    if r_max is None:
+        r_max = np.linalg.norm(image.shape)
+        
+    bins = np.linspace(-np.pi, np.pi, nbins+1, endpoint=True)
+    r_map, a_map = GenerateGrid2D(image.shape, center=center, coords='polar')
+    whichbin = np.digitize(a_map, bins)*np.logical_and(r_map>=r_min, r_map<r_max)
+    bin_centers = (bins[1:]+bins[:-1])/2.0
     
+    #coords = PolarMaskCoords(r_list=[r_min, r_max], a_list=a_list, flatten_res=True)
+    #whichbin = GeneratePolarMasks(coords, image.shape, center=center, binary_res=False)
+
+    if weights is None:
+        weights = np.ones_like(image)
+        norm = np.bincount(whichbin)[1:]
+    else:
+        norm = np.array([weights.flat[whichbin==b].sum() for b in range(1,int(nbins+1))])
+    
+    
+    ang_prof = np.array([(image*weights)[whichbin==b].sum() *1.0/norm[b-1] for b in range(1,int(nbins+1))])
+
+    if interpnan:
+        ang_prof = np.interp(bin_centers,bin_centers[ang_prof==ang_prof],\
+                             ang_prof[ang_prof==ang_prof],left=left,right=right)
+
+    
+    if returnangles:
+        return bin_centers, ang_prof
+    elif return_norm:
+        return norm, bin_centers, ang_prof
+    else:
+        return ang_prof
     
 def azimuthalAverage(image, center=None, stddev=False, returnradii=False, return_nr=False, 
         binsize=0.5, weights=None, steps=False, interpnan=False, left=None, right=None):
@@ -438,7 +475,7 @@ def azimuthalAverage(image, center=None, stddev=False, returnradii=False, return
         # how many per bin (i.e., histogram)?
         # there are never any in bin 0, because the lowest index returned by digitize is 1
         #nr = np.bincount(whichbin)[1:]
-        nr = np.bincount(whichbin)
+        nr = np.bincount(whichbin)[1:]
     else:
         nr = np.array([weights.flat[whichbin==b].sum() for b in range(1,int(nbins+1))])
         if stddev:
@@ -449,8 +486,7 @@ def azimuthalAverage(image, center=None, stddev=False, returnradii=False, return
     if stddev:
         radial_prof = np.array([image.flat[whichbin==b].std() for b in range(1,nbins+1)])
     else:
-        radial_prof = np.array([(image*weights).flat[whichbin==b].sum() /\
-                                weights.flat[whichbin==b].sum() for b in range(1,int(nbins+1))])
+        radial_prof = np.array([(image*weights).flat[whichbin==b].sum() *1.0/nr[b-1] for b in range(1,int(nbins+1))])
 
     #import pdb; pdb.set_trace()
 
