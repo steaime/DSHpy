@@ -360,7 +360,7 @@ def PolarMaskCoords(r_list, a_list, flatten_res=True):
     else:
         return mSpecs
 
-def radialAverage(image, nbins, center=None, r_range=None, weights=None, returnangles=False, 
+def radialAverage(image, nbins, center=None, r_range=None, stddev=False, weights=None, returnangles=False, 
                   return_norm=False, interpnan=False, left=None, right=None):
     """
     Calculate the angular profile averaged along the radial direction.
@@ -374,13 +374,13 @@ def radialAverage(image, nbins, center=None, r_range=None, weights=None, returna
                    fractional pixels).
     r_range      - [r_min, r_max], the range of radii to consider in the average.
                    Set r_max to None not to set any upper bound
+    stddev       - if specified, return the azimuthal standard deviation instead of the average
+    weights      - can do a weighted average instead of a simple average if this keyword parameter
+                   is set.  weights.shape must = image.shape.
     returnangles - if specified, return (radii_array,radial_profile)
     return_norm  - if specified, return normalization factor *and* radius
-    binsize - size of the averaging bin, in radians.
-    weights - can do a weighted average instead of a simple average if this keyword parameter
-        is set.  weights.shape must = image.shape.
-   interpnan - Interpolate over NAN values, i.e. bins where there is no data?
-        left,right - passed to interpnan; they set the extrapolated values
+    interpnan    - Interpolate over NAN values, i.e. bins where there is no data?
+                   left,right - passed to interpnan; they set the extrapolated values
 
     If a bin contains NO DATA, it will have a NAN value because of the
     divide-by-sum-of-weights component.
@@ -402,10 +402,14 @@ def radialAverage(image, nbins, center=None, r_range=None, weights=None, returna
 
     if weights is None:
         weights = np.ones_like(image)
-    norm = np.array([weights.flat[whichbin==b].sum() for b in range(1,nbins+1)])
+    elif stddev:
+        raise ValueError("Weighted standard deviation is not defined.")
+    norm = np.array([weights[whichbin==b].sum() for b in range(1,nbins+1)])
     
-    
-    ang_prof = np.array([(image*weights)[whichbin==b].sum() *1.0/norm[b-1] for b in range(1,nbins+1)])
+    if stddev:
+        ang_prof = np.array([(image*weights)[whichbin==b].std() for b in range(1,nbins+1)])
+    else:
+        ang_prof = np.array([(image*weights)[whichbin==b].sum() *1.0/norm[b-1] for b in range(1,nbins+1)])
 
     if interpnan:
         ang_prof = np.interp(bin_centers,bin_centers[ang_prof==ang_prof],\
