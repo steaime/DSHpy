@@ -254,8 +254,9 @@ class CorrMaps():
         return self.cmapStack
     
     def CloseMaps(self):
-        self.cmapStack.CloseAll()
-        self.cmapStack = None
+        if (self.cmapStack is not None):
+            self.cmapStack.CloseAll()
+            self.cmapStack = None
     
     def GetCorrMapsNumber(self):
         assert (self.cmapStack is not None), 'Correlation maps not loaded yet'
