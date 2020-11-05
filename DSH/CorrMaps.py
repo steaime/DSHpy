@@ -40,14 +40,16 @@ class CorrMaps():
         
         Parameters
         ----------
-        MIin : input multi image file (MIfile class)
-        outFolder : output folder path. If the directory doesn't exist, it will be created
-        lagList : list of lagtimes (in image units, regardless the step specified in imgRange)
+        MIin       : input multi image file (MIfile class) or stack of files (MIstack class)
+                     both inputs can be used equivalently. If a stack is given, it will be considered
+                     as a 't' type stack
+        outFolder  : output folder path. If the directory doesn't exist, it will be created
+        lagList    : list of lagtimes (in image units, regardless the step specified in imgRange)
         convKernel : DSH.Kernel object 
-        imgRange : range of images to be analyzed [start_idx, end_idx, step_idx]
-                    if None, all images will be analyzed
-        cropROI : ROI to be analyzed: [topleftx, toplefty, width, height]
-                    if None, full images will be analyzed
+        imgRange   : range of images to be analyzed [start_idx, end_idx, step_idx]
+                     if None, all images will be analyzed
+        cropROI    : ROI to be analyzed: [topleftx, toplefty, width, height]
+                     if None, full images will be analyzed
         """
         self.MIinput = MIin
         self.outFolder = outFolder
@@ -90,7 +92,7 @@ class CorrMaps():
         str_res  = '\n|-----------------|'
         str_res += '\n| CorrMaps class: |'
         str_res += '\n|-----------------+---------------'
-        str_res += '\n| MI Filename     : ' + str(self.MIinput.GetFilename())
+        str_res += '\n| MI input        : ' + str(self.MIinput.__repr__())
         str_res += '\n| output folder   : ' + str(self.outFolder)
         str_res += '\n| lag times (' + str(self.numLags).zfill(2) + ')  : ' 
         lag_per_row = 20
@@ -139,7 +141,7 @@ class CorrMaps():
                     self.imgIdx[tidx, lidx, 1] = -1
     
     def ExportConfiguration(self):
-        cf.ExportDict({'imgs_metadata' : self.MIinput.GetMetadata(),
+        cf.ExportDict({'imgs_metadata' : self.MIinput.GetMetadata(section='MIfile'),
                        'corrmap_metadata' : self.outMetaData,
                        'corrmap_parameters' : {'out_folder' : self.outFolder,
                                                'lags' : self.lagList,

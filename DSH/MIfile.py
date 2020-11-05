@@ -407,10 +407,10 @@ class MIfile():
             self.ReadFileHandle.close()
             self.ReadFileHandle = None
     
-    def GetMetadata(self):
+    def GetMetadata(self, section='MIfile'):
         """Returns dictionary with metadata
         """
-        return self.MetaData.ToDict(section='MIfile')
+        return self.MetaData.ToDict(section=section)
     
     def MetadataToDict(self, section=None):
         """Returns dictionary with metadata

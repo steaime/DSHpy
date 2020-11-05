@@ -5,18 +5,19 @@ from DSH import Config as cf
 from DSH import MIfile as MI
 from DSH import SharedFunctions as sf
 
-def LoadFolder(mi_folder, config_fname, config_section='MIfile', mi_prefix='', mi_ext='.dat', mi_sort='ASC', open_mifiles=True):
+def LoadFolder(mi_folder, config_fname, config_section='MIfile', mi_prefix='', mi_ext='.dat', mi_sort='ASC', open_mifiles=True, stack_type='tau'):
     """Searches for MIfiles in a folder and loads them
         
     Parameters
     ----------
-    mi_folder : folder to search.
-    config_fname : full path of configuration filename
+    mi_folder      : folder to search.
+    config_fname   : full path of configuration filename
     config_section : title of the configuration section
-    mi_prefix : filter only files in folder whose filename begins with mi_prefix
-    mi_ext :    filter only files in folder whose filename ends with mi_ext
-    mi_sort :   sort filenames in ascending (ASC) or descending (DESC) order
-    open_mifiles : if True, open all MIfiles for reading
+    mi_prefix      : filter only files in folder whose filename begins with mi_prefix
+    mi_ext         : filter only files in folder whose filename ends with mi_ext
+    mi_sort        : sort filenames in ascending (ASC) or descending (DESC) order
+    open_mifiles   : if True, open all MIfiles for reading
+    stack_type     : {'tau','t'}, sets MIstack.StackType
     
     Returns
     -------
@@ -27,41 +28,64 @@ def LoadFolder(mi_folder, config_fname, config_section='MIfile', mi_prefix='', m
     assert os.path.isdir(mi_folder), 'MIfile folder ' + str(mi_folder) + ' not found.'
     assert os.path.isfile(config_fname), 'Configuration file ' + str(config_fname) + ' not found'
     all_mi_fnames = sf.FindFileNames(mi_folder, Prefix=mi_prefix, Ext=mi_ext, Sort=mi_sort, AppendFolder=True)
-    mi_stack = MIstack(MIfiles=all_mi_fnames, MetaData=config_fname, MetaDataSection=config_section, Load=True, OpenFiles=open_mifiles)
+    mi_stack = MIstack(MIfiles=all_mi_fnames, MetaData=config_fname, MetaDataSection=config_section, Load=True, OpenFiles=open_mifiles, StackType=stack_type)
     return mi_stack
 
 class MIstack():
     """ Class containing a stack of MIfile sharing the same folder and configuration file """
     
-    def __init__(self, MIfiles=[], MetaData=None, MetaDataSection=None, Load=False, OpenFiles=True):
+    def __init__(self, MIfiles=[], MetaData=None, MetaDataSection=None, Load=False, OpenFiles=True, StackType='tau'):
         """Initialize MIstack
         
         Parameters
         ----------
-        MIfiles : list of MIfiles. Can be a list of filenames, a list of MIfile objects
-        MetaData : metadata common to all MIfiles. string or dict. 
-                    if string: filename of metadata file
-                    if dict: dictionary with metadata.
+        MIfiles         : list of MIfiles. Can be a list of filenames, a list of MIfile objects
+                          NOTE: MIfiles must have identical image shape (num_imgs, num_rows, num_cols)
+        MetaData        : metadata common to all MIfiles. string or dict. 
+                          if string: filename of metadata file
+                          if dict: dictionary with metadata.
         MetaDataSection : load section of the configuration file
-        Load : if True, load metadata and MIfiles directly upon initialization.
-        OpenFiles : if loading MIfiles, eventually open them for reading
+        Load            : if True, load metadata and MIfiles directly upon initialization.
+        OpenFiles       : if loading MIfiles, eventually open them for reading
+        StackType       : {'tau','t'} 
+                          if 't', interpret MIfiles as consecutive parts of a long experiment
+                          if 'tau' (default), interpret different MIfiles as videos of the same time range
+                          where what varies is a fourth dimension (e.g. z or tau).
+                          Note: in practice, all functions are accessible independently of the stack type
+                          but the distinction is made for the sake of clarity and for future implementations
         """
         
         self.MIfiles = MIfiles
         self.MetaData = MetaData
         self.IdxList = []
+        self.MIshape = [0,0,0]
+        self.StackType = StackType
         self._loaded = False
         if Load:
             self.LoadMetadata(MetaDataSection=MetaDataSection)
             if (len(MIfiles)>0):
                 if (isinstance(MIfiles[0],str)):
                     self.LoadFiles(MIfiles, metadata_section=MetaDataSection, open_mifiles=OpenFiles, replace_previous=True)
+    
+    def __repr__(self):
+        return '<MIstack [%s]: %sx%sx%sx%sx%s bytes>' % (self.StackType, self.Count(), self.ImgsPerMIfile, self.ImgHeight, self.ImgWidth, self.PixelDepth)
+    
+    def __str__(self):
+        str_res  = '\n|----------------|'
+        str_res += '\n| MIstack class: |'
+        str_res += '\n|----------------+---------------'
+        str_res += '\n| MIfile number  : ' + str(self.Count())
+        str_res += '\n| MIshape        : ' + str(self.Shape) + ' px'
+        str_res += '\n| Pixel format   : ' + str(self.PixelFormat) + ' (' + str(self.PixelDepth) + ' bytes/px)'
+        str_res += '\n| Stack type     : ' + str(self.StackType)
+        str_res += '\n|----------------+---------------'
+        return str_res
 
     def __del__(self):
         self.CloseAll()
 
     def LoadMetadata(self, MetaData=None, MetaDataSection=None):
-        """Load metadata
+        """Load metadata from dict or filename
         
         Parameters
         ----------
@@ -72,14 +96,27 @@ class MIstack():
             self.MetaData = MetaData
         assert (self.MetaData is not None), 'No Metadata to be loaded'
         self.MetaData = cf.LoadMetadata(self.MetaData, MetaDataSection)
+        self.MIshape = self.MetaData.Get('MIfile', 'shape', [0,0,0], int)
+        self.hdrSize = self.MetaData.Get('MIfile', 'hdr_len', 0, int)
+        self.gapBytes = self.MetaData.Get('MIfile', 'gap_bytes', 0, int)
+        self.ImgsPerMIfile = self.MIshape[0]
+        self.ImgHeight = self.MIshape[1]
+        self.ImgWidth = self.MIshape[2]
+        self.PxPerImg = self.ImgHeight * self.ImgWidth
+        self.PixelFormat = self.MetaData.Get('MIfile', 'px_format', 'B', str)
+        self.PixelDepth = MI._data_depth[self.PixelFormat]
+        self.PixelDataType = MI._data_types[self.PixelFormat]
+        self.FPS = self.MetaData.Get('MIfile', 'fps', 1.0, float)
+        self.PixelSize = self.MetaData.Get('MIfile', 'px_size', 1.0, float)
 
-    def LoadFiles(self, mi_fnames=None, metadata_section='MIfile', open_mifiles=True, replace_previous=False):
+
+    def LoadFiles(self, mi_fnames, metadata_section='MIfile', open_mifiles=True, replace_previous=False):
         """Load list of filenames
         
         Parameters
         ----------
-        mi_fnames : list of filenames (full path)
-        open_mifiles : if True, open each MIfile for reading
+        mi_fnames        : list of filenames (full path, str)
+        open_mifiles     : if True, open each MIfile for reading
         replace_previous : if True, replace eventual preexisting list of MIfile
         """
         if (replace_previous or self.MIfiles is None):
@@ -90,34 +127,71 @@ class MIstack():
             self.MIfiles.append(MI.MIfile(mi_fnames[i], self.MetaData.ToDict(section=metadata_section)))
             if open_mifiles:
                 self.MIfiles[-1].OpenForReading()
-        self._loaded = True
+        self._loaded = True        
     
     def MIindexes(self):
-        return self.IdxList
-    
+        return self.IdxList    
     def GetMIfiles(self):
-        return self.MIfiles
-    
+        return self.MIfiles    
     def Count(self):
-        return len(self.MIfiles)
-    
+        return len(self.MIfiles)    
     def GetMetaData(self, section=None):
         assert isinstance(self.MetaData, cf.Config), 'MetaData not loaded yet: ' + str(self.MetaData)
         return self.MetaData.ToDict(section=section)
-    
     def ImageShape(self):
-        shape3D = self.MetaData.Get('MIfile', 'shape', [0,0,0], int)
-        return (shape3D[1], shape3D[2])
-    
+        return (self.MIshape[1], self.MIshape[2])
+    def ImageHeight(self):
+        return int(self.ImgHeight)
+    def ImageWidth(self):
+        return int(self.ImgWidth)    
+    def ImageNumber(self):
+        return len(self.MIfiles)*self.ImgsPerMIfile    
+    def ValidateROI(self, ROI):
+        return MI.ValidateROI(ROI, self.ImageShape())
+    def GetFPS(self):
+        return float(self.FPS)
+    def GetPixelSize(self):
+        return float(self.PixelSize)
+
+    def OpenForReading(self):
+        if (self.MIfiles is not None):
+            for midx in range(len(self.MIfiles)):
+                if isinstance(self.MIfiles[midx], MI.MIfile):
+                    self.MIfiles[midx].OpenForReading()
+    def Close(self):
+        self.CloseAll()
     def CloseAll(self):
-        for midx in range(len(self.MIfiles)):
-            if isinstance(self.MIfiles[midx], MI.MIfile):
-                self.MIfiles[midx].Close()
-                
+        if (self.MIfiles is not None):
+            for midx in range(len(self.MIfiles)):
+                if isinstance(self.MIfiles[midx], MI.MIfile):
+                    self.MIfiles[midx].Close()
+    
+    def GetImage(self, img_idx, MI_idx=None, cropROI=None):
+        """Read single image from MIfile
+        
+        Parameters
+        ----------
+        img_idx : index of the image, 0-based. If -N, it will get the Nth last image
+        MI_idx  : index of the MIfile from which the image has to be read.
+                  if MI_idx is None, the stack is considered as a 't' stack, and 
+                  img_idx ranges from 0 to ImageNumber() and is interpreted as the 
+                  index of the image since the beginning of the stack (MI #0).
+                  In this case, the MIfile containing the image is calculated at runtime
+                  Otherwise, if MI_idx is given, img_idx ranges from 0 to ImgsPerMIfile
+        cropROI : if None, full image is returned
+                  otherwise, [topleftx (0-based), toplefty (0-based), width, height]
+                  width and/or height can be -1 to signify till the end of the image
+        """
+        if MI_idx is None:
+            MI_idx = img_idx // self.ImgsPerMIfile
+            img_in_mi = img_idx % self.ImgsPerMIfile
+        else:
+            img_in_mi = img_idx
+        self.MIfiles[MI_idx].GetImage(img_in_mi, cropROI=cropROI)
                 
     def GetTimetrace(self, pxLocs, zRange=None, idx_list=None, excludeIdxs=[], returnCoords=False,\
                          squeezeResult=True, readConsecutive=1, lagFlip=False, zStep=1, mask_cropROI=None):
-        """Returns (t, tau) data for a given set of pixels
+        """Returns (t, tau) data for a given set of pixels (assumes self.StackType=='tau')
         
         Parameters
         ----------
@@ -178,7 +252,7 @@ class MIstack():
             return res
         
     def GetValues(self, pxLocs, tList, idx_list, do_squeeze=True, readConsecutive=1, lagFlip=None, zStep=1, mask_cropROI=None):
-        """Get values relative to a bunch of pixel location, time points and lags
+        """Get values relative to a bunch of pixel location, time points and lags (assumes self.StackType=='tau')
         
         Parameters
         ----------
