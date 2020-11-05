@@ -193,7 +193,7 @@ class MIstack():
             img_in_mi = img_idx % self.ImgsPerMIfile
         else:
             img_in_mi = img_idx
-        self.MIfiles[MI_idx].GetImage(img_in_mi, cropROI=cropROI)
+        return self.MIfiles[MI_idx].GetImage(img_in_mi, cropROI=cropROI)
                 
     def GetTimetrace(self, pxLocs, zRange=None, idx_list=None, excludeIdxs=[], returnCoords=False,\
                          squeezeResult=True, readConsecutive=1, lagFlip=False, zStep=1, mask_cropROI=None):
