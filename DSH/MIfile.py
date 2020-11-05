@@ -215,6 +215,7 @@ class MIfile():
         str_res += '\n| Shape         : ' + str(self.Shape) + ' px'
         str_res += '\n| Pixel format  : ' + str(self.PixelFormat) + ' (' + str(self.PixelDepth) + ' bytes/px)'
         str_res += '\n| Status        : '
+        str_status = ''
         if (self.WriteFileHandle is not None):
             str_status = 'Open for writing'
         if (self.ReadFileHandle is not None):
