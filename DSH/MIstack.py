@@ -75,7 +75,8 @@ class MIstack():
         str_res += '\n| MIstack class: |'
         str_res += '\n|----------------+---------------'
         str_res += '\n| MIfile number  : ' + str(self.Count())
-        str_res += '\n| MIshape        : ' + str(self.Shape) + ' px'
+        str_res += '\n| MIshape        : ' + str(self.MIshape) + ' px'
+        str_res += '\n| Image number   : ' + str(self.ImageNumber())
         str_res += '\n| Pixel format   : ' + str(self.PixelFormat) + ' (' + str(self.PixelDepth) + ' bytes/px)'
         str_res += '\n| Stack type     : ' + str(self.StackType)
         str_res += '\n|----------------+---------------'
@@ -133,6 +134,11 @@ class MIstack():
         return self.IdxList    
     def GetMIfiles(self):
         return self.MIfiles    
+    def GetMIfile(self, MI_idx):
+        if (MI_idx>0 and MI_idx<len(self.MIfiles)):
+            return self.MIfiles[MI_idx]
+        else:
+            return None
     def Count(self):
         return len(self.MIfiles)    
     def GetMetaData(self, section=None):

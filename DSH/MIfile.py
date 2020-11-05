@@ -214,6 +214,17 @@ class MIfile():
         str_res += '\n| Header        : ' + str(self.hdrSize) + ' bytes'
         str_res += '\n| Shape         : ' + str(self.Shape) + ' px'
         str_res += '\n| Pixel format  : ' + str(self.PixelFormat) + ' (' + str(self.PixelDepth) + ' bytes/px)'
+        str_res += '\n| Status        : '
+        if (self.WriteFileHandle is not None):
+            str_status = 'Open for writing'
+        if (self.ReadFileHandle is not None):
+            if (len(str_status)>0):
+                str_status += ' and for reading'
+            else:
+                str_status = 'Open for reading'
+        if (len(str_status)<=0):
+            str_status = 'Closed'
+        str_res += str_status
         str_res += '\n|---------------+---------------'
         return str_res
 
