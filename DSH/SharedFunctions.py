@@ -34,8 +34,41 @@ def LastIntInStr(my_string):
         return arr[len(arr)-1]
     else:
         return None
+    
+def ReportCyclic(var, start_val=-np.pi, period=2*np.pi):
+    """ Reports a given cyclic variable (e.g. an angle) 
+    in the range [start_val, start_val+period)
+
+    Parameters
+    ----------
+    var : float, array-like. Variable to be reportedd
+    start_val : float, array-like. Minimum value the variable can take
+    period : float, array-like. Winding period
+
+    Returns
+    -------
+    reported variable
+    """
+    return np.add(np.mod(np.subtract(var, start_val), period), start_val)
+
+def ReportAngle(angle, start_angle=-np.pi):
+    return ReportCyclic(angle, start_val=start_angle, period=2*np.pi)
 
 def StrParse(my_string, cast_type=None):
+    """ Casts a string into the desired type, 
+    taking care of lists, tuples, None values and dictionnaries
+    
+    Parameters
+    ----------
+    my_string : str, input string
+    cast_type : data type. if None, just cast string into None, list, tuple or dict, if relevant
+                If data type is specified (e.g. int, float, bool), variable 
+                (or every element in variable, if applicable) will be cast to given type
+
+    Returns
+    -------
+    res : list, tuple, dict or variable type depending on the input string and cast_type
+    """
     res = my_string
     if str(res).strip().lower() in ['none', '']:
         return None
