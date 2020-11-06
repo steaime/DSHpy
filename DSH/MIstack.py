@@ -141,7 +141,7 @@ class MIstack():
             return None
     def Count(self):
         return len(self.MIfiles)    
-    def GetMetaData(self, section=None):
+    def GetMetadata(self, section=None):
         assert isinstance(self.MetaData, cf.Config), 'MetaData not loaded yet: ' + str(self.MetaData)
         return self.MetaData.ToDict(section=section)
     def ImageShape(self):
