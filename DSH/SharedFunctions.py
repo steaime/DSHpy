@@ -321,7 +321,7 @@ def GenerateGrid2D(shape, extent=None, center=[0, 0], angle=0, coords='cartesian
     else:
         raise ValueError('Unknown coordinate system ' + str(coords))
 
-def ProbeLocation2D(loc, matrix, coords=None, metric='cartesian', interpolate='nearest'):
+def ProbeLocation2D(loc, matrix, coords=None, metric='cartesian', interpolate='nearest', return_if_outside=False):
     """Probe matrix cell whose location is closest to given location
 
     Parameters
@@ -333,19 +333,17 @@ def ProbeLocation2D(loc, matrix, coords=None, metric='cartesian', interpolate='n
              If None, they will be generated using matrix.shape
     metric : {'cartesian', 'polar'}: metric to be used to calculate distances
     interpolate : {'nearest'}, for future developments
+    return_if_outside: if False, return None if loc is outside the boundaries of coords
 
     Returns
     -------
     val : matrix element
-    
-    
-    TODO - STRATEGY:
-        1: compute matrix of distances from loc
-        2: find location of minimum
-        3: extract corresponding matrix element
     """
     if coords is None:
         coords = GenerateGrid2D(matrix.shape, coords=metric)
+    if not return_if_outside:
+        if (loc[0]<np.min(coords[0]) or loc[0]>np.max(coords[0])) and (loc[1]<np.min(coords[1]) or loc[1]>np.max(coords[1])):
+            return None
     if (metric=='cartesian'):
         dist = np.hypot(coords[0]-loc[0], coords[1]-loc[1])
     elif (metric=='polar'):
