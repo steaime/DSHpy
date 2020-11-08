@@ -413,9 +413,9 @@ def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True
                 cur_addidx = bisect.bisect_left(_ang, ext_priorpos[i]+search_range-2*np.pi)
                 search_x = np.concatenate((search_x, _ang[:cur_addidx]+2*np.pi))
                 search_y = np.concatenate((search_y, _angprof[:cur_addidx]))
-            nvalid = np.count_nonzero(~np.isnan(search_y))
-            if nvalid>3:
-                z = np.polyfit(search_x, search_y, 2)
+            filter_idx = np.isfinite(search_y)
+            if np.count_nonzero(filter_idx)>3:
+                z = np.polyfit(search_x[filter_idx], search_y[filter_idx], 2)
                 cur_pos = -z[1] / (2*z[0])
                 cur_pos_xy = np.add(center,[res_r[ridx]*np.cos(cur_pos), res_r[ridx]*np.sin(cur_pos)])
                 if (cur_pos>search_x[0] and cur_pos<search_x[-1] and cur_pos_xy[0]>0 and 
