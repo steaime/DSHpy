@@ -291,7 +291,7 @@ def GenerateGrid2D(shape, extent=None, center=[0, 0], angle=0, coords='cartesian
     Returns
     -------
     _grid  : couple of 2D arrays with coordinates for each pixel
-             (either [x, y] or [r, theta])
+             (either [x, y] or [r, theta], with theta in [-pi, pi] range)
     '''
     
     # Note: matplotlib extent is [x_left, x_right, y_bottom, y_top], 
@@ -339,21 +339,99 @@ def ProbeLocation2D(loc, matrix, coords=None, metric='cartesian', interpolate='n
     -------
     val : matrix element
     """
-    if coords is None:
-        coords = GenerateGrid2D(matrix.shape, coords=metric)
-    if not return_if_outside:
-        if (loc[0]<np.min(coords[0]) or loc[0]>np.max(coords[0])) and (loc[1]<np.min(coords[1]) or loc[1]>np.max(coords[1])):
-            return None
-    if (metric=='cartesian'):
-        dist = np.hypot(coords[0]-loc[0], coords[1]-loc[1])
-    elif (metric=='polar'):
-        dist = np.hypot(coords[0]*np.cos(coords[1])-loc[0]*np.cos(loc[1]),\
-                        coords[0]*np.sin(coords[1])-loc[0]*np.sin(loc[1]))
+    if np.isnan(loc[0]) or np.isnan(loc[1]):
+        return None
     else:
-        raise ValueError('Metric ' + str(metric) + ' not supported')
-    min_pos = np.unravel_index(dist.argmin(), dist.shape)
-    return matrix[min_pos]
+        if coords is None:
+            coords = GenerateGrid2D(matrix.shape, coords=metric)
+        if not return_if_outside:
+            if (loc[0]<np.min(coords[0]) or loc[0]>np.max(coords[0])) and (loc[1]<np.min(coords[1]) or loc[1]>np.max(coords[1])):
+                return None
+        if (metric=='cartesian'):
+            dist = np.hypot(coords[0]-loc[0], coords[1]-loc[1])
+        elif (metric=='polar'):
+            dist = np.hypot(coords[0]*np.cos(coords[1])-loc[0]*np.cos(loc[1]),\
+                            coords[0]*np.sin(coords[1])-loc[0]*np.sin(loc[1]))
+        else:
+            raise ValueError('Metric ' + str(metric) + ' not supported')
+        min_pos = np.unravel_index(dist.argmin(), dist.shape)
+        return matrix[min_pos]
     
+
+def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True, r_avg_w=2, search_range=0.3, r_step=1, angbins=360):
+    """Finds the min and max of a 2D array along the azimuthal direction
+    
+    Parameters
+    ----------
+    vmaps        : [vx_map, vy_map], couple of 2D arrays with x and y component
+    center       : [x0, y0], origin position, in pixels
+    search_start : [theta_0, theta_1, ..., theta_n], prior guess of extrema position (in radians)
+                   Values will be used for the smallest radial annulus (r=r_step) and then eventually updated.
+                   Length of this list will set n_extrema
+    update_search: if True, update search_start with last position found. Otherwise, keep search_start as is
+    r_avg_w      : calculate azimuthal profile by averaging over a small radial window.
+                   r_avg_w is the std of the Gaussian window used, in pixels
+    search_range : the extremum will be searched within search_range radians from the previous position
+    r_step       : sample step, in pixels
+    angbins      : number of angular bins in evaluating the radial profile
+    
+    Returns
+    -------
+    ext_pos      : [n_radii x n_extrema] 2D array with extrema positions [radians]
+                   element will be np.nan if search failed
+    ext_val      : [n_radii x n_extrema] 2D array with array values at the extrema
+                   element will be np.nan if search failed
+    res_r        : array of length n_radii with radii of annuli analyzed
+    quad_id      : map of quadrant id (int). Value would increase by 1 as an extremum is encountered
+                   running along an annulus counterclockwise
+    """
+    
+    _r, _theta = GenerateGrid2D(arr.shape, extent=None, center=center, angle=0, coords='polar')
+    n_radii = int(np.max(_r)//r_step)+1
+    n_extrema = len(search_start)
+    
+    res_r = np.linspace(r_step, r_step*n_radii, n_radii, endpoint=True)
+    ext_pos = np.ones((n_radii, n_extrema), dtype=float) * np.nan
+    ext_val = np.ones_like(ext_pos) * np.nan
+    quad_id = -np.ones_like(arr, dtype=int)
+    
+    ext_priorpos = search_start.copy()
+    last_valid_ext = search_start.copy()
+    
+    for ridx in range(n_radii):
+        cur_w = np.exp(np.divide(np.square(_r-res_r[ridx]),-2*r_avg_w**2))
+        _ang, _angprof = radialAverage(arr, nbins=360, center=center, weights=cur_w, returnangles=True)
+        for i in range(len(ext_priorpos)):
+            cur_minidx = bisect.bisect_left(_ang, ext_priorpos[i]-search_range)
+            cur_maxidx = bisect.bisect_right(_ang, ext_priorpos[i]+search_range)
+            search_x, search_y = _ang[cur_minidx:cur_maxidx], _angprof[cur_minidx:cur_maxidx]
+            if (ext_priorpos[i]-search_range < _ang[0]):
+                cur_addidx = bisect.bisect_left(_ang, ext_priorpos[i]-search_range+2*np.pi)
+                search_x = np.concatenate((_ang[cur_addidx:]-2*np.pi, search_x))
+                search_y = np.concatenate((_angprof[cur_addidx:], search_y))
+            if (ext_priorpos[i]+search_range > _ang[-1]):
+                cur_addidx = bisect.bisect_left(_ang, ext_priorpos[i]+search_range-2*np.pi)
+                search_x = np.concatenate((search_x, _ang[:cur_addidx]+2*np.pi))
+                search_y = np.concatenate((search_y, _angprof[:cur_addidx]))
+            nvalid = np.count_nonzero(~np.isnan(search_y))
+            if nvalid>3:
+                z = np.polyfit(search_x, search_y, 2)
+                cur_pos = -z[1] / (2*z[0])
+                cur_pos_xy = np.add(center,[res_r[ridx]*np.cos(cur_pos), res_r[ridx]*np.sin(cur_pos)])
+                if (cur_pos>search_x[0] and cur_pos<search_x[-1] and cur_pos_xy[0]>0 and 
+                    cur_pos_xy[0]<arr.shape[1] and cur_pos_xy[1]>0 and cur_pos_xy[1]<arr.shape[0]):
+                    ext_pos[ridx,i] = cur_pos
+                    ext_val[ridx,i] = (4*z[0]*z[2]-z[1]**2)/(4*z[0])
+                    if update_search:
+                        ext_priorpos[i] = cur_pos
+                    last_valid_ext[i] = cur_pos
+
+        ann_pos = np.where(np.logical_and(_r>res_r[ridx]-r_step, _r<=res_r[ridx]))
+        quad_id[ann_pos] = np.digitize(_theta[ann_pos], last_valid_ext)
+
+    quad_id[quad_id==len(search_start)]=0 # First and last quadrant_id are actually the same quadrant
+    
+    return ext_pos, ext_val, res_r, quad_id
 
 def GeneratePolarMasks(coords, shape, center=None, common_mask=None, binary_res=False):
     """Generate a list of regions of interest, labelled either in the form of binary images, 
