@@ -482,7 +482,7 @@ def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True
             if ridx==0:
                 ann_pos = np.where(_r<=res_r[ridx])              
             else:
-                ann_pos = np.where(np.logical_and(_r>res_r[ridx]-r_step, _r<=res_r[ridx]))
+                ann_pos = np.where(np.logical_and(_r>=res_r[ridx]-r_step, _r<=res_r[ridx]))
             quad_id[ann_pos] = np.digitize(_theta[ann_pos], last_valid_ext)
 
     if return_quads:
