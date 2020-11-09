@@ -400,8 +400,8 @@ def ProbeLocation2D(loc, matrix, coords=None, metric='cartesian', interpolate='n
         return matrix[min_pos]
     
 
-def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True, r_avg_w=2, 
-                         search_range=0.3, r_step=1, r_start=None, angbins=360, mask=None, return_quads=True):
+def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True, r_avg_w=2, search_range=0.3, 
+                         r_step=1, r_start=None, angbins=360, mask=None, return_quads=True, extrap_first=False):
     """Finds the min and max of a 2D array along the azimuthal direction
     
     Parameters
@@ -422,6 +422,7 @@ def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True
     angbins      : number of angular bins in evaluating the radial profile
     mask         : 2d array of weights to be assigned to each arr elements. Should be float in [0,1] range. 
                    Default (None) sets all weights to 1
+    extrap_first : if True, eventual np.nan values for small radii will be set to first non-nan value
     
     Returns
     -------
@@ -444,10 +445,12 @@ def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True
     ext_pos = np.ones((n_radii, n_extrema), dtype=float) * np.nan
     ext_val = np.ones_like(ext_pos) * np.nan
     if return_quads:
+        quad_review_first = 0
         quad_id = -np.ones_like(arr, dtype=int)
     
     ext_priorpos = search_start.copy()
-    last_valid_ext = search_start.copy()
+    last_valid_ext = np.ones_like(search_start) * np.nan
+    
     
     if mask is None:
         mask = np.ones_like(arr)
@@ -455,7 +458,7 @@ def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True
     for ridx in range(n_radii):
         cur_w = np.multiply(np.exp(np.divide(np.square(_r-res_r[ridx]),-2*r_avg_w**2)), mask)
         _ang, _angprof = radialAverage(arr, nbins=360, center=center, weights=cur_w, returnangles=True)
-        for i in range(len(ext_priorpos)):
+        for i in range(n_extrema):
             cur_minidx = bisect.bisect_left(_ang, ext_priorpos[i]-search_range)
             cur_maxidx = bisect.bisect_right(_ang, ext_priorpos[i]+search_range)
             search_x, search_y = _ang[cur_minidx:cur_maxidx], _angprof[cur_minidx:cur_maxidx]
@@ -480,17 +483,38 @@ def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True
                         ext_priorpos[i] = cur_pos
                     last_valid_ext[i] = cur_pos
 
-        if return_quads:
-            if ridx==0:
-                ann_pos = np.where(_r<=res_r[ridx])              
-            else:
-                ann_pos = np.where(np.logical_and(_r>=res_r[ridx]-r_step, _r<=res_r[ridx]))
-            quad_id[ann_pos] = np.digitize(_theta[ann_pos], last_valid_ext)
+        if return_quads or extrap_first:
+            if np.count_nonzero(np.isnan(last_valid_ext))>0:
+                quad_review_first += 1
+            elif return_quads:
+                if ridx==0:
+                    ann_pos = np.where(_r<=res_r[ridx])              
+                else:
+                    ann_pos = np.where(np.logical_and(_r>=res_r[ridx]-r_step, _r<=res_r[ridx]))
+                quad_id[ann_pos] = np.digitize(_theta[ann_pos], last_valid_ext)
+
+    if return_quads or extrap_first:
+        if quad_review_first>0:
+            for i in range(n_extrema):
+                for ridx in range(n_radii):
+                    if not np.isnan(ext_pos[ridx,i]):
+                        last_valid_ext[i] = ext_pos[ridx,i]
+                        break
+            for ridx in range(quad_review_first-1, -1, -1):
+                for i in range(n_extrema):
+                    if not np.isnan(ext_pos[ridx,i]):
+                        last_valid_ext[i] = ext_pos[ridx,i]
+                    elif extrap_first:
+                        ext_pos[ridx,i] = last_valid_ext[i]
+                if return_quads:
+                    if ridx==0:
+                        ann_pos = np.where(_r<=res_r[ridx])              
+                    else:
+                        ann_pos = np.where(np.logical_and(_r>=res_r[ridx]-r_step, _r<=res_r[ridx]))
+                    quad_id[ann_pos] = np.digitize(_theta[ann_pos], last_valid_ext)
 
     if return_quads:
         quad_id[quad_id==len(search_start)]=0 # First and last quadrant_id are actually the same quadrant
-    
-    if return_quads:
         return ext_pos, ext_val, res_r, quad_id
     else:
         return ext_pos, ext_val, res_r
