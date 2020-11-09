@@ -435,10 +435,10 @@ def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True
     _r, _theta = GenerateGrid2D(arr.shape, extent=None, center=center, angle=0, coords='polar')
     if r_start is None:
         r_start = r_step
-    n_radii = int((np.max(_r) - r_start)//r_step)+1
+    n_radii = int((np.max(_r) - r_start)//r_step)+2
     n_extrema = len(search_start)
     
-    res_r = np.linspace(r_start, r_start+r_step*n_radii, n_radii, endpoint=True)
+    res_r = np.linspace(r_start, r_start+r_step*(n_radii-1), n_radii, endpoint=True)
     ext_pos = np.ones((n_radii, n_extrema), dtype=float) * np.nan
     ext_val = np.ones_like(ext_pos) * np.nan
     if return_quads:
