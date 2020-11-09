@@ -400,12 +400,13 @@ def ProbeLocation2D(loc, matrix, coords=None, metric='cartesian', interpolate='n
         return matrix[min_pos]
     
 
-def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True, r_avg_w=2, search_range=0.3, r_step=1, angbins=360):
+def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True, r_avg_w=2, 
+                         search_range=0.3, r_step=1, r_start=None, angbins=360, mask=None, return_quads=True):
     """Finds the min and max of a 2D array along the azimuthal direction
     
     Parameters
     ----------
-    vmaps        : [vx_map, vy_map], couple of 2D arrays with x and y component
+    arr          : 2D array with scalar quantity to be analyzed
     center       : [x0, y0], origin position, in pixels
     search_start : [theta_0, theta_1, ..., theta_n], prior guess of extrema position (in radians)
                    Values will be used for the smallest radial annulus (r=r_step) and then eventually updated.
@@ -415,7 +416,10 @@ def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True
                    r_avg_w is the std of the Gaussian window used, in pixels
     search_range : the extremum will be searched within search_range radians from the previous position
     r_step       : sample step, in pixels
+    r_start      : starting radius to be analyzed. If None, r_start=r_step
     angbins      : number of angular bins in evaluating the radial profile
+    mask         : 2d array of weights to be assigned to each arr elements. Should be float in [0,1] range. 
+                   Default (None) sets all weights to 1
     
     Returns
     -------
@@ -425,23 +429,29 @@ def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True
                    element will be np.nan if search failed
     res_r        : array of length n_radii with radii of annuli analyzed
     quad_id      : map of quadrant id (int). Value would increase by 1 as an extremum is encountered
-                   running along an annulus counterclockwise
+                   running along an annulus counterclockwise. Returned only if return_quads==True
     """
     
     _r, _theta = GenerateGrid2D(arr.shape, extent=None, center=center, angle=0, coords='polar')
-    n_radii = int(np.max(_r)//r_step)+1
+    if r_start is None:
+        r_start = r_step
+    n_radii = int((np.max(_r) - r_start)//r_step)+1
     n_extrema = len(search_start)
     
-    res_r = np.linspace(r_step, r_step*n_radii, n_radii, endpoint=True)
+    res_r = np.linspace(r_start, r_start+r_step*n_radii, n_radii, endpoint=True)
     ext_pos = np.ones((n_radii, n_extrema), dtype=float) * np.nan
     ext_val = np.ones_like(ext_pos) * np.nan
-    quad_id = -np.ones_like(arr, dtype=int)
+    if return_quads:
+        quad_id = -np.ones_like(arr, dtype=int)
     
     ext_priorpos = search_start.copy()
     last_valid_ext = search_start.copy()
     
+    if mask is None:
+        mask = np.ones_like(arr)
+    
     for ridx in range(n_radii):
-        cur_w = np.exp(np.divide(np.square(_r-res_r[ridx]),-2*r_avg_w**2))
+        cur_w = np.multiply(np.exp(np.divide(np.square(_r-res_r[ridx]),-2*r_avg_w**2)), mask)
         _ang, _angprof = radialAverage(arr, nbins=360, center=center, weights=cur_w, returnangles=True)
         for i in range(len(ext_priorpos)):
             cur_minidx = bisect.bisect_left(_ang, ext_priorpos[i]-search_range)
@@ -468,12 +478,17 @@ def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True
                         ext_priorpos[i] = cur_pos
                     last_valid_ext[i] = cur_pos
 
-        ann_pos = np.where(np.logical_and(_r>res_r[ridx]-r_step, _r<=res_r[ridx]))
-        quad_id[ann_pos] = np.digitize(_theta[ann_pos], last_valid_ext)
+        if return_quads:
+            ann_pos = np.where(np.logical_and(_r>res_r[ridx]-r_step, _r<=res_r[ridx]))
+            quad_id[ann_pos] = np.digitize(_theta[ann_pos], last_valid_ext)
 
-    quad_id[quad_id==len(search_start)]=0 # First and last quadrant_id are actually the same quadrant
+    if return_quads:
+        quad_id[quad_id==len(search_start)]=0 # First and last quadrant_id are actually the same quadrant
     
-    return ext_pos, ext_val, res_r, quad_id
+    if return_quads:
+        return ext_pos, ext_val, res_r, quad_id
+    else:
+        return ext_pos, ext_val, res_r
 
 def GeneratePolarMasks(coords, shape, center=None, common_mask=None, binary_res=False):
     """Generate a list of regions of interest, labelled either in the form of binary images, 
