@@ -411,7 +411,9 @@ def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True
     search_start : [theta_0, theta_1, ..., theta_n], prior guess of extrema position (in radians)
                    Values will be used for the smallest radial annulus (r=r_step) and then eventually updated.
                    Length of this list will set n_extrema
-    update_search: if True, update search_start with last position found. Otherwise, keep search_start as is
+    update_search: if >0, use input prior for r<update_search (in pixels), and 
+                          update search_start with last position found for r>=update_search.
+                   if <=0, always use given prior for search position.
     r_avg_w      : calculate azimuthal profile by averaging over a small radial window.
                    r_avg_w is the std of the Gaussian window used, in pixels
     search_range : the extremum will be searched within search_range radians from the previous position
@@ -474,7 +476,7 @@ def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True
                     cur_pos_xy[0]<arr.shape[1] and cur_pos_xy[1]>0 and cur_pos_xy[1]<arr.shape[0]):
                     ext_pos[ridx,i] = cur_pos
                     ext_val[ridx,i] = (4*z[0]*z[2]-z[1]**2)/(4*z[0])
-                    if update_search:
+                    if update_search>0 and res_r[ridx]>=update_search:
                         ext_priorpos[i] = cur_pos
                     last_valid_ext[i] = cur_pos
 
