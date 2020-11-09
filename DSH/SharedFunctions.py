@@ -264,6 +264,48 @@ def MoveListElement(lst, old_idx, new_idx):
 
 
 
+def hue_to_rgb(hue_map):
+    """ Converts hue map to RGB
+    
+    Parameters
+    ----------
+    hue_map : 2d array of size [N,M] of floats in [0,1] range.
+              They represent the hue coordinates of color
+    
+    Returns
+    -------
+    im_rgb : 3d array of same shape as im_hsl, except that the channels
+             (again floats in [0,1] range) now represent RGB coordinates
+             of a color with saturation=1 and luminescence=0.5
+    """
+    res_rgb = np.empty((hue_map.shape[0], hue_map.shape[1], 3))
+    res_rgb[:,:,0] = np.abs(hue_map * 6.0 - 3.0) - 1.0
+    res_rgb[:,:,1] = 2.0 - np.abs(hue_map * 6.0 - 2.0)
+    res_rgb[:,:,2] = 2.0 - np.abs(hue_map * 6.0 - 4.0)
+    return np.clip(res_rgb, 0.0, 1.0)
+    
+
+def hsl_to_rgb(im_hsl):
+    """ Converts HSL image to RGB
+    
+    Parameters
+    ----------
+    im_hsl : 3d array of size [N,M,3], with three channels 
+             (floats in [0,1] range) representing color coordinates in HSL space
+    
+    Returns
+    -------
+    im_rgb : 3d array of same shape as im_hsl, except that the channels
+             (again floats in [0,1] range) now represent RGB coordinates
+    """
+    im_rgb = hue_to_rgb(im_hsl[:,:,0])
+    c = (1.0 - np.abs(2.0 * im_hsl[:,:,2] - 1.0)) * im_hsl[:,:,1]
+    for i in range(3):
+        im_rgb[:,:,i] = (im_rgb[:,:,i] - 0.5) * c + im_hsl[:,:,2]
+    return im_rgb
+
+
+
 
 
 def GenerateGrid2D(shape, extent=None, center=[0, 0], angle=0, coords='cartesian', indexing='xy'):
