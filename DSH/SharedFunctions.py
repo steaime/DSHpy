@@ -415,6 +415,8 @@ def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True
     update_search: if >0, use input prior for r<update_search (in pixels), and 
                           update search_start with last position found for r>=update_search.
                    if <=0, always use given prior for search position.
+                   if accept_range is not None, update_search is also used to 'activate'
+                   the finer accept range 
     r_avg_w      : calculate azimuthal profile by averaging over a small radial window.
                    r_avg_w is the std of the Gaussian window used, in pixels
     r_avg_cut    : if 0, use all available radii (with Gaussian weights)
@@ -503,9 +505,14 @@ def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True
                 z = np.polyfit(search_x, search_y, 2)
                 cur_pos = -z[1] / (2*z[0])
                 cur_pos_xy = np.add(center,[res_r[ridx]*np.cos(cur_pos), res_r[ridx]*np.sin(cur_pos)])
-                if ((np.abs(cur_pos-ext_priorpos[i])<accept_range or 
-                     (np.abs(cur_pos-ext_priorpos[i])<search_range and np.isnan(last_valid_ext[i]))) and 
-                    cur_pos_xy[0]>0 and cur_pos_xy[0]<arr.shape[1] and cur_pos_xy[1]>0 and cur_pos_xy[1]<arr.shape[0]):
+                if (update_search>0 and res_r[ridx]<update_search) or np.isnan(last_valid_ext[i]):
+                    if fit_range is None:
+                        cur_accept = (np.abs(cur_pos-ext_priorpos[i])<search_range)
+                    else:
+                        cur_accept = (np.abs(cur_pos-ext_priorpos[i])<fit_range)
+                else:
+                    cur_accept = (np.abs(cur_pos-ext_priorpos[i])<accept_range)
+                if (cur_accept and cur_pos_xy[0]>0 and cur_pos_xy[0]<arr.shape[1] and cur_pos_xy[1]>0 and cur_pos_xy[1]<arr.shape[0]):
                     ext_pos[ridx,i] = cur_pos
                     ext_val[ridx,i] = (4*z[0]*z[2]-z[1]**2)/(4*z[0])
                     if update_search>0 and res_r[ridx]>=update_search:
