@@ -486,8 +486,9 @@ def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True
                 z = np.polyfit(search_x[filter_idx], search_y[filter_idx], 2)
                 cur_pos = -z[1] / (2*z[0])
                 cur_pos_xy = np.add(center,[res_r[ridx]*np.cos(cur_pos), res_r[ridx]*np.sin(cur_pos)])
-                if (np.abs(cur_pos-ext_priorpos[i])<accept_range and cur_pos_xy[0]>0 and 
-                    cur_pos_xy[0]<arr.shape[1] and cur_pos_xy[1]>0 and cur_pos_xy[1]<arr.shape[0]):
+                if ((np.abs(cur_pos-ext_priorpos[i])<accept_range or 
+                     (np.abs(cur_pos-ext_priorpos[i])<search_range and np.isnan(last_valid_ext[i]))) and 
+                    cur_pos_xy[0]>0 and cur_pos_xy[0]<arr.shape[1] and cur_pos_xy[1]>0 and cur_pos_xy[1]<arr.shape[0]):
                     ext_pos[ridx,i] = cur_pos
                     ext_val[ridx,i] = (4*z[0]*z[2]-z[1]**2)/(4*z[0])
                     if update_search>0 and res_r[ridx]>=update_search:
