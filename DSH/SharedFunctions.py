@@ -401,7 +401,7 @@ def ProbeLocation2D(loc, matrix, coords=None, metric='cartesian', interpolate='n
     
 
 def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True, r_avg_w=2, r_avg_cut=0, search_range=0.3, 
-                         r_step=1, r_start=None, angbins=360, mask=None, return_quads=True, extrap_first=False):
+                         accept_range=None, r_step=1, r_start=None, angbins=360, mask=None, return_quads=True, extrap_first=False):
     """Finds the min and max of a 2D array along the azimuthal direction
     
     Parameters
@@ -418,7 +418,10 @@ def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True
                    r_avg_w is the std of the Gaussian window used, in pixels
     r_avg_cut    : if 0, use all available radii (with Gaussian weights)
                    if >0, trim weights to +/- r_avg_cut*r_avg_w
-    search_range : the extremum will be searched within search_range radians from the previous position
+    search_range : the extremum will be searched by fitting a parabola to data within 
+                   search_range radians from the previous position
+    accept_range : the extremum will be accepted only if it lays within accept_range of prior guess
+                   if None (default), accept_range will be set to search_range
     r_step       : sample step, in pixels
     r_start      : starting radius to be analyzed. If None, r_start=r_step
     angbins      : number of angular bins in evaluating the radial profile
@@ -453,6 +456,8 @@ def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True
     ext_priorpos = search_start.copy()
     last_valid_ext = np.ones_like(search_start) * np.nan
     
+    if accept_range is None:
+        accept_range = search_range
     
     if mask is None:
         mask = np.ones_like(arr)
@@ -481,7 +486,7 @@ def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True
                 z = np.polyfit(search_x[filter_idx], search_y[filter_idx], 2)
                 cur_pos = -z[1] / (2*z[0])
                 cur_pos_xy = np.add(center,[res_r[ridx]*np.cos(cur_pos), res_r[ridx]*np.sin(cur_pos)])
-                if (cur_pos>search_x[0] and cur_pos<search_x[-1] and cur_pos_xy[0]>0 and 
+                if (np.abs(cur_pos-ext_priorpos[i])<accept_range and cur_pos_xy[0]>0 and 
                     cur_pos_xy[0]<arr.shape[1] and cur_pos_xy[1]>0 and cur_pos_xy[1]<arr.shape[0]):
                     ext_pos[ridx,i] = cur_pos
                     ext_val[ridx,i] = (4*z[0]*z[2]-z[1]**2)/(4*z[0])
