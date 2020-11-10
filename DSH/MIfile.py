@@ -180,6 +180,31 @@ def Validate_zRange(zRange, zSize, replaceNone=True):
     if (len(zRange) < 3):
         zRange.append(1)
     return zRange
+
+def ReadBinary(fname, shape, px_format, offset=0, endian=''):
+    """ Read binary file to np.ndarray
+    
+    Parameters
+    ----------
+    fname : str, full path to file
+    shape : tuple with shape of output array (int). It will dictate how many values to read
+    px_format : char with pixel format (see _data_types)
+    offset : int, start reading from offset, in bytes
+    endian : {'>','<',''}. Use '>' to read big-endian, '<' to read little-endian, '' to use system default
+    
+    Returns
+    -------
+    res : ndarray with binary content, None if file is not found
+    """
+    if os.path.isfile(fname):
+        with open(fname, 'rb') as fraw:
+            num_read_vals = int(np.prod(shape))
+            fraw.seek(offset)
+            res = np.asarray(struct.unpack((endian + '%s' + px_format) % num_read_vals,\
+                                           fraw.read(num_read_vals*_data_depth[px_format]))).reshape(shape)
+            return res
+    else:
+        return None
         
 class MIfile():
     """ Class to read/write multi image file (MIfile) """
