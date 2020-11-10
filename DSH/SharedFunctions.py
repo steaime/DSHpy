@@ -494,9 +494,9 @@ def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True
                 search_x, search_y = search_x[filter_idx], search_y[filter_idx]
                 if fit_range is not None:
                     if extrema_ismin[i]:
-                        fine_search_idx = np.argmin(search_y[filter_idx])
+                        fine_search_idx = np.argmin(search_y)
                     else:
-                        fine_search_idx = np.argmax(search_y[filter_idx])
+                        fine_search_idx = np.argmax(search_y)
                     cur_minidx = bisect.bisect_left(search_x, search_x[fine_search_idx]-fit_range)
                     cur_maxidx = bisect.bisect_right(search_x, search_x[fine_search_idx]+fit_range)
                     search_x, search_y = search_x[cur_minidx:cur_maxidx], search_y[cur_minidx:cur_maxidx]                   
