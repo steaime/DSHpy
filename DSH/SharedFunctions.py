@@ -400,8 +400,9 @@ def ProbeLocation2D(loc, matrix, coords=None, metric='cartesian', interpolate='n
         return matrix[min_pos]
     
 
-def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True, r_avg_w=2, r_avg_cut=0, search_range=0.3, 
-                         accept_range=None, r_step=1, r_start=None, angbins=360, mask=None, return_quads=True, extrap_first=False):
+def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True, r_avg_w=2, r_avg_cut=0, search_range=np.pi/4,
+                         extrema_ismin=None, fit_range=None,  accept_range=None, r_step=1, r_start=None, angbins=360, 
+                         mask=None, return_quads=True, extrap_first=False):
     """Finds the min and max of a 2D array along the azimuthal direction
     
     Parameters
@@ -420,6 +421,10 @@ def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True
                    if >0, trim weights to +/- r_avg_cut*r_avg_w
     search_range : the extremum will be searched by fitting a parabola to data within 
                    search_range radians from the previous position
+    extrema_ismin: list of boolean variables, one per extrema. Only used if fit_range is not None.
+                   if extrema_ismin[i] is True, the i-th extremum will be considered a local minimum
+    fit_range    : the extremum will be searched by fitting a parabola to data within 
+                   search_range radians from the local min or max (it needs to know what type of extrema from extrema_type)
     accept_range : the extremum will be accepted only if it lays within accept_range of prior guess
                    if None (default), accept_range will be set to search_range
     r_step       : sample step, in pixels
@@ -483,7 +488,16 @@ def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True
                 search_y = np.concatenate((search_y, _angprof[:cur_addidx]))
             filter_idx = np.isfinite(search_y)
             if np.count_nonzero(filter_idx)>3:
-                z = np.polyfit(search_x[filter_idx], search_y[filter_idx], 2)
+                search_x, search_y = search_x[filter_idx], search_y[filter_idx]
+                if fit_range is not None:
+                    if extrema_ismin[i]:
+                        fine_search_idx = np.argmin(search_y[filter_idx])
+                    else:
+                        fine_search_idx = np.argmax(search_y[filter_idx])
+                    cur_minidx = bisect.bisect_left(search_x, search_x[fine_search_idx]-fit_range)
+                    cur_maxidx = bisect.bisect_right(search_x, search_x[fine_search_idx]+fit_range)
+                    search_x, search_y = search_x[cur_minidx:cur_maxidx], search_y[cur_minidx:cur_maxidx]                   
+                z = np.polyfit(search_x, search_y, 2)
                 cur_pos = -z[1] / (2*z[0])
                 cur_pos_xy = np.add(center,[res_r[ridx]*np.cos(cur_pos), res_r[ridx]*np.sin(cur_pos)])
                 if ((np.abs(cur_pos-ext_priorpos[i])<accept_range or 
