@@ -400,7 +400,7 @@ def ProbeLocation2D(loc, matrix, coords=None, metric='cartesian', interpolate='n
         return matrix[min_pos]
     
 
-def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True, r_avg_w=2, search_range=0.3, 
+def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True, r_avg_w=2, r_avg_cut=0, search_range=0.3, 
                          r_step=1, r_start=None, angbins=360, mask=None, return_quads=True, extrap_first=False):
     """Finds the min and max of a 2D array along the azimuthal direction
     
@@ -416,6 +416,8 @@ def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True
                    if <=0, always use given prior for search position.
     r_avg_w      : calculate azimuthal profile by averaging over a small radial window.
                    r_avg_w is the std of the Gaussian window used, in pixels
+    r_avg_cut    : if 0, use all available radii (with Gaussian weights)
+                   if >0, trim weights to +/- r_avg_cut*r_avg_w
     search_range : the extremum will be searched within search_range radians from the previous position
     r_step       : sample step, in pixels
     r_start      : starting radius to be analyzed. If None, r_start=r_step
@@ -457,7 +459,11 @@ def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True
     
     for ridx in range(n_radii):
         cur_w = np.multiply(np.exp(np.divide(np.square(_r-res_r[ridx]),-2*r_avg_w**2)), mask)
-        _ang, _angprof = radialAverage(arr, nbins=360, center=center, weights=cur_w, returnangles=True)
+        if r_avg_cut<=0:
+            cur_rrange = None
+        else:
+            cur_rrange = [res_r[ridx]-r_avg_w*r_avg_cut, res_r[ridx]+r_avg_w*r_avg_cut]
+        _ang, _angprof = radialAverage(arr, nbins=360, center=center, weights=cur_w, r_range=cur_rrange, returnangles=True)
         for i in range(n_extrema):
             cur_minidx = bisect.bisect_left(_ang, ext_priorpos[i]-search_range)
             cur_maxidx = bisect.bisect_right(_ang, ext_priorpos[i]+search_range)
