@@ -462,7 +462,10 @@ def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True
     last_valid_ext = np.ones_like(search_start) * np.nan
     
     if accept_range is None:
-        accept_range = search_range
+        if fit_range is None:
+            accept_range = search_range
+        else:
+            accept_range = fit_range
     
     if mask is None:
         mask = np.ones_like(arr)
