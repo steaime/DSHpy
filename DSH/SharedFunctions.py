@@ -539,7 +539,9 @@ def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True
                     add_val_id -= 1
                 quad_id[ann_pos] = np.digitize(_theta[ann_pos], last_valid_ext)
                 quad_id[quad_id==len(search_start)]=0
-                quad_id[ann_pos] = np.mod(quad_id[ann_pos]+add_val_id, len(search_start))
+                if add_val_id!=0:
+                    logging.debug('FindAzimuthalExtrema() -- {0}th radius needed to report angles from {1} to {2}: index will be rotated by {3}'.format(ridx, last_valid_ext, reported_valid_ext, add_val_id))
+                    quad_id[ann_pos] = np.mod(quad_id[ann_pos]+add_val_id, len(search_start))
 
     if return_quads or extrap_first:
         if quad_review_first>0:
@@ -573,7 +575,9 @@ def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True
                         add_val_id -= 1
                     quad_id[ann_pos] = np.digitize(_theta[ann_pos], last_valid_ext)
                     quad_id[quad_id==len(search_start)]=0
-                    quad_id[ann_pos] = np.mod(quad_id[ann_pos]+add_val_id, len(search_start))
+                    if add_val_id!=0:
+                        logging.debug('FindAzimuthalExtrema() -- {0}th radius needed to report angles from {1} to {2}: index will be rotated by {3}'.format(ridx, last_valid_ext, reported_valid_ext, add_val_id))
+                        quad_id[ann_pos] = np.mod(quad_id[ann_pos]+add_val_id, len(search_start))
 
     if return_quads:
         return ext_pos, ext_val, res_r, quad_id
