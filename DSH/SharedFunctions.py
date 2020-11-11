@@ -5,6 +5,7 @@ import numpy as np
 import math
 import collections
 import bisect
+import logging
 
 import pkg_resources
 pkg_installed = {pkg.key for pkg in pkg_resources.working_set}
@@ -521,6 +522,7 @@ def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True
 
         if return_quads or extrap_first:
             if np.count_nonzero(np.isnan(last_valid_ext))>0:
+                logging.debug('FindAzimuthalExtrema() -- {0}th radius has incomplete positions: {1}'.format(ridx, last_valid_ext))
                 quad_review_first += 1
             elif return_quads:
                 if ridx==0:
@@ -531,15 +533,19 @@ def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True
 
     if return_quads or extrap_first:
         if quad_review_first>0:
+            logging.debug('FindAzimuthalExtrema() -- Reviewing first {0} radii'.format(quad_review_first))
             for i in range(n_extrema):
                 for ridx in range(n_radii):
                     if not np.isnan(ext_pos[ridx,i]):
                         last_valid_ext[i] = ext_pos[ridx,i]
+                        logging.debug('FindAzimuthalExtrema() -- First radius with valid {0}-th position: {1} (pos = {2:.3f})'.format(i, ridx, ext_pos[ridx,i]))
                         break
+            logging.debug('FindAzimuthalExtrema() -- Complete set of valid positions: {0}'.format(last_valid_ext))
             for ridx in range(quad_review_first-1, -1, -1):
                 for i in range(n_extrema):
                     if not np.isnan(ext_pos[ridx,i]):
                         last_valid_ext[i] = ext_pos[ridx,i]
+                        logging.debug('FindAzimuthalExtrema() -- Updated {0}th position at radius {1} to {2:.3f}'.format(i, ridx, ext_pos[ridx,i]))
                     elif extrap_first:
                         ext_pos[ridx,i] = last_valid_ext[i]
                 if return_quads:
