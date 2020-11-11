@@ -529,7 +529,17 @@ def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True
                     ann_pos = np.where(_r<=res_r[ridx])              
                 else:
                     ann_pos = np.where(np.logical_and(_r>=res_r[ridx]-r_step, _r<=res_r[ridx]))
-                quad_id[ann_pos] = np.digitize(_theta[ann_pos], np.sort(last_valid_ext))
+                reported_valid_ext = list(last_valid_ext)
+                add_val_id = 0
+                while reported_valid_ext[0]<-np.pi:
+                    reported_valid_ext.append(reported_valid_ext.pop(0)+2*np.pi)
+                    add_val_id += 1
+                while reported_valid_ext[-1]>np.pi:
+                    reported_valid_ext.insert(0, reported_valid_ext.pop(len(reported_valid_ext)-1)-2*np.pi)
+                    add_val_id -= 1
+                quad_id[ann_pos] = np.digitize(_theta[ann_pos], last_valid_ext)
+                quad_id[quad_id==len(search_start)]=0
+                quad_id[ann_pos] = np.mod(quad_id[ann_pos]+add_val_id, len(search_start))
 
     if return_quads or extrap_first:
         if quad_review_first>0:
@@ -553,10 +563,19 @@ def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True
                         ann_pos = np.where(_r<=res_r[ridx])              
                     else:
                         ann_pos = np.where(np.logical_and(_r>=res_r[ridx]-r_step, _r<=res_r[ridx]))
+                    reported_valid_ext = list(last_valid_ext)
+                    add_val_id = 0
+                    while reported_valid_ext[0]<-np.pi:
+                        reported_valid_ext.append(reported_valid_ext.pop(0)+2*np.pi)
+                        add_val_id += 1
+                    while reported_valid_ext[-1]>np.pi:
+                        reported_valid_ext.insert(0, reported_valid_ext.pop(len(reported_valid_ext)-1)-2*np.pi)
+                        add_val_id -= 1
                     quad_id[ann_pos] = np.digitize(_theta[ann_pos], last_valid_ext)
+                    quad_id[quad_id==len(search_start)]=0
+                    quad_id[ann_pos] = np.mod(quad_id[ann_pos]+add_val_id, len(search_start))
 
     if return_quads:
-        quad_id[quad_id==len(search_start)]=0 # First and last quadrant_id are actually the same quadrant
         return ext_pos, ext_val, res_r, quad_id
     else:
         return ext_pos, ext_val, res_r
