@@ -403,7 +403,7 @@ def ProbeLocation2D(loc, matrix, coords=None, metric='cartesian', interpolate='n
 
 def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True, r_avg_w=2, r_avg_cut=0, search_range=np.pi/4,
                          extrema_ismin=True, fit_range=None,  accept_range=None, r_step=1, r_start=None, angbins=360, 
-                         mask=None, return_quads=True, extrap_first=False):
+                         mask=None, return_quads=True, extrap_first=False, save_fname=None):
     """Finds the min and max of a 2D array along the azimuthal direction
     
     Parameters
@@ -436,6 +436,7 @@ def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True
     mask         : 2d array of weights to be assigned to each arr elements. Should be float in [0,1] range. 
                    Default (None) sets all weights to 1
     extrap_first : if True, eventual np.nan values for small radii will be set to first non-nan value
+    save_fname   : if not None, save results to file
     
     Returns
     -------
@@ -581,6 +582,10 @@ def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True
                         logging.debug('FindAzimuthalExtrema() -- {0}th radius needed to report angles from {1} to {2}: index will be rotated by {3}'.format(ridx, last_valid_ext, reported_valid_ext, add_val_id))
                         cur_quad = np.mod(cur_quad+add_val_id, len(search_start))
                     quad_id[ann_pos] = cur_quad
+
+    if save_fname is not None:
+        res_arr = np.concatenate((np.reshape(res_r, (len(res_r), 1)), ext_pos, ext_val), axis=1)
+        np.save(save_fname, res_arr)
 
     if return_quads:
         return ext_pos, ext_val, res_r, quad_id
