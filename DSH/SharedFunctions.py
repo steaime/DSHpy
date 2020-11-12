@@ -402,7 +402,7 @@ def ProbeLocation2D(loc, matrix, coords=None, metric='cartesian', interpolate='n
     
 
 def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True, r_avg_w=2, r_avg_cut=0, search_range=np.pi/4,
-                         extrema_ismin=None, fit_range=None,  accept_range=None, r_step=1, r_start=None, angbins=360, 
+                         extrema_ismin=True, fit_range=None,  accept_range=None, r_step=1, r_start=None, angbins=360, 
                          mask=None, return_quads=True, extrap_first=False):
     """Finds the min and max of a 2D array along the azimuthal direction
     
@@ -453,6 +453,8 @@ def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True
         r_start = r_step
     n_radii = int((np.max(_r) - r_start)//r_step)+2
     n_extrema = len(search_start)
+    if type(extrema_ismin) is bool:
+        extrema_ismin = [extrema_ismin] * n_extrema
     
     res_r = np.linspace(r_start, r_start+r_step*(n_radii-1), n_radii, endpoint=True)
     ext_pos = np.ones((n_radii, n_extrema), dtype=float) * np.nan
