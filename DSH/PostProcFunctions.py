@@ -202,7 +202,7 @@ def ProbePolarLocs(loc, matrix, center, return_if_outside=False):
     """
     loc_x = np.around(center[0]+loc[0]*np.cos(loc[1])).astype(int)
     loc_y = np.around(center[1]+loc[0]*np.sin(loc[1])).astype(int)
-    pos_idx = tuple(np.clip(loc_y, 0, matrix.shape[0]-1), np.clip(loc_x, 0, matrix.shape[1]-1))
+    pos_idx = tuple([np.clip(loc_y, 0, matrix.shape[0]-1), np.clip(loc_x, 0, matrix.shape[1]-1)])
     if return_if_outside:
         return matrix[pos_idx]
     else:
