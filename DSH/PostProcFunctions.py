@@ -202,13 +202,12 @@ def ProbePolarLocs(loc, matrix, center, return_if_outside=False):
     """
     loc_x = np.around(center[0]+loc[0]*np.cos(loc[1])).astype(int)
     loc_y = np.around(center[1]+loc[0]*np.sin(loc[1])).astype(int)
+    pos_idx = tuple(np.clip(loc_y, 0, matrix.shape[0]-1), np.clip(loc_x, 0, matrix.shape[1]-1))
     if return_if_outside:
-        pos_idx = tuple(np.clip(loc_y, 0, matrix.shape[0]), np.clip(loc_x, 0, matrix.shape[1]))
         return matrix[pos_idx]
     else:
         pos_ok = np.logical_and.reduce((loc_x>=0, loc_x<matrix.shape[1], loc_y>=0, loc_y<matrix.shape[0]))
-        pos_zip = tuple([loc_y,loc_x])
-        return np.where(pos_ok, matrix[pos_zip], np.nan)
+        return np.where(pos_ok, matrix[pos_idx], np.nan)
     
 def ProbeLocation2D(loc, matrix, coords=None, metric='cartesian', interpolate='nearest', return_if_outside=False):
     """Probe matrix cell whose location is closest to given location
