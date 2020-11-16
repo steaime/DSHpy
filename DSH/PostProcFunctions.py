@@ -2,8 +2,9 @@ import sys
 import logging
 import bisect
 import numpy as np
+import importlib.util
 
-if 'astropy' in sys.modules:
+if importlib.util.find_spec('astropy') is not None:
     from astropy import convolution as astroconv
 else:
     logging.warning('astropy package not found. Advanced image correlation functions will not be available')
