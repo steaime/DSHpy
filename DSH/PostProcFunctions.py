@@ -4,11 +4,9 @@ import bisect
 import numpy as np
 
 if 'astropy' in sys.modules:
-    use_astropy = True
     from astropy import convolution as astroconv
 else:
-    use_astropy = False
-    logging.warning('astropy package not found. Advanced immage correlation functions will not be available')
+    logging.warning('astropy package not found. Advanced image correlation functions will not be available')
     from scipy import signal
 
 def hue_to_rgb(hue_map):
@@ -106,7 +104,7 @@ def ImageConvolve(source_image, kernel, interp_nans=True, conv_norm='auto', norm
     norm_kernel  : If True, kernel will be normalized such that np.sum(kernel)=1 prior to convolution
 
     """
-    if use_astropy:
+    if 'astropy' in sys.modules:
         nantr = 'interpolate' if interp_nans else 'fill'  
         raw_conv = astroconv.convolve(source_image, kernel, boundary='fill', fill_value=0,
                                       normalize_kernel=norm_kernel, nan_treatment=nantr)
@@ -124,36 +122,13 @@ def ImageConvolve(source_image, kernel, interp_nans=True, conv_norm='auto', norm
         logging.warning('ImageConvolve() function best works with astropy package (not found). Using scipy instead: possible nan-related artifacts...')
         if norm_kernel:
             kernel = np.true_divide(kernel, np.sum(kernel))
-        raw_conv = signal.convolve2d(source_image, kernel, mode='constant', cval=0)
+        raw_conv = signal.convolve2d(source_image, kernel, mode='same', boundary='fill', fillvalue=0)
         if conv_norm is None:
             return raw_conv
         else:
             if conv_norm=='auto':
-                conv_norm = signal.convolve2d(np.ones_like(source_image), kernel, mode='constant', cval=0)
+                conv_norm = signal.convolve2d(np.ones_like(source_image), kernel, mode='same', boundary='fill', fillvalue=0)
             return np.divide(raw_conv, conv_norm)
-
-def ProbePolarLocs(loc, matrix, center, return_if_outside=False):
-    """Probe matrix cell whose location is closest to given location, in polar coordinates
-
-    Parameters
-    ----------
-    loc    : [r, theta] coordinates (each one being a float, or a N-long array)
-    matrix : 2D array
-    center : [x0,y0], center of coordinate system
-    return_if_outside: if False, return None if loc is outside the boundaries of coords
-
-    Returns
-    -------
-    val : matrix element (float, or N-long array)
-    """
-    loc_x = np.around(center[0]+loc[0]*np.cos(loc[1])).astype(int)
-    loc_y = np.around(center[1]+loc[0]*np.sin(loc[1])).astype(int)
-    pos_idx = tuple((np.clip(loc_y, 0, matrix.shape[0]-1), np.clip(loc_x, 0, matrix.shape[1]-1)))
-    if return_if_outside:
-        return matrix[pos_idx]
-    else:
-        pos_ok = np.logical_and.reduce((loc_x>=0, loc_x<matrix.shape[1], loc_y>=0, loc_y<matrix.shape[0]))
-        return np.where(pos_ok, matrix[pos_idx], np.nan)
 
 def GenerateGrid2D(shape, extent=None, center=[0, 0], angle=0, coords='cartesian', indexing='xy'):
     '''Generates a grid of pixel coordinates
