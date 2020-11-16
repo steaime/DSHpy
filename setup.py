@@ -2,20 +2,22 @@
 from setuptools import setup
 
 setup(name='DSH',
-      version='0.4',
-      description='Analyze DSH videos',
+      version='0.5',
+      description='Analyze speckle fields, compute correlations, derive motion maps',
       url='https://github.com/steaime/DSHpy',
-      author='Stefano Aime, Matteo Sabato',
-      author_email='aime@seas.harvard.edu',
+      author='Stefano Aime',
+      author_email='stefano.aime@espci.fr',
       license='GNU GPL',
       packages=['DSH'],
       install_requires=[
             'numpy',
             'scipy',
-            'configparser',
-            'emcee',
-            'pandas'
-      ],
+            'configparser'
+      ], 
+      #NOTE: other modules optionally used: emcee
+      #      - emcee (VelMaps)
+      #      - pandas (VelMaps)
+      #      - astropy (PostProcFunctions)
       #test_suite='nose.collector',
       #tests_require=['nose'],
       zip_safe=False)
