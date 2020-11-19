@@ -375,14 +375,18 @@ def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True
     ext_priorpos = search_start.copy()
     last_valid_ext = np.ones_like(search_start) * np.nan
     
-    if accept_range is None:
-        if fit_range is None:
-            accept_range = search_range
-        else:
-            accept_range = fit_range
-    for _rangespec in [search_range, fit_range, accept_range]:
-        if not isinstance(_rangespec, collections.abc.Iterable):
-            _rangespec = [_rangespec] * len(ext_priorpos)
+    if not isinstance(search_range, collections.abc.Iterable):
+        search_range = [search_range] * len(ext_priorpos)
+    if not isinstance(fit_range, collections.abc.Iterable):
+        fit_range = [fit_range] * len(ext_priorpos)
+    if not isinstance(accept_range, collections.abc.Iterable):
+        accept_range = [accept_range] * len(ext_priorpos)
+    for i in range(len(ext_priorpos)):
+        if accept_range[i] is None:
+            if fit_range[i] is None:
+                accept_range[i] = search_range[i]
+            else:
+                accept_range[i] = fit_range[i]
     
     if mask is None:
         mask = np.ones_like(arr)
