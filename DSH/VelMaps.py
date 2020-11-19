@@ -1,17 +1,24 @@
+import sys
 import os
-import numpy as np
 import bisect
+import numpy as np
 import scipy.special as ssp
 from scipy import stats
 from scipy import ndimage as nd
 import datetime
 import logging
 import time
+import importlib.util
 from multiprocessing import Process
 
-
-import emcee
-import pandas as pd
+if importlib.util.find_spec('emcee'):
+    import emcee
+else:
+    logging.warning('emcee package not found. MC sampling and refining functions will not be available')
+if importlib.util.find_spec('pandas'):
+    import pandas as pd
+else:
+    logging.warning('pandas package not found. Some refining functions will not be available')
 
 from DSH import Config as cf
 from DSH import MIfile as MI
@@ -214,6 +221,7 @@ def NearestReplace(data, invalid=None):
     -------
     Return a filled array. 
     """    
+    data = np.asarray(data)
     if invalid is None: invalid = np.isnan(data)
     ind = nd.distance_transform_edt(invalid, return_distances=False, return_indices=True)
     return data[tuple(ind)]
@@ -834,6 +842,10 @@ class VelMaps():
         sampler chain: 3D array with shape ()
         """
         
+        if not ('emcee' in sys.modules):
+            logging.warning('VelMaps.MCsamplePixel() function is not available if emcee package is not installed')
+            return None
+        
         if (dt <= 0):
             dt = self.corr_maps.imgRange[2]/self.GetFPS()
         
@@ -1023,6 +1035,10 @@ class VelMaps():
                     - mean squared error for every pixel
         file_suffix : suffix of the filename of the refined velocity map to be saved
         """
+        
+        if not ('emcee' in sys.modules and 'pandas' in sys.modules):
+            logging.warning('VelMaps.RefineMC() function is not available if either emcee or pandas package is not installed')
+            return None
             
         cropROI = MI.ValidateROI(cropROI, self.ImageShape(), replaceNone=True)
         tRange = MI.Validate_zRange(tRange, self.ImageNumber(), replaceNone=True)

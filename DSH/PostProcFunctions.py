@@ -1,7 +1,9 @@
 import sys
 import logging
 import bisect
+import collections
 import numpy as np
+from scipy import ndimage as nd
 import importlib.util
 
 if importlib.util.find_spec('astropy') is not None:
@@ -130,6 +132,64 @@ def ImageConvolve(source_image, kernel, interp_nans=True, conv_norm='auto', norm
             if conv_norm=='auto':
                 conv_norm = signal.convolve2d(np.ones_like(source_image), kernel, mode='same', boundary='fill', fillvalue=0)
             return np.divide(raw_conv, conv_norm)
+
+def SectImage(im, seg, npoints, fillval=np.nan):
+    '''Slice 2D array along a segment
+
+    Parametes 
+    ---------
+    im:      the 2D array
+    seg:     2x2 array defining segment: [[x0,y0],[x1,y1]]
+    npoints: number of points to sample along the segment
+    fillval: value to use for points that fall outside im
+    '''
+    x, y = np.linspace(seg[0][1], seg[1][1], npoints), np.linspace(seg[0][0], seg[1][0], npoints)
+    return nd.map_coordinates(im, np.vstack((x, y)), order=0, mode='constant', cval=fillval)
+ 
+
+def RectReslice(im, seg, vrange=None, shape=None, fillval=np.nan):
+    ''' Reslice 2D array by slicing it with a segment that is displaced perpendicular to itself
+
+    Parameters
+    ----------
+    im:     the 2D array
+    seg:    2x2 array defining segment: [[x0,y0],[x1,y1]]
+    vrange: [vmin, vmax]: range of distances traveled by segment (with sign)
+            if None, it will be set to the maximum range compatible with input shape
+    shape:  [nrows, ncols]: shape of output array.
+            ncols counts pixels along segment, nrows counts pixels across segments
+            if None, it will be set to optimize the number of pixels actually included in the section
+    fillval: value to be filled outside array boundaries
+
+    Returns
+    -------
+    roi:    resliced 2D with shape equal to shape
+    coords: [us, vs]: 2 lists of coordinates (in pixels) of rows and columns in roi
+            us will have length ncols, measuring length along segment
+            vs will have length nrows, measuring length in perpendicular direction
+    '''
+    seg_vec = np.subtract(seg[1], seg[0])
+    seg_length = np.sqrt(np.sum(np.square(seg_vec)))
+    parall_versor = np.true_divide(seg_vec, seg_length)
+    normal_versor = np.asarray([parall_versor[1], -parall_versor[0]])
+    if vrange is None:
+        vrange = [-max(min(seg[0][0]/abs(normal_versor[0]), seg[0][1]/abs(normal_versor[1])),\
+                       min(seg[1][0]/abs(normal_versor[0]), seg[1][1]/abs(normal_versor[1])))-200,\
+                  max(min((im.shape[1]-seg[0][0])/abs(normal_versor[0]),\
+                          (im.shape[0]-seg[0][1])/abs(normal_versor[1])),\
+                      min((im.shape[1]-seg[0][0])/abs(normal_versor[0]),\
+                          (im.shape[0]-seg[0][1])/abs(normal_versor[1])))+200]
+    if shape is None:
+        shape = [int(vrange[1]-vrange[0]), int(seg_length)]
+    us = np.linspace(0, seg_length, shape[1])
+    vs = np.linspace(vrange[0], vrange[1], shape[0])
+    roi = np.empty(shape)
+    for i in range(len(vs)):
+        probe = np.empty((2,2))
+        probe[0] = seg[0] + vs[i]*normal_versor
+        probe[1] = probe[0] + seg_length*parall_versor
+        roi[i] = SectImage(im, probe, len(us), fillval=fillval)
+    return roi, [us, vs]
 
 def GenerateGrid2D(shape, extent=None, center=[0, 0], angle=0, coords='cartesian', indexing='xy'):
     '''Generates a grid of pixel coordinates
@@ -269,12 +329,15 @@ def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True
                    if >0, trim weights to +/- r_avg_cut*r_avg_w
     search_range : the extremum will be searched by fitting a parabola to data within 
                    search_range radians from the previous position
+                   Can be a list, one per extremum
     extrema_ismin: list of boolean variables, one per extrema. Only used if fit_range is not None.
                    if extrema_ismin[i] is True, the i-th extremum will be considered a local minimum
     fit_range    : the extremum will be searched by fitting a parabola to data within 
                    search_range radians from the local min or max (it needs to know what type of extrema from extrema_type)
+                   Can be a list, one per extremum
     accept_range : the extremum will be accepted only if it lays within accept_range of prior guess
                    if None (default), accept_range will be set to search_range
+                   Can be a list, one per extremum
     r_step       : sample step, in pixels
     r_start      : starting radius to be analyzed. If None, r_start=r_step
     angbins      : number of angular bins in evaluating the radial profile
@@ -317,6 +380,9 @@ def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True
             accept_range = search_range
         else:
             accept_range = fit_range
+    for _rangespec in [search_range, fit_range, accept_range]:
+        if not isinstance(_rangespec, collections.abc.Iterable):
+            _rangespec = [_rangespec] * len(ext_priorpos)
     
     if mask is None:
         mask = np.ones_like(arr)
@@ -329,38 +395,38 @@ def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True
             cur_rrange = [res_r[ridx]-r_avg_w*r_avg_cut, res_r[ridx]+r_avg_w*r_avg_cut]
         _ang, _angprof = radialAverage(arr, nbins=360, center=center, weights=cur_w, r_range=cur_rrange, returnangles=True)
         for i in range(n_extrema):
-            cur_minidx = bisect.bisect_left(_ang, ext_priorpos[i]-search_range)
-            cur_maxidx = bisect.bisect_right(_ang, ext_priorpos[i]+search_range)
+            cur_minidx = bisect.bisect_left(_ang, ext_priorpos[i]-search_range[i])
+            cur_maxidx = bisect.bisect_right(_ang, ext_priorpos[i]+search_range[i])
             search_x, search_y = _ang[cur_minidx:cur_maxidx], _angprof[cur_minidx:cur_maxidx]
-            if (ext_priorpos[i]-search_range < _ang[0]):
-                cur_addidx = bisect.bisect_left(_ang, ext_priorpos[i]-search_range+2*np.pi)
+            if (ext_priorpos[i]-search_range[i] < _ang[0]):
+                cur_addidx = bisect.bisect_left(_ang, ext_priorpos[i]-search_range[i]+2*np.pi)
                 search_x = np.concatenate((_ang[cur_addidx:]-2*np.pi, search_x))
                 search_y = np.concatenate((_angprof[cur_addidx:], search_y))
-            if (ext_priorpos[i]+search_range > _ang[-1]):
-                cur_addidx = bisect.bisect_left(_ang, ext_priorpos[i]+search_range-2*np.pi)
+            if (ext_priorpos[i]+search_range[i] > _ang[-1]):
+                cur_addidx = bisect.bisect_left(_ang, ext_priorpos[i]+search_range[i]-2*np.pi)
                 search_x = np.concatenate((search_x, _ang[:cur_addidx]+2*np.pi))
                 search_y = np.concatenate((search_y, _angprof[:cur_addidx]))
             filter_idx = np.isfinite(search_y)
             if np.count_nonzero(filter_idx)>3:
                 search_x, search_y = search_x[filter_idx], search_y[filter_idx]
-                if fit_range is not None:
+                if fit_range[i] is not None:
                     if extrema_ismin[i]:
                         fine_search_idx = np.argmin(search_y)
                     else:
                         fine_search_idx = np.argmax(search_y)
-                    cur_minidx = bisect.bisect_left(search_x, search_x[fine_search_idx]-fit_range)
-                    cur_maxidx = bisect.bisect_right(search_x, search_x[fine_search_idx]+fit_range)
+                    cur_minidx = bisect.bisect_left(search_x, search_x[fine_search_idx]-fit_range[i])
+                    cur_maxidx = bisect.bisect_right(search_x, search_x[fine_search_idx]+fit_range[i])
                     search_x, search_y = search_x[cur_minidx:cur_maxidx], search_y[cur_minidx:cur_maxidx]                   
                 z = np.polyfit(search_x, search_y, 2)
                 cur_pos = -z[1] / (2*z[0])
                 cur_pos_xy = np.add(center,[res_r[ridx]*np.cos(cur_pos), res_r[ridx]*np.sin(cur_pos)])
                 if (update_search>0 and res_r[ridx]<update_search) or np.isnan(last_valid_ext[i]):
-                    if fit_range is None:
-                        cur_accept = (np.abs(cur_pos-ext_priorpos[i])<search_range)
+                    if fit_range[i] is None:
+                        cur_accept = (np.abs(cur_pos-ext_priorpos[i])<search_range[i])
                     else:
-                        cur_accept = (np.abs(cur_pos-ext_priorpos[i])<fit_range)
+                        cur_accept = (np.abs(cur_pos-ext_priorpos[i])<fit_range[i])
                 else:
-                    cur_accept = (np.abs(cur_pos-ext_priorpos[i])<accept_range)
+                    cur_accept = (np.abs(cur_pos-ext_priorpos[i])<accept_range[i])
                 if (cur_accept and cur_pos_xy[0]>0 and cur_pos_xy[0]<arr.shape[1] and cur_pos_xy[1]>0 and cur_pos_xy[1]<arr.shape[0]):
                     ext_pos[ridx,i] = cur_pos
                     ext_val[ridx,i] = (4*z[0]*z[2]-z[1]**2)/(4*z[0])
@@ -663,6 +729,4 @@ def azimuthalAverage(image, center=None, stddev=False, returnradii=False, return
     else:
         return radial_prof
 
-
-# convolve2d: see astropy.convolution.convolve()
 # downsample2d: see skimage.transform.downscale_local_mean()
