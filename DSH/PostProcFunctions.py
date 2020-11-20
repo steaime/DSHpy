@@ -12,6 +12,20 @@ else:
     logging.warning('astropy package not found. Advanced image correlation functions will not be available')
     from scipy import signal
 
+if importlib.util.find_spec('skimage') is not None:
+    import skimage.transform as sktr
+    
+    def DownsampleImage(image, factors):
+        if factors==1:
+            return image
+        else:
+            image = np.asarray(image)
+            if type(factors) is int:
+                factors = tuple([factors] * image.ndim)
+            return sktr.downscale_local_mean(image, factors)
+else:
+    logging.warning('skimage package not found. DownsampleImage function will not be available')    
+
 def hue_to_rgb(hue_map):
     """ Converts hue map to RGB
     
@@ -89,7 +103,7 @@ def TrimOutliers(data, bounds, x_arr=None, badval=np.nan):
             return np.clip(data, bound_vals[0], bound_vals[1])
         else:
             return np.where(np.logical_and(data>=bound_vals[0], data<=bound_vals[1]), data, badval)
-        
+
 def ImageConvolve(source_image, kernel, interp_nans=True, conv_norm='auto', norm_kernel=False):
     """Computes 2D correlations taking special care of NaN values
 
@@ -132,6 +146,34 @@ def ImageConvolve(source_image, kernel, interp_nans=True, conv_norm='auto', norm
             if conv_norm=='auto':
                 conv_norm = signal.convolve2d(np.ones_like(source_image), kernel, mode='same', boundary='fill', fillvalue=0)
             return np.divide(raw_conv, conv_norm)
+
+def BinaryDilation(data, invalid=None, open_range=-1, iterations=1, fill_value=np.nan):
+    """
+    Expand the domain of invalid 'data' cells (indicated by 'invalid') 
+    by the value of the nearest valid data cell
+
+    Parameters
+    ----------
+    data:    numpy array of any dimension
+    invalid: a binary array of same shape as 'data'. 
+             data value are replaced where invalid is True
+             If None (default), use: invalid  = np.isnan(data)
+    open_range : range of the opening step. Not used if <=0
+    iterations : The erosion step of the opening, then the 
+             dilation step are each repeated iterations times
+    fill_value : value to be used to fill the invalid domains
+
+    Returns
+    -------
+    Return an array with open domains filled with specified value. 
+    """
+    if invalid is None: invalid = np.isnan(data)
+    if open_range>0:
+        invalid_open = nd.binary_dilation(invalid, iterations=iterations,\
+                                          structure=np.ones((2*open_range+1,2*open_range+1)))
+    else:
+        invalid_open = nd.binary_dilation(invalid, iterations=iterations)
+    return np.where(invalid_open, fill_value, data)
 
 def SectImage(im, seg, npoints, fillval=np.nan):
     '''Slice 2D array along a segment
