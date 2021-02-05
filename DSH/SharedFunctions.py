@@ -34,6 +34,27 @@ def LastIntInStr(my_string):
     else:
         return None
     
+def ValidateRange(Range, MaxVal, MinVal=None, replaceNone=True):
+    if Range is None:
+        if replaceNone:
+            return [MinVal, MaxVal, 1]
+        else:
+            return None
+    if MinVal is not None:
+        if (Range[0] < MinVal):
+            Range[0] = MinVal
+    if (Range[1] < 0):
+        Range[1] = MaxVal
+    if (len(Range) < 3):
+        Range.append(1)
+    return Range
+
+def PathJoinOrNone(root, folder):
+    if (folder is None):
+        return None
+    else:
+        return os.path.join(root, folder)
+    
 def ReportCyclic(var, start_val=-np.pi, period=2*np.pi):
     """ Reports a given cyclic variable (e.g. an angle) 
     in the range [start_val, start_val+period)
@@ -124,6 +145,9 @@ def CheckCreateFolder(folderPath):
         print("Created folder: {0}".format(folderPath))
         return False
     
+def IsIterable(var):
+    return isinstance(var, collections.abc.Iterable)
+    
 
 def CheckIterableVariable(var, n_dim, force_length=True, cast_type=None):
     """ Checks if a variable is an iterable with given dimensions (n_dim). 
@@ -134,7 +158,7 @@ def CheckIterableVariable(var, n_dim, force_length=True, cast_type=None):
     
     assert n_dim > 0, 'Number of dimensions must be strictly positive'
     
-    if isinstance(var, collections.abc.Iterable):
+    if IsIterable(var):
         if force_length==True and len(var)!=n_dim:
             if cast_type is None:
                 return [var] * n_dim

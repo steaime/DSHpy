@@ -6,7 +6,7 @@ import collections
 import logging
 
 from DSH import Config as cf
-#from DSH import SharedFunctions as sf
+from DSH import SharedFunctions as sf
 
 _data_depth = {'b':1, 'B':1, '?':1, 'h':2, 'H':2, 'i':4, 'I':4, 'f':4, 'd':8}
 _data_types = {'b':np.int8, 'B':np.uint8, '?':bool, 'h':np.int16, 'H':np.uint16, 'i':np.int32, 'I':np.uint32, 'f':np.float32, 'd':np.float64}
@@ -170,16 +170,7 @@ def ValidateROI(ROI, ImageShape, replaceNone=False):
         return ROI
 
 def Validate_zRange(zRange, zSize, replaceNone=True):
-    if zRange is None:
-        if replaceNone:
-            return [0, zSize, 1]
-        else:
-            return None
-    if (zRange[1] < 0):
-        zRange[1] = zSize
-    if (len(zRange) < 3):
-        zRange.append(1)
-    return zRange
+    return sf.ValidateRange(zRange, zSize, MinVal=0, replaceNone=replaceNone)
 
 def ReadBinary(fname, shape, px_format, offset=0, endian=''):
     """ Read binary file to np.ndarray
@@ -196,7 +187,9 @@ def ReadBinary(fname, shape, px_format, offset=0, endian=''):
     -------
     res : ndarray with binary content, None if file is not found
     """
-    if os.path.isfile(fname):
+    if fname is None:
+        return None
+    elif os.path.isfile(fname):
         with open(fname, 'rb') as fraw:
             num_read_vals = int(np.prod(shape))
             fraw.seek(offset)
@@ -205,11 +198,33 @@ def ReadBinary(fname, shape, px_format, offset=0, endian=''):
             return res
     else:
         return None
-        
+
+def WriteBinary(fname, data, data_format, hdr_list=None):
+    """Write data to file
+    
+    Parameters
+    ----------
+    fname : str, full path to file
+    data : numpy ndarray with data to be written
+    px_format : char with pixel format (see _data_types)
+    hdr_list : list with data to be written at the beginning of the binary file
+    """
+    fwrite = open(fname, 'wb')
+    if (hdr_list is not None):
+        buf = bytes()
+        logging.debug('writing {0} elements to binary header'.format(len(hdr_list)))
+        for elem in hdr_list:
+            buf += struct.pack(elem)
+        fwrite.write(buf)
+    buf = bytes()
+    data = data.flatten().astype(_data_types[data_format])
+    fwrite.write(struct.pack(('%s' + data_format) % len(data), *data))
+    fwrite.close()
+
 class MIfile():
     """ Class to read/write multi image file (MIfile) """
     
-    def __init__(self, FileName, MetaData):
+    def __init__(self, FileName, MetaData=None):
         """Initialize MIfile
         
         Parameters
@@ -217,15 +232,21 @@ class MIfile():
         FileName : filename of multi image file (full path, including folder)
                     it can be None: in this case Metadata will still be loaded
                     if the option 'filename' is found in the Metadata, Filename will be updated
-        MetaData : string or dict. 
+        MetaData : string, dict or none. 
                     if string: filename of metadata file
                     if dict: dictionary with metadata. 
                              dict keys will become options of the 'MIfile' section of the metadata
+                    if None: metadata filename will be generated starting from FileName,
+                             by removing the extension and adding _medatada.ini
+                             ex: MIfile.dat > MIfile_metadata.ini
         """
         self.FileName = FileName
         self.ReadFileHandle = None
         self.WriteFileHandle = None
         logging.debug('MIfile object created with filename ' + str(FileName))
+        if (MetaData is None and FileName is not None):
+            MetaData = os.path.splitext(FileName)[0] + '_metadata.ini'
+            logging.debug('MIfile - Metadata filename automatically generated: ' + str(MetaData))
         self._load_metadata(MetaData)
     
     def __repr__(self):
@@ -334,6 +355,34 @@ class MIfile():
             imgs_num = self.ImgNumber - start_idx
         res_arr = self._read_pixels(px_num=imgs_num * self.PxPerImg, seek_pos=self._get_offset(img_idx=start_idx))
         return res_arr.reshape(imgs_num, self.ImgHeight, self.ImgWidth)
+    
+    def zAverage(self, zRange=None, cropROI=None, memSave=False):
+        """Calculate z average from MIfile stack
+        
+        Parameters
+        ----------
+        zRange : image index range, 0-based [minimum, maximum, step]
+                if None, all images will be read
+        cropROI : Region Of Interest to be read
+                if None, full images will be read
+        memSave : bool flag. If true, images will be read one by one to save memory
+        
+        Returns
+        -------
+        res_2D : 2D numpy array (float)
+        """
+        if memSave:
+            self.OpenForReading()
+            zRange = self.Validate_zRange(zRange)
+            cropROI = self.ValidateROI(cropROI, replaceNone=True)
+            z_list = list(range(*zRange))
+            res2D = np.zeros([cropROI[3], cropROI[2]], dtype=float)
+            for zidx in z_list:
+                res2D = np.add(res2D, self.GetImage(zidx, cropROI))
+            res2D = np.divide(res2D, len(z_list))
+            return res2D
+        else:
+            return np.mean(self.Read(zRange, cropROI), axis=0)
 
     def GetTimetraces(self, pxLocs, zRange=None):
         """Returns z axis profile for a given set of pixels in the image
@@ -468,8 +517,11 @@ class MIfile():
         return self.FileName
     def ImageNumber(self):
         return int(self.ImgNumber)
-    def ImageShape(self):
-        return [int(self.ImgHeight), int(self.ImgWidth)]
+    def ImageShape(self, indexing='ij'):
+        if (indexing=='xy'):
+            return [int(self.ImgWidth), int(self.ImgHeight)]
+        else:
+            return [int(self.ImgHeight), int(self.ImgWidth)]
     def ImageHeight(self):
         return int(self.ImgHeight)
     def ImageWidth(self):
@@ -486,10 +538,10 @@ class MIfile():
         return self.PixelDataType
     def DataFormat(self):
         return self.PixelFormat
-    def ValidateROI(self, ROI):
-        return ValidateROI(ROI, self.ImageShape())
-    def Validate_zRange(self, zRange):
-        return Validate_zRange(zRange, self.ImgNumber)
+    def ValidateROI(self, ROI, replaceNone=False):
+        return ValidateROI(ROI, self.ImageShape(), replaceNone)
+    def Validate_zRange(self, zRange, replaceNone=True):
+        return Validate_zRange(zRange, self.ImgNumber, replaceNone)
     
     def _load_metadata(self, meta_data):
         """Reads metadata file

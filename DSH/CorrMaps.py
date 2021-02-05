@@ -221,6 +221,8 @@ class CorrMaps():
                                                                                        AvgIntensity[self.imgIdx[tidx,lidx,1]])),\
                                                             1),\
                                                 AutoCorr[tidx])
+                                                # NOTE: in principle a better normalization for CorrMap is with
+                                                #       0.5 * (AutoCorr[t] + AutoCorr[t+tau])
             MI.MIfile(os.path.join(self.outFolder, 'CorrMap_d' + str(self.lagList[lidx]).zfill(4) + '.dat'), self.outMetaData).WriteData(CorrMap)
             if return_maps:
                 res_4D.append(np.asarray(CorrMap, dtype=np.float32))
