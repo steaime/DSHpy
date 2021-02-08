@@ -359,6 +359,7 @@ class SALS():
             buf_images = None
             all_avg = np.nan*np.ones((self.ImageNumber(), self.CountROIs()), dtype=float)
             NormList = np.empty_like(all_avg)
+            logging.debug('Now computing average intensities with no buffering: {0} images will be individually read and averaged. Result will have shape {1}'.format(self.ImageNumber(), all_avg.shape))
             for i in range(self.ImageNumber()):
                 all_avg[i], NormList[i] = ppf.ROIAverage(self.MIinput.GetImage(i), ROI_boolMasks, boolMask=True)
         else:
@@ -369,9 +370,11 @@ class SALS():
         ROIavgs_best = np.zeros((self.NumTimes(), ROIavgs_allExp.shape[-1]), dtype=float)
         BestExptime_Idx = -1 * np.ones_like(ROIavgs_best, dtype=int)
         for idx, val in np.ndenumerate(ROIavgs_best):
+            logging.debug('Now inspecting raw average intensities to choose best exposure times to use for SLS')
             BestExptime_Idx[idx] = min(bisect.bisect(ROIavgs_allExp[idx[0], :, idx[1]], self.MaxSafeAvgIntensity), len(self.expTimes)-1)
             ROIavgs_best[idx] = ROIavgs_allExp[idx[0], BestExptime_Idx[idx], idx[1]] / self.expTimes[BestExptime_Idx[idx]]
         self.SaveSLS(ROIavgs_best, NormList[0], [ROIavgs_allExp, BestExptime_Idx])
+        logging.debug('SLS output saved')
         # TODO: time average SLS
                 
         if doDLS:
@@ -384,16 +387,20 @@ class SALS():
                 for e in range(self.NumExpTimes()):
                     readrange = self.MIinput.Validate_zRange([e, -1, self.NumExpTimes()])
                     idx_list = list(range(*readrange))
+                    logging.debug('Now performing DLS on {0}-th exposure time. Using image range {1} ({2} images)'.format(e, readrange, len(idx_list)))
                     if (self.StackInput() or no_buffer):
                         ISQavg = np.nan*np.ones((len(idx_list), self.CountROIs()), dtype=float)
                         NormList = np.empty_like(ISQavg)
                         for i in range(len(idx_list)):
                             ISQavg[i], NormList[i] = ppf.ROIAverage(self.MIinput.GetImage(idx_list[i]), ROI_boolMasks, boolMask=True)
+                        logging.debug('No buffering: images read and averaged one by one. Result has shape {0}'.format(ISQavg.shape))
                     else:
                         if (buf_images is None):
                             imgs = self.MIinput.Read(readrange, cropROI=None)
+                            logging.debug('No previously saved buffer: read from MIfile')
                         else:
                             imgs = buf_images[readrange[0]:readrange[1]:readrange[2]]
+                            logging.debug('Images retrieved from previously read buffer')
                         ISQavg, NormList = ppf.ROIAverage(np.square(imgs), ROI_boolMasks, boolMask=True)
                     cI = np.nan * np.ones((ISQavg.shape[1], ISQavg.shape[0], self.NumLagtimes()), dtype=float)
                     cI[:,:,0] = np.subtract(np.divide(ISQavg, np.square(ROIavgs_allExp[:,e,:])), 1).T

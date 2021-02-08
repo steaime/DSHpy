@@ -279,20 +279,20 @@ def GenerateGrid2D(shape, extent=None, center=[0, 0], angle=0, coords='cartesian
             # Coordinatees in the rotated reference frame
             _xt, _xn = np.multiply(_grid[0], np.cos(angle)) - np.multiply(_grid[1], np.sin(angle)),\
                        np.multiply(_grid[1], np.cos(angle)) + np.multiply(_grid[0], np.sin(angle))
-            logging.debug('Cartesian grid generated with angle={0}. xt_range={1}, xn_range={2}'.format(angle, [np.min(_xt), np.max(_xt)],
-                                                                                                [np.min(_xn), np.max(_xn)]))
+#            logging.debug('Cartesian grid generated with angle={0}. xt_range={1}, xn_range={2}'.format(angle, [np.min(_xt), np.max(_xt)],
+#                                                                                                [np.min(_xn), np.max(_xn)]))
             return [_xt, _xn]
         else:
-            logging.debug('Cartesian grid generated with angle=0. xrange={0}, yrange={1}'.format([np.min(_grid[0]), np.max(_grid[0])],
-                                                                                                [np.min(_grid[1]), np.max(_grid[1])]))
+#            logging.debug('Cartesian grid generated with angle=0. xrange={0}, yrange={1}'.format([np.min(_grid[0]), np.max(_grid[0])],
+#                                                                                                [np.min(_grid[1]), np.max(_grid[1])]))
             return _grid
     elif coords=='polar':
         _theta = np.arctan2(_grid[1], _grid[0])-angle
         if (angle != 0):
             _theta = np.mod(_theta+np.pi, 2*np.pi)-np.pi
         _r = np.linalg.norm(_grid, axis=0)
-        logging.debug('Polar grid generated with angle={0}. r_range={1}, theta_range={2}'.format(angle, [np.min(_r), np.max(_r)],
-                                                                                            [np.min(_theta), np.max(_theta)]))
+#        logging.debug('Polar grid generated with angle={0}. r_range={1}, theta_range={2}'.format(angle, [np.min(_r), np.max(_r)],
+#                                                                                            [np.min(_theta), np.max(_theta)]))
         return [_r, _theta]
     else:
         raise ValueError('Unknown coordinate system ' + str(coords))
@@ -650,20 +650,23 @@ def ROIAverage(image, ROImask, boolMask=False, weights=None, masknans=False, eva
     if (weights.ndim > 2):
         norm = np.array([[np.sum(np.multiply(weights[i], ROIboolMask[b])) for b in range(nbins)] for i in range(weights.shape[0])])
     else:
-        norm = [np.array([np.sum(np.multiply(weights, ROIboolMask[b])) for b in range(nbins)])] * use_img.shape[0]
+        norm = np.array([np.sum(np.multiply(weights, ROIboolMask[b])) for b in range(nbins)])
+        if (use_img.ndim > 2):
+            norm = [norm] * use_img.shape[0]
+            
     
     if (use_img.ndim > 2):
         if evalFunc==None:
             ROI_avg = np.array([[np.divide(np.nansum(np.multiply(use_img[i], ROIboolMask[b])), norm[i][b]) 
                                  for b in range(nbins)] for i in range(use_img.shape[0])])
         else:
-            ROI_avg = np.array([[np.divide(np.nansum(np.multiply(evalFunc(use_img[i], ROIboolMask[b]), **evalParams)), norm[i][b]) 
+            ROI_avg = np.array([[np.divide(np.nansum(np.multiply(evalFunc(use_img[i], **evalParams), ROIboolMask[b])), norm[i][b]) 
                                  for b in range(nbins)] for i in range(use_img.shape[0])])
     else:
         if evalFunc==None:
-            ROI_avg = np.array([np.nansum(use_img[ROIboolMask[b]]) *1.0/norm[b] for b in range(nbins)])
+            ROI_avg = np.array([np.divide(np.nansum(np.multiply(use_img, ROIboolMask[b])), norm[b]) for b in range(nbins)])
         else:
-            ROI_avg = np.array([np.nansum(evalFunc(use_img[ROIboolMask[b]], **evalParams)) *1.0/norm[b] for b in range(nbins)])
+            ROI_avg = np.array([np.divide(np.nansum(np.multiply(evalFunc(use_img, **evalParams), ROIboolMask[b])), norm[b]) for b in range(nbins)])
     
     return ROI_avg, norm
 
