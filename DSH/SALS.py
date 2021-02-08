@@ -71,9 +71,17 @@ def LoadFromConfig(ConfigFile, input_key='input', outFolder=None):
         PD_data = sf.PathJoinOrNone(froot, config.Get(input_key, 'pd_file', None, str))
         if (PD_data is not None):
             PD_data = np.loadtxt(PD_data, dtype=float)
-        img_times = sf.PathJoinOrNone(froot, config.Get(input_key, 'img_times', None, str))
-        if (img_times is not None):
-            img_times = np.loadtxt(img_times, dtype=float, usecols=config.Get('format', 'img_times_colidx', 0, int), skiprows=1)
+        img_times = config.Get(input_key, 'img_times', None, str)
+        if img_times is not None:
+            # if miin_fname is a string, let's use a single text file as input.
+            # otherwise, it can be a list: in that case, let's open each text file and append all results
+            if (isinstance(img_times, str)):
+                img_times = np.loadtxt(os.path.join(froot, img_times), dtype=float, usecols=config.Get('format', 'img_times_colidx', 0, int), skiprows=1)
+            else:
+                tmp_times = np.empty(shape=(0,), dtype=float)
+                for cur_f in img_times:
+                    tmp_times = np.append(tmp_times, np.loadtxt(os.path.join(froot, cur_f), dtype=float, usecols=config.Get('format', 'img_times_colidx', 0, int), skiprows=1))
+                img_times = tmp_times
         exp_times = sf.PathJoinOrNone(froot, config.Get(input_key, 'exp_times', None, str))
         if (exp_times is not None):
             exp_times = np.unique(np.loadtxt(exp_times, dtype=float, usecols=config.Get('format', 'exp_times_colidx', 0, int)))
