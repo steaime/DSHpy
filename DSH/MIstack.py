@@ -34,7 +34,7 @@ def LoadFolder(mi_folder, config_fname, config_section='MIfile', mi_prefix='', m
 class MIstack():
     """ Class containing a stack of MIfile sharing the same folder and configuration file """
     
-    def __init__(self, MIfiles=[], MetaData=None, MetaDataSection=None, Load=False, OpenFiles=True, StackType='tau'):
+    def __init__(self, MIfiles=[], MetaData=None, MetaDataSection='MIfile', Load=False, OpenFiles=True, StackType='tau'):
         """Initialize MIstack
         
         Parameters
@@ -44,7 +44,9 @@ class MIstack():
         MetaData        : metadata common to all MIfiles. string or dict. 
                           if string: filename of metadata file
                           if dict: dictionary with metadata.
-        MetaDataSection : load section of the configuration file
+        MetaDataSection : load subsection of the configuration parameters
+                          it only used to load self.MetaData if MetaData is dict.
+                          By contrast, it is used to load the single MIfile.MetaData: for that, the typical choice is 'MIfile'
         Load            : if True, load metadata and MIfiles directly upon initialization.
         OpenFiles       : if loading MIfiles, eventually open them for reading
         StackType       : {'tau','t'} 
@@ -93,13 +95,18 @@ class MIstack():
         
         Parameters
         ----------
-        MetaData : string or dict. If None, self.MetaData_init will be used, if available
-        MetaDataSection : if self.MetaData is a string, load section of the configuration file
+        MetaData : string or dict.
+        MetaDataSection : if self.MetaData is a dictionnary, load subsection of the configuration parameters
         """
         if (MetaData is not None):
             self.MetaData = MetaData
         assert (self.MetaData is not None), 'No Metadata to be loaded'
         self.MetaData = cf.LoadMetadata(self.MetaData, MetaDataSection)
+        if 'MIfile' not in self.MetaData.GetSections():
+            logging.warn('No MIfile section found in MIstack metadata (available sections: ' + str(self.MetaData.GetSections()) + ')')
+        else:
+            logging.debug('Now loading MIstack.MetaData from Config object. Available sections: ' + str(self.MetaData.GetSections()) +
+                          ' -- MIfile keys: ' + str(self.MetaData.ToDict(section='MIfile')))
         self.MIshape = self.MetaData.Get('MIfile', 'shape', [0,0,0], int)
         self.hdrSize = self.MetaData.Get('MIfile', 'hdr_len', 0, int)
         self.gapBytes = self.MetaData.Get('MIfile', 'gap_bytes', 0, int)

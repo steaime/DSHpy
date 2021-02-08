@@ -370,7 +370,6 @@ class SALS():
         ROIavgs_best = np.zeros((self.NumTimes(), ROIavgs_allExp.shape[-1]), dtype=float)
         BestExptime_Idx = -1 * np.ones_like(ROIavgs_best, dtype=int)
         for idx, val in np.ndenumerate(ROIavgs_best):
-            logging.debug('Now inspecting raw average intensities to choose best exposure times to use for SLS')
             BestExptime_Idx[idx] = min(bisect.bisect(ROIavgs_allExp[idx[0], :, idx[1]], self.MaxSafeAvgIntensity), len(self.expTimes)-1)
             ROIavgs_best[idx] = ROIavgs_allExp[idx[0], BestExptime_Idx[idx], idx[1]] / self.expTimes[BestExptime_Idx[idx]]
         self.SaveSLS(ROIavgs_best, NormList[0], [ROIavgs_allExp, BestExptime_Idx])

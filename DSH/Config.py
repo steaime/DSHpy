@@ -27,7 +27,7 @@ def LoadMetadata(MetaData, SectionName=None, DefaultFiles=[]):
     Parameters
     ----------
     MetaData : dict or filename
-    SectionName : if MetaData is a filename, eventually load subsection of configuration file
+    SectionName : if MetaData is a dictionnary, eventually load subsection of configuration parameters
     DefaultFiles : list of full path containing default configuration parameters
     
     Returns
@@ -39,8 +39,9 @@ def LoadMetadata(MetaData, SectionName=None, DefaultFiles=[]):
         outConfig = Config(None, defaultConfigFiles=DefaultFiles)
         outConfig.Import(MetaData, section_name=SectionName)
     else:
-        logging.debug('Loading config file ' + str(SectionName))
         outConfig = Config(MetaData, defaultConfigFiles=DefaultFiles)
+        logging.debug('Loading config file ' + str(MetaData) + ' (' + str(outConfig.CountSections()) + 
+                      ' sections, ' + str(outConfig.CountKeys()) + ' keys)')
     
     return outConfig
 
