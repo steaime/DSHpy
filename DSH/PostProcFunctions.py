@@ -648,15 +648,17 @@ def ROIAverage(image, ROImask, boolMask=False, weights=None, masknans=False, eva
         
     # normalization factor for each bin
     if (weights.ndim > 2):
-        norm = np.array([[weights[i][ROIboolMask[b]].sum() for b in range(nbins)] for i in range(weights.shape[0])])
+        norm = np.array([[np.sum(np.multiply(weights[i], ROIboolMask[b])) for b in range(nbins)] for i in range(weights.shape[0])])
     else:
-        norm = [np.array([weights[ROIboolMask[b]].sum() for b in range(nbins)])] * use_img.shape[0]
+        norm = [np.array([np.sum(np.multiply(weights, ROIboolMask[b])) for b in range(nbins)])] * use_img.shape[0]
     
     if (use_img.ndim > 2):
         if evalFunc==None:
-            ROI_avg = np.array([[np.divide(np.nansum(use_img[i][ROIboolMask[b]]), norm[i][b]) for b in range(nbins)] for i in range(use_img.shape[0])])
+            ROI_avg = np.array([[np.divide(np.nansum(np.multiply(np.use_img[i], ROIboolMask[b])), norm[i][b]) 
+                                 for b in range(nbins)] for i in range(use_img.shape[0])])
         else:
-            ROI_avg = np.array([[np.divide(np.nansum(evalFunc(use_img[i][ROIboolMask[b]], **evalParams)), norm[i][b]) for b in range(nbins)] for i in range(use_img.shape[0])])
+            ROI_avg = np.array([[np.divide(np.nansum(np.multiply(evalFunc(use_img[i], ROIboolMask[b]), **evalParams)), norm[i][b]) 
+                                 for b in range(nbins)] for i in range(use_img.shape[0])])
     else:
         if evalFunc==None:
             ROI_avg = np.array([np.nansum(use_img[ROIboolMask[b]]) *1.0/norm[b] for b in range(nbins)])

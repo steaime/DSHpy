@@ -10,7 +10,7 @@ from DSH import MIstack as MIs
 from DSH import SharedFunctions as sf
 from DSH import PostProcFunctions as ppf
 
-def LoadFromConfig(ConfigFile, outFolder=None):
+def LoadFromConfig(ConfigFile, outFolder=None, input_key='input'):
     """Loads a SALS object from a config file like the one exported with VelMaps.ExportConfig()
     
     Parameters
@@ -26,8 +26,8 @@ def LoadFromConfig(ConfigFile, outFolder=None):
     """
     config = cf.Config(ConfigFile)
     froot = config.Get('global', 'root', '', str)
-    miin_fname = config.Get('input', 'mi_file', None, str)
-    miin_meta_fname = config.Get('input', 'meta_file', None, str)
+    miin_fname = config.Get(input_key, 'mi_file', None, str)
+    miin_meta_fname = config.Get(input_key, 'meta_file', None, str)
     if (miin_fname is not None):
         miin_fname = os.path.join(froot, miin_fname)
     if (miin_meta_fname is not None):
@@ -44,23 +44,23 @@ def LoadFromConfig(ConfigFile, outFolder=None):
         rSlices = np.geomspace(radRange[0], radRange[1], int(radRange[2])+1, endpoint=True)
         aSlices = np.linspace(angRange[0], angRange[1], int(angRange[2])+1, endpoint=True)
         if (outFolder is None):
-            outFolder = config.Get('input', 'out_folder', None, str)
+            outFolder = config.Get(input_key, 'out_folder', None, str)
             if (outFolder is not None):
                 outFolder = os.path.join(config.Get('global', 'root', '', str), outFolder)
         mask = config.Get('SALS_parameters', 'px_mask', None, str)
-        mask = MI.ReadBinary(sf.PathJoinOrNone(froot, config.Get('input', 'px_mask', mask, str)),
+        mask = MI.ReadBinary(sf.PathJoinOrNone(froot, config.Get(input_key, 'px_mask', mask, str)),
                              MIin.ImageShape(), MIin.DataFormat(), 0)
-        dark = MI.ReadBinary(sf.PathJoinOrNone(froot, config.Get('input', 'dark_bkg', None, str)), 
+        dark = MI.ReadBinary(sf.PathJoinOrNone(froot, config.Get(input_key, 'dark_bkg', None, str)), 
                              MIin.ImageShape(), MIin.DataFormat(), 0)
-        opt = MI.ReadBinary(sf.PathJoinOrNone(froot, config.Get('input', 'opt_bkg', None, str)), 
+        opt = MI.ReadBinary(sf.PathJoinOrNone(froot, config.Get(input_key, 'opt_bkg', None, str)), 
                             MIin.ImageShape(), MIin.DataFormat(), 0)
-        PD_data = sf.PathJoinOrNone(froot, config.Get('input', 'pd_file', None, str))
+        PD_data = sf.PathJoinOrNone(froot, config.Get(input_key, 'pd_file', None, str))
         if (PD_data is not None):
             PD_data = np.loadtxt(PD_data, dtype=float)
-        img_times = sf.PathJoinOrNone(froot, config.Get('input', 'img_times', None, str))
+        img_times = sf.PathJoinOrNone(froot, config.Get(input_key, 'img_times', None, str))
         if (img_times is not None):
             img_times = np.loadtxt(img_times, dtype=float, usecols=config.Get('format', 'img_times_colidx', 0, int))
-        exp_times = sf.PathJoinOrNone(froot, config.Get('input', 'exp_times', None, str))
+        exp_times = sf.PathJoinOrNone(froot, config.Get(input_key, 'exp_times', None, str))
         if (exp_times is not None):
             exp_times = np.unique(np.loadtxt(exp_times, dtype=float, usecols=config.Get('format', 'exp_times_colidx', 0, int)))
         dlsLags = config.Get('SALS_parameters', 'dls_lags', None, int)
@@ -176,6 +176,7 @@ class SALS():
         self.dt_tolerance = 1e-4
         self.DebugMode = False
         self.savetxt_kwargs = {'delimiter':'\t', 'comments':'#'}
+        self.loadtxt_kwargs = {**self.savetxt_kwargs, 'skiprows':1}
         
     def CountROIs(self):
         return self.ROIcoords.shape[0]
@@ -229,7 +230,7 @@ class SALS():
     def ReadCIfile(self, fname):
         roi_idx = sf.FirstIntInStr(fname)
         exp_idx = sf.LastIntInStr(fname)
-        cur_cI = np.loadtxt(os.path.join(self.outFolder, fname), **self.savetxt_kwargs)
+        cur_cI = np.loadtxt(os.path.join(self.outFolder, fname), **self.loadtxt_kwargs)
         cur_times = cur_cI[:,0]
         cur_cI = cur_cI[:,1:] # skip first row with image times
         if (cur_cI.shape != (self.NumTimes(), self.NumLagtimes())):
