@@ -28,11 +28,25 @@ def LoadFromConfig(ConfigFile, input_key='input', outFolder=None):
     froot = config.Get('global', 'root', '', str)
     miin_fname = config.Get(input_key, 'mi_file', None, str)
     miin_meta_fname = config.Get(input_key, 'meta_file', None, str)
+    input_stack = False
     if (miin_fname is not None):
-        miin_fname = os.path.join(froot, miin_fname)
+        # if miin_fname is a string, let's use a single MIfile as input.
+        # otherwise, it can be a list: in that case, let's use a MIstack as input
+        if (isinstance(miin_fname, str)):
+            miin_fname = os.path.join(froot, miin_fname)
+        else:
+            input_stack = True
+            for i in range(len(miin_fname)):
+                miin_fname[i] = os.path.join(froot, miin_fname[i])
     if (miin_meta_fname is not None):
         miin_meta_fname = os.path.join(froot, miin_meta_fname)
-    MIin = MI.MIfile(miin_fname, miin_meta_fname)
+    elif input_stack:
+        logging.error('SALS.LoadFromConfig ERROR: medatada filename must be specified when loading a MIstack')
+        return None
+    if input_stack:
+        MIin = MIs.MIstack(miin_fname, miin_meta_fname, Load=True, StackType='t')
+    else:
+        MIin = MI.MIfile(miin_fname, miin_meta_fname)
     ctrPos = config.Get('SALS_parameters', 'center_pos', None, float)
     if (ctrPos is None):
         logging.error('SALS.LoadFromConfig ERROR: no SALS_parameters.center_pos parameter found in config file ' + str(ConfigFile))
@@ -193,6 +207,8 @@ class SALS():
         return len(self.expTimes)
     def NumLagtimes(self):
         return len(self.dlsLags)
+    def StackInput(self):
+        return self.MIinput.IsStack()
     def IsTimingConstant(self, times=None, tolerance=None, tolerance_isrelative=None):
         if times is None:
             times = self.imgTimes
@@ -315,11 +331,32 @@ class SALS():
         
     
     
-    def Run(self, doDLS=False):
+    def Run(self, doDLS=False, no_buffer=False):
+        """ Run SLS/DLS analysis
+
+        Parameters
+        ----------
+        doDLS : bool. If True, perform DLS alongside SLS. Otherwise, only perform SLS
+        no_buffer : bool. If True, avoid reading full MIfile to RAM
+
+        Returns
+        -------
+        None.
+
+        """
         
         ROI_boolMasks = [self.ROIs==b for b in range(self.CountROIs())]
         
-        all_avg, NormList = ppf.ROIAverage(self.MIinput.Read(), ROI_boolMasks, boolMask=True)
+        if (self.StackInput() or no_buffer):
+            buf_images = None
+            all_avg = np.nan*np.ones((self.ImageNumber(), self.CountROIs), dtype=float)
+            NormList = np.empty_like(all_avg)
+            for i in range(self.ImageNumber()):
+                all_avg[i], NormList[i] = ppf.ROIAverage(self.MIinput.GetImage(i), ROI_boolMasks, boolMask=True)
+        else:
+            buf_images = self.MIinput.Read()
+            all_avg, NormList = ppf.ROIAverage(buf_images, ROI_boolMasks, boolMask=True)
+            
         ROIavgs_allExp = all_avg.reshape((self.NumTimes(), self.NumExpTimes(), -1))
         ROIavgs_best = np.zeros((self.NumTimes(), ROIavgs_allExp.shape[-1]), dtype=float)
         BestExptime_Idx = -1 * np.ones_like(ROIavgs_best, dtype=int)
@@ -338,13 +375,31 @@ class SALS():
                 str_hdr_cI = 't' + '\t'.join(['d{0}'.format(l) for l in self.dlsLags])
                 for e in range(self.NumExpTimes()):
                     readrange = self.MIinput.Validate_zRange([e, -1, self.NumExpTimes()])
-                    imgs = self.MIinput.Read(readrange, cropROI=None)
-                    ISQavg, NormList = ppf.ROIAverage(np.square(imgs), ROI_boolMasks, boolMask=True)
+                    idx_list = list(range(*readrange))
+                    if (self.StackInput() or no_buffer):
+                        ISQavg = np.nan*np.ones((len(idx_list), self.CountROIs), dtype=float)
+                        NormList = np.empty_like(ISQavg)
+                        for i in range(len(idx_list)):
+                            ISQavg[i], NormList[i] = ppf.ROIAverage(self.MIinput.GetImage(idx_list[i]), ROI_boolMasks, boolMask=True)
+                    else:
+                        if (buf_images is None):
+                            imgs = self.MIinput.Read(readrange, cropROI=None)
+                        else:
+                            imgs = buf_images[readrange[0]:readrange[1]:readrange[2]]
+                        ISQavg, NormList = ppf.ROIAverage(np.square(imgs), ROI_boolMasks, boolMask=True)
                     cI = np.nan * np.ones((ISQavg.shape[1], ISQavg.shape[0], self.NumLagtimes()), dtype=float)
                     cI[:,:,0] = np.subtract(np.divide(ISQavg, np.square(ROIavgs_allExp[:,e,:])), 1).T
                     for lidx in range(1, self.NumLagtimes()):
-                        if (self.dlsLags[lidx]<imgs.shape[0]):
-                            IXavg, NormList = ppf.ROIAverage(np.multiply(imgs[:-self.dlsLags[lidx]], imgs[self.dlsLags[lidx]:]), ROI_boolMasks, boolMask=True)
+                        if (self.dlsLags[lidx]<ISQavg.shape[0]):
+                            if (self.StackInput() or no_buffer):
+                                IXavg = np.nan*np.ones((ISQavg.shape[0]-self.dlsLags[lidx], self.CountROIs), dtype=float)
+                                NormList = np.empty_like(IXavg)
+                                for i in range(len(idx_list)):
+                                    if (idx_list[i] + self.dlsLags[lidx] < ISQavg.shape[0]):
+                                        IXavg[i], NormList[i] = ppf.ROIAverage(np.multiply(imgs[idx_list[i]], imgs[idx_list[i]+self.dlsLags[lidx]]), 
+                                                                               ROI_boolMasks, boolMask=True)
+                            else:
+                                IXavg, NormList = ppf.ROIAverage(np.multiply(imgs[:-self.dlsLags[lidx]], imgs[self.dlsLags[lidx]:]), ROI_boolMasks, boolMask=True)
                             # 'classic' cI formula
                             cI[:,:-self.dlsLags[lidx],lidx] = np.subtract(np.divide(IXavg, np.multiply(ROIavgs_allExp[:-self.dlsLags[lidx],e,:],
                                                                                                        ROIavgs_allExp[self.dlsLags[lidx]:,e,:])), 1).T

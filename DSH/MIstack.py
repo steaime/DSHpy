@@ -84,6 +84,9 @@ class MIstack():
 
     def __del__(self):
         self.CloseAll()
+        
+    def IsStack(self):
+        return True
 
     def LoadMetadata(self, MetaData=None, MetaDataSection=None):
         """Load metadata from dict or filename
@@ -154,6 +157,8 @@ class MIstack():
         return len(self.MIfiles)*self.ImgsPerMIfile    
     def ValidateROI(self, ROI):
         return MI.ValidateROI(ROI, self.ImageShape())
+    def Validate_zRange(self, zRange, replaceNone=True):
+        return MI.Validate_zRange(zRange, self.ImageNumber(), replaceNone)
     def GetFPS(self):
         return float(self.FPS)
     def GetPixelSize(self):

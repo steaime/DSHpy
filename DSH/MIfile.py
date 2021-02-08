@@ -542,6 +542,8 @@ class MIfile():
         return ValidateROI(ROI, self.ImageShape(), replaceNone)
     def Validate_zRange(self, zRange, replaceNone=True):
         return Validate_zRange(zRange, self.ImgNumber, replaceNone)
+    def IsStack(self):
+        return False
     
     def _load_metadata(self, meta_data):
         """Reads metadata file
