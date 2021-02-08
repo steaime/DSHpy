@@ -10,7 +10,7 @@ from DSH import MIstack as MIs
 from DSH import SharedFunctions as sf
 from DSH import PostProcFunctions as ppf
 
-def LoadFromConfig(ConfigFile, outFolder=None, input_key='input'):
+def LoadFromConfig(ConfigFile, input_key='input', outFolder=None):
     """Loads a SALS object from a config file like the one exported with VelMaps.ExportConfig()
     
     Parameters
@@ -59,7 +59,7 @@ def LoadFromConfig(ConfigFile, outFolder=None, input_key='input'):
             PD_data = np.loadtxt(PD_data, dtype=float)
         img_times = sf.PathJoinOrNone(froot, config.Get(input_key, 'img_times', None, str))
         if (img_times is not None):
-            img_times = np.loadtxt(img_times, dtype=float, usecols=config.Get('format', 'img_times_colidx', 0, int))
+            img_times = np.loadtxt(img_times, dtype=float, usecols=config.Get('format', 'img_times_colidx', 0, int), skiprows=1)
         exp_times = sf.PathJoinOrNone(froot, config.Get(input_key, 'exp_times', None, str))
         if (exp_times is not None):
             exp_times = np.unique(np.loadtxt(exp_times, dtype=float, usecols=config.Get('format', 'exp_times_colidx', 0, int)))
@@ -173,7 +173,8 @@ class SALS():
         self.HistogramSLS = False
         
         self.MaxSafeAvgIntensity = 40
-        self.dt_tolerance = 1e-4
+        self.dt_tolerance = 1e-2  #1e-4
+        self.dt_tolerance_isrelative = True
         self.DebugMode = False
         self.savetxt_kwargs = {'delimiter':'\t', 'comments':'#'}
         self.loadtxt_kwargs = {**self.savetxt_kwargs, 'skiprows':1}
@@ -192,16 +193,24 @@ class SALS():
         return len(self.expTimes)
     def NumLagtimes(self):
         return len(self.dlsLags)
-    def IsTimingConstant(self, times=None, tolerance=None):
+    def IsTimingConstant(self, times=None, tolerance=None, tolerance_isrelative=None):
         if times is None:
             times = self.imgTimes
         if len(times) <= 1:
             return True
         else:
             dt_arr = np.diff(times)
-            if tolerance is None:
-                tolerance = self.dt_tolerance
-            return ((np.max(dt_arr) - np.min(dt_arr)) < tolerance)
+            return self.IsWithinTolerance(np.min(dt_arr), np.max(dt_arr), tolerance=tolerance, tolerance_isrelative=tolerance_isrelative)
+    def IsWithinTolerance(self, t1, t2, tolerance=None, tolerance_isrelative=None):
+        if tolerance is None:
+            tolerance = self.dt_tolerance
+        if tolerance_isrelative is None:
+            tolerance_isrelative = self.dt_tolerance_isrelative
+        if tolerance_isrelative:
+            return (np.abs(t2 - t1) < tolerance * 0.5 * np.abs(t2 + t1))
+        else:
+            return (np.abs(t2 - t1) < tolerance)
+        
     def SaveSLS(self, IofR, NormF, AllExpData=None):
         """ Saves output of SLS analysis
 
@@ -258,7 +267,7 @@ class SALS():
                                         for j in range(tavgidx*subset_len, min((tavgidx+1)*subset_len, len(alllags[i])))])
             cur_coarsenedlist = [cur_uniquelist[0]]
             for lidx in range(1, len(cur_uniquelist)):
-                if np.abs(cur_uniquelist[lidx]-cur_coarsenedlist[-1]) > self.dt_tolerance:
+                if not self.IsWithinTolerance(cur_uniquelist[lidx], cur_coarsenedlist[-1]):
                     cur_coarsenedlist.append(cur_uniquelist[lidx])
             unique_laglist.append(cur_coarsenedlist)
         return alllags, unique_laglist

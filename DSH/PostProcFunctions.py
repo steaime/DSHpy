@@ -654,7 +654,7 @@ def ROIAverage(image, ROImask, boolMask=False, weights=None, masknans=False, eva
     
     if (use_img.ndim > 2):
         if evalFunc==None:
-            ROI_avg = np.array([[np.divide(np.nansum(np.multiply(np.use_img[i], ROIboolMask[b])), norm[i][b]) 
+            ROI_avg = np.array([[np.divide(np.nansum(np.multiply(use_img[i], ROIboolMask[b])), norm[i][b]) 
                                  for b in range(nbins)] for i in range(use_img.shape[0])])
         else:
             ROI_avg = np.array([[np.divide(np.nansum(np.multiply(evalFunc(use_img[i], ROIboolMask[b]), **evalParams)), norm[i][b]) 
