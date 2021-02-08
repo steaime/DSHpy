@@ -1,9 +1,8 @@
 import os
 import bisect
+import math
 import numpy as np
-import time
 import logging
-from scipy import signal
 import DSH
 from DSH import Config as cf
 from DSH import MIfile as MI
@@ -175,8 +174,8 @@ class SALS():
         
         self.MaxSafeAvgIntensity = 40
         self.dt_tolerance = 1e-4
-        self.txt_comment = '#'
         self.DebugMode = False
+        self.savetxt_kwargs = {'delimiter':'\t', 'comments':'#'}
         
     def CountROIs(self):
         return self.ROIcoords.shape[0]
@@ -186,149 +185,186 @@ class SALS():
         return np.max(self.ROIs)+1
     def ImageNumber(self):
         return self.MIinput.ImageNumber()
-    def IsTimingConstant(self, tolerance=None):
-        if len(self.imgTimes) <= 1:
+    def NumTimes(self):
+        return self.MIinput.ImageNumber() // len(self.expTimes)
+    def NumExpTimes(self):
+        return len(self.expTimes)
+    def NumLagtimes(self):
+        return len(self.dlsLags)
+    def IsTimingConstant(self, times=None, tolerance=None):
+        if times is None:
+            times = self.imgTimes
+        if len(times) <= 1:
             return True
         else:
-            dt_arr = np.diff(self.imgTimes)
+            dt_arr = np.diff(times)
             if tolerance is None:
                 tolerance = self.dt_tolerance
             return ((np.max(dt_arr) - np.min(dt_arr)) < tolerance)
+    def SaveSLS(self, IofR, NormF, AllExpData=None):
+        """ Saves output of SLS analysis
+
+        Parameters
+        ----------
+        IofR : 2D array of shape (NumTimes(), NumROIs())
+        NormF : 1D array with ROI normalization factors
+        AllExpData : None or [I, exptime], data with all exposure times
+        """
+        roi_norms = np.zeros((IofR.shape[-1], 1))
+        roi_norms[:len(NormF),0] = NormF
+        np.savetxt(os.path.join(self.outFolder, 'ROIcoords.dat'), np.append(self.ROIcoords, roi_norms, axis=1), 
+                   header='r[px]\tphi[rad]\tdr[px]\tdphi[rad]\tnorm', **self.savetxt_kwargs)
+        MI.WriteBinary(os.path.join(self.outFolder, 'ROI_mask.raw'), self.ROIs, 'i')
+        str_hdr_Ir = 'r[px]\tphi[rad]' + ''.join(['\tt{0:.2f}'.format(self.imgTimes[i]) for i in range(0, self.ImageNumber(), self.NumExpTimes())])
+        np.savetxt(os.path.join(self.outFolder, 'I_r.dat'), np.append(self.ROIcoords[:IofR.shape[1],:2], IofR.T, axis=1), 
+                   header=str_hdr_Ir, **self.savetxt_kwargs)
+        if AllExpData is not None:
+            ROIavgs_allExp, BestExptime_Idx = AllExpData
+            np.savetxt(os.path.join(self.outFolder, 'exptimes.dat'), np.append(self.ROIcoords[:,:2], BestExptime_Idx.T, axis=1), 
+                       header=str_hdr_Ir, **self.savetxt_kwargs)
+            str_hdr_raw = 'r[px]\tphi[rad]' + ''.join(['\tt{0:.2f}_e{1:.3f}'.format(self.imgTimes[i], self.expTimes[i%len(self.expTimes)]) for i in range(len(self.imgTimes))])
+            np.savetxt(os.path.join(self.outFolder, 'I_r_raw.dat'), np.append(self.ROIcoords[:,:2], ROIavgs_allExp.reshape((-1, ROIavgs_allExp.shape[-1])).T, axis=1), 
+                       header=str_hdr_raw, **self.savetxt_kwargs)
+
+    def ReadCIfile(self, fname):
+        roi_idx = sf.FirstIntInStr(fname)
+        exp_idx = sf.LastIntInStr(fname)
+        cur_cI = np.loadtxt(os.path.join(self.outFolder, fname), **self.savetxt_kwargs)
+        cur_times = cur_cI[:,0]
+        cur_cI = cur_cI[:,1:] # skip first row with image times
+        if (cur_cI.shape != (self.NumTimes(), self.NumLagtimes())):
+            logging.warning('cI result file {0} potentially corrupted: shape {1} does not match expected {2}'.format(fname, cur_cI.shape, (self.NumTimes(), self.NumLagtimes())))
+        return cur_cI, cur_times, roi_idx, exp_idx
+    
+    def FindTimelags(self, times=None, lags=None, subset_len=None):
+        if times is None:
+            times = self.imgTimes
+        if lags is None:
+            lags = self.dlsLags
+        if subset_len is None:
+            subset_len = self.timeAvg_T
+        alllags = [] # double list. Element [i][j] is time[j+lag[i]]-time[j]
+        for lidx in range(len(lags)):
+            if (lags[lidx]==0):
+                alllags.append(np.zeros_like(times, dtype=float))
+            elif (lags[lidx] < len(times)):
+                alllags.append(np.subtract(times[lags[lidx]:], times[:-lags[lidx]]))
+            else:
+                alllags.append([])
+        unique_laglist = [] # double list. Element [i][j] is j-th lagtime of i-th averaged time
+        for tavgidx in range(int(math.ceil(len(times)*1./subset_len))):
+            cur_uniquelist = np.unique([alllags[i][j] for i in range(len(lags)) 
+                                        for j in range(tavgidx*subset_len, min((tavgidx+1)*subset_len, len(alllags[i])))])
+            cur_coarsenedlist = [cur_uniquelist[0]]
+            for lidx in range(1, len(cur_uniquelist)):
+                if np.abs(cur_uniquelist[lidx]-cur_coarsenedlist[-1]) > self.dt_tolerance:
+                    cur_coarsenedlist.append(cur_uniquelist[lidx])
+            unique_laglist.append(cur_coarsenedlist)
+        return alllags, unique_laglist
+
+    def AverageG2M1(self):
+        if self.timeAvg_T is None:
+            self.timeAvg_T = self.NumTimes()
+        cI_fnames = sf.FindFileNames(self.outFolder, Prefix='cI_', Ext='.dat')
+        
+        for cur_f in cI_fnames:
+            cur_cI, cur_times, roi_idx, exp_idx = self.ReadCIfile(cur_f)
+            tavg_num = cur_cI.shape[0] // self.timeAvg_T
+            logging.debug('cI time averages will be performed by dividing the {0} images into {1} windows of {2} images each'.format(self.NumTimes(), tavg_num, self.timeAvg_T))
+            
+            if self.IsTimingConstant(cur_times):
+                g2m1_lags = np.true_divide(self.dlsLags, self.MIinput.GetFPS())
+                g2m1 = np.nan * np.ones((self.NumLagtimes(), tavg_num), dtype=float)
+                for tavgidx in range(tavg_num):
+                    g2m1[:,tavgidx] = np.nanmean(cur_cI[tavgidx*self.timeAvg_T:(tavgidx+1)*self.timeAvg_T,:], axis=0)
+                str_hdr_g = self.txt_comment + 'dt' + ''.join(['\tt{0:.2f}'.format(cur_times[tavgidx*self.timeAvg_T]) for tavgidx in range(tavg_num)])
+                g2m1_out = np.append(g2m1_lags.reshape((-1, 1)), g2m1, axis=0).T
+            else:
+                g2m1_alllags, g2m1_laglist = self.FindTimelags(times=cur_times)
+                g2m1 = np.zeros((tavg_num, np.max([len(l) for l in g2m1_laglist])), dtype=float)
+                g2m1_lags = np.nan * np.ones_like(g2m1, dtype=float)
+                g2m1_avgnum = np.zeros_like(g2m1, dtype=int)
+                for tidx in range(cur_cI.shape[0]):
+                    cur_tavg_idx = tidx // self.timeAvg_T
+                    #print((tidx, self.timeAvg_T, cur_tavg_idx, len(cur_tavg_idx)))
+                    g2m1_lags[cur_tavg_idx,:len(g2m1_laglist[cur_tavg_idx])] = g2m1_laglist[cur_tavg_idx]
+                    for lidx in range(cur_cI.shape[1]):
+                        if (tidx < len(g2m1_alllags[lidx])):
+                            cur_lagidx = np.argmin(np.abs(np.subtract(g2m1_laglist[cur_tavg_idx], g2m1_alllags[lidx][tidx])))
+                            if (~np.isnan(cur_cI[tidx,lidx])):
+                                g2m1_avgnum[cur_tavg_idx,cur_lagidx] += 1
+                                g2m1[cur_tavg_idx,cur_lagidx] += cur_cI[tidx,lidx]
+                g2m1 = np.divide(g2m1, g2m1_avgnum)
+    
+                str_hdr_g = '\t'.join(['dt\tt{0:.2f}'.format(cur_times[tavgidx*self.timeAvg_T]) for tavgidx in range(tavg_num)])
+                g2m1_out = np.empty((g2m1.shape[1], 2*tavg_num), dtype=float)
+                g2m1_out[:,0::2] = g2m1_lags.T
+                g2m1_out[:,1::2] = g2m1.T
+
+            np.savetxt(os.path.join(self.outFolder, 'g2m1' + cur_f[2:]), g2m1_out, header=str_hdr_g, **self.savetxt_kwargs)
+        
+    
     
     def Run(self, doDLS=False):
-        t_num = self.MIinput.ImageNumber() // len(self.expTimes)
-        r_num = self.ROIcoords.shape[0]
-        ROIavgs_allExp = np.zeros((t_num, len(self.expTimes), r_num), dtype=float)
-        ROIhistFit_allExp = np.zeros((t_num, len(self.expTimes), r_num), dtype=float)
-        ROIhistFit_weights = np.ones((t_num, len(self.expTimes), r_num), dtype=float)
-        self.MIinput.OpenForReading()
-        for i in range(self.MIinput.ImageNumber()):
-            tidx, expidx = i//len(self.expTimes), i%len(self.expTimes)
-            curavg, NormList = ppf.ROIAverage(self.MIinput.GetImage(i), self.ROIs)
-            ROIavgs_allExp[tidx, expidx, :len(curavg)] = curavg
-            if (self.HistogramSLS):
+        
+        ROI_boolMasks = [self.ROIs==b for b in range(self.CountROIs())]
+        
+        all_avg, NormList = ppf.ROIAverage(self.MIinput.Read(), ROI_boolMasks, boolMask=True)
+        ROIavgs_allExp = all_avg.reshape((self.NumTimes(), self.NumExpTimes(), -1))
+        ROIavgs_best = np.zeros((self.NumTimes(), ROIavgs_allExp.shape[-1]), dtype=float)
+        BestExptime_Idx = -1 * np.ones_like(ROIavgs_best, dtype=int)
+        for idx, val in np.ndenumerate(ROIavgs_best):
+            BestExptime_Idx[idx] = min(bisect.bisect(ROIavgs_allExp[idx[0], :, idx[1]], self.MaxSafeAvgIntensity), len(self.expTimes)-1)
+            ROIavgs_best[idx] = ROIavgs_allExp[idx[0], BestExptime_Idx[idx], idx[1]] / self.expTimes[BestExptime_Idx[idx]]
+        self.SaveSLS(ROIavgs_best, NormList[0], [ROIavgs_allExp, BestExptime_Idx])
+        # TODO: time average SLS
+                
+        if doDLS:
+            if self.dlsLags is None:
+                logging.warn('No lagtimes specified for DLS')
+            elif self.NumTimes()<=1:
+                logging.warn('At least 1 timepoints needed for DLS (' + str(self.NumTimes()) + ' given)')
+            else:
+                str_hdr_cI = 't' + '\t'.join(['d{0}'.format(l) for l in self.dlsLags])
+                for e in range(self.NumExpTimes()):
+                    readrange = self.MIinput.Validate_zRange([e, -1, self.NumExpTimes()])
+                    imgs = self.MIinput.Read(readrange, cropROI=None)
+                    ISQavg, NormList = ppf.ROIAverage(np.square(imgs), ROI_boolMasks, boolMask=True)
+                    cI = np.nan * np.ones((ISQavg.shape[1], ISQavg.shape[0], self.NumLagtimes()), dtype=float)
+                    cI[:,:,0] = np.subtract(np.divide(ISQavg, np.square(ROIavgs_allExp[:,e,:])), 1).T
+                    for lidx in range(1, self.NumLagtimes()):
+                        if (self.dlsLags[lidx]<imgs.shape[0]):
+                            IXavg, NormList = ppf.ROIAverage(np.multiply(imgs[:-self.dlsLags[lidx]], imgs[self.dlsLags[lidx]:]), ROI_boolMasks, boolMask=True)
+                            # 'classic' cI formula
+                            cI[:,:-self.dlsLags[lidx],lidx] = np.subtract(np.divide(IXavg, np.multiply(ROIavgs_allExp[:-self.dlsLags[lidx],e,:],
+                                                                                                       ROIavgs_allExp[self.dlsLags[lidx]:,e,:])), 1).T
+                            # d0 normalization
+                            cI[:,:-self.dlsLags[lidx],lidx] = np.divide(cI[:,:-self.dlsLags[lidx],lidx], 0.5 * np.add(cI[:,:-self.dlsLags[lidx],0], cI[:,self.dlsLags[lidx]:,0]))
+                    for ridx in range(cI.shape[0]):
+                        np.savetxt(os.path.join(self.outFolder, 'cI_ROI' + str(ridx).zfill(3) + '_e' + str(e).zfill(2) + '.dat'), 
+                                   np.append(self.imgTimes.reshape((-1, 1)), cI[ridx], axis=1), header=str_hdr_cI, **self.savetxt_kwargs)
+
+            self.AverageG2M1()
+
+
+
+
+
+        #ROIhistFit_allExp = np.zeros_like(ROIavgs_allExp, dtype=float)
+        #ROIhistFit_weights = np.ones_like(ROIavgs_allExp, dtype=float)
+        #self.MIinput.OpenForReading()
+        #for i in range(self.MIinput.ImageNumber()):
+            #tidx, expidx = i//self.NumExpTimes(), i%self.NumExpTimes()
+            #curavg, NormList = ppf.ROIAverage(self.MIinput.GetImage(i), self.ROIs)
+            #ROIavgs_allExp[tidx, expidx, :len(curavg)] = curavg
+            #if (self.HistogramSLS):
                 # TODO: implement this:
                 # - compute intensity histogram
                 # - select relevant part (ex: set max to min(max_val, 250) and min to max(hist)+1)
                 # - fit log(pdf) vs I with a line
                 # - think about how to relate the slope to the average intensity, it is straightforward
                 # - think about how to estimate the uncertainty on the average (to properly average all exposure times afterwards)
-                pass
-        ROIavgs_best = np.zeros((t_num, r_num), dtype=float)
-        BestExptime_Idx = -1 * np.ones_like(ROIavgs_best, dtype=int)
-        for tidx in range(t_num):
-            for ridx in range(r_num):
-                BestExptime_Idx[tidx, ridx] = min(bisect.bisect(ROIavgs_allExp[tidx, :, ridx], self.MaxSafeAvgIntensity), len(self.expTimes)-1)
-                ROIavgs_best[tidx, ridx] = ROIavgs_allExp[tidx, BestExptime_Idx[tidx, ridx], ridx] / self.expTimes[BestExptime_Idx[tidx, ridx]]
+                #pass
+            
         # TODO: weighted average of histFits
         # TODO: dark and opt correction
-        
-        roi_norms = np.zeros((self.ROIcoords.shape[0], 1))
-        roi_norms[:len(NormList),0] = NormList
-        np.savetxt(os.path.join(self.outFolder, 'ROIcoords.dat'), np.append(self.ROIcoords, roi_norms, axis=1), header=self.txt_comment+'r[px]\tphi[rad]\tdr[px]\tdphi[rad]\tnorm', delimiter='\t', comments = '')
-        MI.WriteBinary(os.path.join(self.outFolder, 'ROI_mask.raw'), self.ROIs, 'i')
-        str_hdr_Ir = self.txt_comment + 'r[px]\tphi[rad]' + ''.join(['\tt{0:.2f}'.format(self.imgTimes[i]) for i in range(0, self.MIinput.ImageNumber(), len(self.expTimes))])
-        np.savetxt(os.path.join(self.outFolder, 'I_r.dat'), np.append(self.ROIcoords[:,:2], ROIavgs_best.T, axis=1), header=str_hdr_Ir, delimiter='\t', comments='')
-        np.savetxt(os.path.join(self.outFolder, 'exptimes.dat'), np.append(self.ROIcoords[:,:2], BestExptime_Idx.T, axis=1), header=str_hdr_Ir, delimiter='\t', comments='')
-        str_hdr_raw = self.txt_comment + 'r[px]\tphi[rad]' + ''.join(['\tt{0:.2f}_e{1:.3f}'.format(self.imgTimes[i], self.expTimes[i%len(self.expTimes)]) for i in range(len(self.imgTimes))])
-        np.savetxt(os.path.join(self.outFolder, 'I_r_raw.dat'), np.append(self.ROIcoords[:,:2], ROIavgs_allExp.reshape((-1, r_num)).T, axis=1), header=str_hdr_raw, delimiter='\t', comments='')
-        
-        # TODO: time average SLS
-        if self.timeAvg_T is None:
-            self.timeAvg_T = t_num
-        tavg_num = t_num // self.timeAvg_T
-        dt_iscst = self.IsTimingConstant()
-        logging.debug('cI time averages will be performed by dividing the {0} images into {1} windows of {2} images each'.format(t_num, tavg_num, self.timeAvg_T))
-        
-        if doDLS:
-            if self.dlsLags is None:
-                logging.warn('No lagtimes specified for DLS')
-            elif t_num<=1:
-                logging.warn('At least 1 timepoints needed for DLS (' + str(t_num) + ' given)')
-            else:
-                for e in range(len(self.expTimes)):
-                    readrange = self.MIinput.Validate_zRange([e, -1, len(self.expTimes)])
-                    imgs = self.MIinput.Read(readrange, cropROI=None)
-                    if self.DebugMode:
-                        logging.debug('Now doing DLS on exposure time {0}/{1} ({2:.3f} ms) : reading range {3}'.format(e+1, len(self.expTimes), self.expTimes[e], readrange))
-                        cIraw = np.nan * np.ones((r_num, t_num, len(self.dlsLags)), dtype=float)
-                    cI = np.nan * np.ones((r_num, t_num, len(self.dlsLags)), dtype=float)
-                    for tidx in range(t_num):
-                        ISQavg, NormList = ppf.ROIAverage(np.square(imgs[tidx]), self.ROIs)
-                        if self.DebugMode:
-                            cIraw[:len(ISQavg),tidx,0] = ISQavg
-                        cI[:len(ISQavg),tidx,0] = np.subtract(np.divide(ISQavg, np.square(ROIavgs_allExp[tidx,e,:len(ISQavg)])), 1)
-                    for tidx in range(t_num):
-                        for lidx in range(1, len(self.dlsLags)):
-                            if self.DebugMode:
-                                logging.debug('   t={0}, lag={1}: processing images {2} and {3}'.format(tidx, self.dlsLags[lidx], tidx, tidx+self.dlsLags[lidx]))
-                            if (tidx+self.dlsLags[lidx]<imgs.shape[0]):
-                                IXavg, NormList = ppf.ROIAverage(np.multiply(imgs[tidx], imgs[tidx+self.dlsLags[lidx]]), self.ROIs)
-                                if self.DebugMode:
-                                    cIraw[:len(IXavg),tidx,lidx] = IXavg
-                                cI[:len(IXavg),tidx,lidx] = np.divide(np.subtract(np.divide(IXavg, np.multiply(ROIavgs_allExp[tidx,e,:len(ISQavg)],
-                                                                                                               ROIavgs_allExp[tidx+self.dlsLags[lidx]*len(self.expTimes),e,:len(ISQavg)])), 1),
-                                                                      np.multiply(0.5, np.add(cI[:len(IXavg),tidx,0], cI[:len(IXavg),tidx+self.dlsLags[lidx],0])))
-                    str_hdr_cI = self.txt_comment + 't' + '\t'.join(['d{0}'.format(l) for l in self.dlsLags])
-                    for ridx in range(cI.shape[0]):
-                        np.savetxt(os.path.join(self.outFolder, 'cI_ROI' + str(ridx).zfill(3) + '_e' + str(e).zfill(2) + '.dat'), np.append(self.imgTimes.reshape((-1, 1)), cI[ridx], axis=1), header=str_hdr_cI, delimiter='\t', comments='')
-                        if self.DebugMode:
-                            np.savetxt(os.path.join(self.outFolder, 'cIraw_ROI' + str(ridx).zfill(3) + '_e' + str(e).zfill(2) + '.dat'), np.append(self.imgTimes.reshape((-1, 1)), cIraw[ridx], axis=1), header=str_hdr_cI, delimiter='\t', comments='')
-        
-                    if dt_iscst:
-                        g2m1_lags = np.true_divide(self.dlsLags, self.MIinput.GetFPS())
-                        g2m1 = np.nan * np.ones((r_num, tavg_num, len(self.dlsLags)), dtype=float)
-                        for tavgidx in range(tavg_num):
-                            g2m1[:,tavgidx,:] = np.nanmean(cI[:,tavgidx*self.timeAvg_T:(tavgidx+1)*self.timeAvg_T,:], axis=1)
-                    else:
-                        g2m1_alllags = np.nan * np.ones((t_num, len(self.dlsLags)), dtype=float)
-                        for tidx in range(t_num):
-                            for lidx in range(len(self.dlsLags)):
-                                if (tidx+self.dlsLags[lidx]*len(self.expTimes) < t_num):
-                                    g2m1_alllags[tidx, lidx] = self.imgTimes[tidx+self.dlsLags[lidx]*len(self.expTimes)] - self.imgTimes[tidx]
-                        g2m1_laglist = []
-                        g2m1_lenlags = np.zeros(tavg_num, dtype=int)
-                        for tavgidx in range(tavg_num):
-                            cur_uniquelist = np.unique(g2m1_alllags[tavgidx*self.timeAvg_T:(tavgidx+1)*self.timeAvg_T,:])
-                            cur_coarsenedlist = [cur_uniquelist[0]]
-                            for lidx in range(1, len(cur_uniquelist)):
-                                if np.abs(cur_uniquelist[lidx]-cur_coarsenedlist[-1]) > self.dt_tolerance:
-                                    cur_coarsenedlist.append(cur_uniquelist[lidx])
-                            g2m1_laglist.append(cur_coarsenedlist)
-                            g2m1_lenlags[tavgidx] = len(g2m1_laglist[-1])
-                        logging.debug('Maximum number of unique lagtime values: {0}'.format(np.max(g2m1_lenlags)))
-                        g2m1_lags = np.nan * np.ones((tavg_num, np.max(g2m1_lenlags)), dtype=float)
-                        g2m1_lagidx = np.nan * np.ones_like(g2m1_alllags, dtype=int)
-                        g2m1_avgnum = np.zeros_like(g2m1_lags, dtype=int)
-                        g2m1 = np.zeros((r_num, tavg_num, g2m1_lags.shape[-1]), dtype=float)
-                        for tavgidx in range(tavg_num):
-                            g2m1_lags[tavgidx,:len(g2m1_laglist[tavgidx])] = g2m1_laglist[tavgidx]
-                        for tidx in range(t_num):
-                            cur_tavg_idx = tidx // self.timeAvg_T
-                            for lidx in range(len(self.dlsLags)):
-                                cur_lagidx = np.argmin(np.abs(g2m1_lags[cur_tavg_idx]-g2m1_alllags[tidx, lidx]))
-                                cur_lagdiff = np.abs(g2m1_lags[cur_tavg_idx, cur_lagidx]-g2m1_alllags[tidx, lidx])
-                                if (cur_lagdiff > self.dt_tolerance):
-                                    logging.warn('Time #{0} - lagtime #{1} ({2}) WARNING: current lagtime ({3:.3f}) was not found in list of unique lagtimes. '.format(tidx, lidx, self.dlsLags[lidx], g2m1_alllags[tidx, lidx]) +
-                                                 'Closest lagtime found (#{0}, dt={1:.3f}) exceeds expected tolerance ({2:.2e})'.format(cur_lagidx, cur_lagdiff, self.dt_tolerance))
-                                g2m1_lagidx[tidx, lidx] = cur_lagidx
-                                num_nan = np.count_nonzero(np.isnan(cI[:,tidx,lidx]))
-                                if (num_nan==0):
-                                    g2m1_avgnum[cur_tavg_idx,cur_lagidx] += 1
-                                    g2m1[:,cur_tavg_idx,cur_lagidx] += cI[:,tidx,lidx]
-                                elif (num_nan < len(cI[:,tidx,lidx])):
-                                    logging.warn('Time #{0} - lagtime #{1} ({2}) WARNING: {3} NaN values found in cI out of {4}. This is unexpected (it should be either all or none). Lagtime discarded.'.format(tidx, lidx, self.dlsLags[lidx], num_nan, len(cI[:,tidx,lidx])))
-                        for ridx in range(r_num):
-                            g2m1[ridx] = np.divide(g2m1[ridx], g2m1_avgnum)
-        
-                    for ridx in range(r_num):
-                        if dt_iscst:
-                            str_hdr_g = self.txt_comment + 'dt' + ''.join(['\tt{0:.2f}'.format(self.imgTimes[tavgidx*self.timeAvg_T]) for tavgidx in range(tavg_num)])
-                            g2m1_out = np.append(g2m1_lags.reshape((-1, 1)), g2m1[ridx], axis=0).T
-                        else:
-                            str_hdr_g = self.txt_comment + '\t'.join(['dt\tt{0:.2f}'.format(self.imgTimes[tavgidx*self.timeAvg_T]) for tavgidx in range(tavg_num)])
-                            g2m1_out = np.empty((g2m1_lags.shape[1], 2*tavg_num), dtype=float)
-                            g2m1_out[:,0::2] = g2m1_lags.T
-                            g2m1_out[:,1::2] = g2m1[ridx].T
-                        np.savetxt(os.path.join(self.outFolder, 'g2m1_ROI' + str(ridx).zfill(3) + '_e' + str(e).zfill(2) + '.dat'), g2m1_out, header=str_hdr_g, delimiter='\t', comments='')
-                        

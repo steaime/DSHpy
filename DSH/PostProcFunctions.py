@@ -592,16 +592,17 @@ def azimuthalAverage(image, center=None, stddev=False, returnradii=False, return
 def SquareDistFromMean(data):
     return np.square(np.subtract(data, np.mean(data)))
     
-def ROIAverage(image, ROImask, weights=None, masknans=False, evalFunc=None, evalParams={}):
+def ROIAverage(image, ROImask, boolMask=False, weights=None, masknans=False, evalFunc=None, evalParams={}):
     """
     Calculate the average value of an image on a series of ROIs.
 
     Parameters
     ----------
-    image        - The 2D image
-    ROImask      - 2D int array with same size as image, with each pixel labeled with the index of the
-                   ROI it belongs to (0 based). Each pixel can only belong to one ROI.
-                   Pixels not belonging to any ROI must be labeled with -1
+    image        - 2D image or 3D ndarray with list of images
+    ROImask      - if boolMask : list of 2D bool arrays same size as image
+                   else : 2D int array with same size as image, with each pixel labeled with the index of the
+                          ROI it belongs to (0 based). Each pixel can only belong to one ROI.
+                          Pixels not belonging to any ROI must be labeled with -1
     weights      - can do a weighted average instead of a simple average if this keyword parameter
                    is set.  weights.shape must = image.shape.
     masknans     - assume the presence of NaNs in the array: mask them and don't count them in
@@ -614,29 +615,53 @@ def ROIAverage(image, ROImask, weights=None, masknans=False, evalFunc=None, eval
 
     Returns
     -------
-    ROI_avg   : 1D float array with ROI-averaged data
+    ROI_avg   : if image is 2D: 1D float array with ROI-averaged data
+                if image is 3D: 2D float array, one image per row, one ROI per column.
                 If a bin contains NO DATA, it will have a NAN value because of the
                 divide-by-sum-of-weights component.
     norm      : sum of weights within the ROI. If weights==None, this reduces to the number of pixels in the ROI
     """
-            
-    nbins = np.max(ROImask)+1
+    
+    if image.shape[0]==0:
+        return None, None
+    
     use_weights = (weights is not None or masknans)
+    if boolMask:
+        nbins = len(ROImask)
+        ROIboolMask = ROImask
+    else:
+        nbins = np.max(ROImask)+1
+        ROIboolMask = [ROImask==b for b in range(nbins)]
+        
     if weights is None:
-        weights = np.ones_like(image)
+        if (image.ndim > 2):
+            weights = np.ones_like(image[0])
+        else:
+            weights = np.ones_like(image)
     if masknans:
         weights = np.multiply(weights, ~np.isnan(image))
+        
     if use_weights:
-        use_img = image*weights
+        use_img = np.multiply(image, weights)
     else:
         use_img = image
+        
     # normalization factor for each bin
-    norm = np.array([weights[ROImask==b].sum() for b in range(nbins)])
-    
-    if evalFunc==None:
-        ROI_avg = np.array([np.nansum(use_img[ROImask==b]) *1.0/norm[b] for b in range(nbins)])
+    if (weights.ndim > 2):
+        norm = np.array([[weights[i][ROIboolMask[b]].sum() for b in range(nbins)] for i in range(weights.shape[0])])
     else:
-        ROI_avg = np.array([np.nansum(evalFunc(use_img[ROImask==b], **evalParams)) *1.0/norm[b] for b in range(nbins)])
+        norm = [np.array([weights[ROIboolMask[b]].sum() for b in range(nbins)])] * use_img.shape[0]
+    
+    if (use_img.ndim > 2):
+        if evalFunc==None:
+            ROI_avg = np.array([[np.divide(np.nansum(use_img[i][ROIboolMask[b]]), norm[i][b]) for b in range(nbins)] for i in range(use_img.shape[0])])
+        else:
+            ROI_avg = np.array([[np.divide(np.nansum(evalFunc(use_img[i][ROIboolMask[b]], **evalParams)), norm[i][b]) for b in range(nbins)] for i in range(use_img.shape[0])])
+    else:
+        if evalFunc==None:
+            ROI_avg = np.array([np.nansum(use_img[ROIboolMask[b]]) *1.0/norm[b] for b in range(nbins)])
+        else:
+            ROI_avg = np.array([np.nansum(evalFunc(use_img[ROIboolMask[b]], **evalParams)) *1.0/norm[b] for b in range(nbins)])
     
     return ROI_avg, norm
 
