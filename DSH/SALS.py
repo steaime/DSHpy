@@ -357,7 +357,7 @@ class SALS():
         
         if (self.StackInput() or no_buffer):
             buf_images = None
-            all_avg = np.nan*np.ones((self.ImageNumber(), self.CountROIs), dtype=float)
+            all_avg = np.nan*np.ones((self.ImageNumber(), self.CountROIs()), dtype=float)
             NormList = np.empty_like(all_avg)
             for i in range(self.ImageNumber()):
                 all_avg[i], NormList[i] = ppf.ROIAverage(self.MIinput.GetImage(i), ROI_boolMasks, boolMask=True)
@@ -385,7 +385,7 @@ class SALS():
                     readrange = self.MIinput.Validate_zRange([e, -1, self.NumExpTimes()])
                     idx_list = list(range(*readrange))
                     if (self.StackInput() or no_buffer):
-                        ISQavg = np.nan*np.ones((len(idx_list), self.CountROIs), dtype=float)
+                        ISQavg = np.nan*np.ones((len(idx_list), self.CountROIs()), dtype=float)
                         NormList = np.empty_like(ISQavg)
                         for i in range(len(idx_list)):
                             ISQavg[i], NormList[i] = ppf.ROIAverage(self.MIinput.GetImage(idx_list[i]), ROI_boolMasks, boolMask=True)
@@ -400,11 +400,12 @@ class SALS():
                     for lidx in range(1, self.NumLagtimes()):
                         if (self.dlsLags[lidx]<ISQavg.shape[0]):
                             if (self.StackInput() or no_buffer):
-                                IXavg = np.nan*np.ones((ISQavg.shape[0]-self.dlsLags[lidx], self.CountROIs), dtype=float)
+                                IXavg = np.nan*np.ones((ISQavg.shape[0]-self.dlsLags[lidx], self.CountROIs()), dtype=float)
                                 NormList = np.empty_like(IXavg)
                                 for i in range(len(idx_list)):
                                     if (idx_list[i] + self.dlsLags[lidx] < ISQavg.shape[0]):
-                                        IXavg[i], NormList[i] = ppf.ROIAverage(np.multiply(imgs[idx_list[i]], imgs[idx_list[i]+self.dlsLags[lidx]]), 
+                                        IXavg[i], NormList[i] = ppf.ROIAverage(np.multiply(self.MIinput.GetImage(idx_list[i]), 
+                                                                                           self.MIinput.GetImage(idx_list[i]+self.dlsLags[lidx])), 
                                                                                ROI_boolMasks, boolMask=True)
                             else:
                                 IXavg, NormList = ppf.ROIAverage(np.multiply(imgs[:-self.dlsLags[lidx]], imgs[self.dlsLags[lidx]:]), ROI_boolMasks, boolMask=True)

@@ -155,6 +155,8 @@ class MIstack():
         return int(self.ImgWidth)    
     def ImageNumber(self):
         return len(self.MIfiles)*self.ImgsPerMIfile    
+    def DataFormat(self):
+        return self.PixelFormat
     def ValidateROI(self, ROI):
         return MI.ValidateROI(ROI, self.ImageShape())
     def Validate_zRange(self, zRange, replaceNone=True):
