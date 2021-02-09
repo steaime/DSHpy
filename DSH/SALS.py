@@ -89,6 +89,47 @@ def LoadFromConfig(ConfigFile, input_key='input', outFolder=None):
         tavgT = config.Get('SALS_parameters', 'timeavg_T', None, int)
         return SALS(MIin, outFolder, ctrPos, [rSlices, aSlices], mask, dark, opt, PD_data, img_times, exp_times, dlsLags, tavgT)
 
+def GenerateROIs(ROI_specs, imgShape, centerPos, maskRaw=None):
+    """ Generate ROI specs for SALS analysis
+
+    Parameters
+    ----------
+    ROI_specs : None, or raw mask with ROI numbers, or couple [rSlices, aSlices].
+            if raw mask:integer mask with ROI indexes for every pixel, 0-based.
+                        Each pixel can only belong to one ROI.
+                        Pixels belonging to no ROI are labeled with -1
+                        Number of ROI is given by np.max(mask)
+            None would correspond to [None, None]
+            rSlices :   2D float array of shape (N, 2), or 1D float array of length N+1, or None. 
+                        If 2D: i-th element will be (rmin_i, rmax_i), where rmin_i and rmax_i 
+                                delimit i-th annulus (values in pixels)
+                        If 1D: i-th annulus will be delimited by i-th and (i+1)-th element of the list
+                        If None: one single annulus will be generated, comprising the whole image
+            aSlices :   angular slices, same structure as for rSlices. 
+                        Here, angles are measured clockwise (y points downwards) starting from the positive x axis
+    maskRaw :   2D binary array with same shape as MIin.ImageShape()
+                True values (nonzero) denote pixels that will be included in the analysis,
+                False values (zeroes) will be excluded
+                If None, all pixels will be included.
+                Disregarded if ROIs is already a raw mask
+    """
+    if ROI_specs is None:
+        ROI_specs = [None, None]
+    if (len(ROI_specs)==2):
+        rSlices, aSlices = ROI_specs
+        ROIcoords = ppf.PolarMaskCoords(rSlices, aSlices, flatten_res=True)
+        ROIs = ppf.GenerateMasks(ROIcoords, imgShape, center=centerPos,
+                                      common_mask=maskRaw, binary_res=False, coordsystem='polar')
+    else:
+        ROIs = ROI_specs
+        r_map, a_map = ppf.GenerateGrid2D(ROI_specs.shape, center=centerPos, coords='polar')
+        r_min, r_max = ppf.ROIEval(r_map, ROI_specs, [np.min, np.max])
+        a_min, a_max = ppf.ROIEval(a_map, ROI_specs, [np.min, np.max])
+        rSlices, aSlices = [[r_min[i], r_max[i]] for i in range(len(r_min))], [[a_min[i], a_max[i]] for i in range(len(a_min))]
+        ROIcoords = ppf.PolarMaskCoords(rSlices, aSlices, flatten_res=True)
+    return ROIs, ROIcoords
+
+
 class SALS():
     """ Class to do small angle static and dynamic light scattering from a MIfile """
     
@@ -140,26 +181,8 @@ class SALS():
         self.outFolder = outFolder
         sf.CheckCreateFolder(self.outFolder)
         self.centerPos = centerPos
-        if ROIs is None:
-            ROIs = [None, None]
-        if (len(ROIs)==2):
-            rSlices, aSlices = ROIs
-            self.ROIcoords = ppf.PolarMaskCoords(rSlices, aSlices, flatten_res=True)
-            self.ROIs = ppf.GenerateMasks(self.ROIcoords, self.MIinput.ImageShape(), center=self.centerPos,
-                                          common_mask=maskRaw, binary_res=False, coordsystem='polar')
-            logging.debug('ROI mask with shape ' + str(self.ROIs.shape) + ' saved to file ' + os.path.join(outFolder, 'ROI_mask.raw'))
-        else:
-            self.ROIs = ROIs
-            r_map, a_map = ppf.GenerateGrid2D(ROIs.shape, center=centerPos, coords='polar')
-            r_min, r_max = ppf.ROIEval(r_map, ROIs, [np.min, np.max])
-            a_min, a_max = ppf.ROIEval(a_map, ROIs, [np.min, np.max])
-            rSlices, aSlices = [[r_min[i], r_max[i]] for i in range(len(r_min))], [[a_min[i], a_max[i]] for i in range(len(a_min))]
-            self.ROIcoords = ppf.PolarMaskCoords(rSlices, aSlices, flatten_res=True)
-        if self.CountEmptyROIs() > 0:
-            if self.CountValidROIs() > 0:
-                logging.warning('There are {0} out of {1} empty masks'.format(self.CountEmptyROIs(), self.CountROIs()))
-            else:
-                logging.error('ROI mask is empty (no valid ROIs found)')
+        self._genROIs(ROIs, maskRaw=maskRaw)
+
         if (isinstance(DarkBkg, MI.MIfile)):
             self.DarkBkg = DarkBkg.zAverage()
         else:
@@ -336,8 +359,70 @@ class SALS():
                 g2m1_out[:,1::2] = g2m1.T
 
             np.savetxt(os.path.join(self.outFolder, 'g2m1' + cur_f[2:]), g2m1_out, header=str_hdr_g, **self.savetxt_kwargs)
-        
     
+    def GetOrReadImage(self, img_idx, buffer=None):
+        """ Retrieve image from buffer if present, otherwise read if from MIfile
+        """
+        if buffer is not None:
+            if len(buffer) > img_idx:
+                return buffer[img_idx]
+        return self.MIinput.GetImage(img_idx)
+    
+    def ROIaverageProduct(self, stack1, stack2=None, ROImasks=None, masks_isBool=False, no_buffer=False, imgs=None):
+        """ ROI average product of images
+
+        Parameters
+        ----------
+        stack1 : list of indexes. Images will be either read by MIinput or retrieved from img_buffer
+        stack2 : None, or list of indexes
+                 - if None: function will return averages of single images (in stack1)
+                 - if list: length should be the same as stack1
+        ROImasks : 2D int array or 3D bool array: masks associating each pixel to a ROI
+                 - if 2D int array: pixel value will denote which ROI the pixel belongs to
+                 - if 3D bool array: i-th 2D array willbe True for pixels belonging to i-th ROI
+                 shape of each 2D mask has to match the image shape
+                 if None, self.ROIs will be used (which is of type int by default)
+        masks_isBool : True or False to indicate that ROImasks is of bool or int type, respectively
+        no_buffer : if True, avoid reading all images to a buffer, but read images one by one
+                    (dumping them afterwards)
+        imgs : None or 3D array with buffered images. If None, images will be read from MIinput
+
+        Returns
+        -------
+        AvgRes : 2D array. Element [i,j] is the average of i-th image on j-th ROI
+        NormList : 2D array. Element [i,j] is the average of j-th ROI (independent of i)
+        imgs : buffer eventually filled with images read from MIfile
+
+        """
+        if ROImasks is None:
+            ROImasks = self.ROIs
+            masks_isBool = False
+        if masks_isBool:
+            num_ROI = len(ROImasks)
+        else:
+            num_ROI = np.max(ROImasks)+1
+            
+        if (self.StackInput() or no_buffer):
+            AvgRes = np.nan*np.ones((len(stack1), num_ROI), dtype=float)
+            NormList = np.empty_like(AvgRes)
+            for i in range(AvgRes.shape[0]):
+                if stack2 is None:
+                    AvgRes[i], NormList[i] = ppf.ROIAverage(self.GetOrReadImage(stack1[i], imgs), ROImasks, boolMask=masks_isBool)
+                else:
+                    if (stack1[i]==stack2[i]):
+                        AvgRes[i], NormList[i] = ppf.ROIAverage(np.square(self.GetOrReadImage(stack1[i], imgs)), ROImasks, boolMask=masks_isBool)
+                    else:
+                        AvgRes[i], NormList[i] = ppf.ROIAverage(np.multiply(self.GetOrReadImage(stack1[i], imgs), self.GetOrReadImage(stack2[i], imgs)), ROImasks, boolMask=masks_isBool)
+        else:
+            if imgs is None:
+                imgs = self.MIinput.Read()
+            if (stack1==stack2):
+                cur_stack = np.square(imgs[stack1])
+            else:
+                cur_stack = np.multiply(imgs[stack1], imgs[stack2])
+            AvgRes, NormList = ppf.ROIAverage(cur_stack, ROImasks, boolMask=masks_isBool)
+            
+        return AvgRes, NormList, imgs
     
     def Run(self, doDLS=False, no_buffer=False):
         """ Run SLS/DLS analysis
@@ -346,26 +431,11 @@ class SALS():
         ----------
         doDLS : bool. If True, perform DLS alongside SLS. Otherwise, only perform SLS
         no_buffer : bool. If True, avoid reading full MIfile to RAM
-
-        Returns
-        -------
-        None.
-
         """
         
         ROI_boolMasks = [self.ROIs==b for b in range(self.CountROIs())]
         
-        if (self.StackInput() or no_buffer):
-            buf_images = None
-            all_avg = np.nan*np.ones((self.ImageNumber(), self.CountROIs()), dtype=float)
-            NormList = np.empty_like(all_avg)
-            logging.debug('Now computing average intensities with no buffering: {0} images will be individually read and averaged. Result will have shape {1}'.format(self.ImageNumber(), all_avg.shape))
-            for i in range(self.ImageNumber()):
-                all_avg[i], NormList[i] = ppf.ROIAverage(self.MIinput.GetImage(i), ROI_boolMasks, boolMask=True)
-        else:
-            buf_images = self.MIinput.Read()
-            all_avg, NormList = ppf.ROIAverage(buf_images, ROI_boolMasks, boolMask=True)
-            
+        all_avg, NormList, buf_images = self.ROIaverageProduct(stack1=list(range(self.ImageNumber())), stack2=None, ROImasks=ROI_boolMasks, masks_isBool=True, no_buffer=no_buffer)
         ROIavgs_allExp = all_avg.reshape((self.NumTimes(), self.NumExpTimes(), -1))
         ROIavgs_best = np.zeros((self.NumTimes(), ROIavgs_allExp.shape[-1]), dtype=float)
         BestExptime_Idx = -1 * np.ones_like(ROIavgs_best, dtype=int)
@@ -382,48 +452,30 @@ class SALS():
             elif self.NumTimes()<=1:
                 logging.warn('At least 1 timepoints needed for DLS (' + str(self.NumTimes()) + ' given)')
             else:
-                str_hdr_cI = 't' + '\t'.join(['d{0}'.format(l) for l in self.dlsLags])
+                logging.info('SLS analysis completed. Now doing DLS ({0} exposure times, {1} time points, {2} lagtimes)'.format(self.NumExpTimes(), self.NumTimes(), self.NumLagtimes()))
                 for e in range(self.NumExpTimes()):
                     readrange = self.MIinput.Validate_zRange([e, -1, self.NumExpTimes()])
                     idx_list = list(range(*readrange))
                     logging.debug('Now performing DLS on {0}-th exposure time. Using image range {1} ({2} images)'.format(e, readrange, len(idx_list)))
-                    if (self.StackInput() or no_buffer):
-                        ISQavg = np.nan*np.ones((len(idx_list), self.CountROIs()), dtype=float)
-                        NormList = np.empty_like(ISQavg)
-                        for i in range(len(idx_list)):
-                            ISQavg[i], NormList[i] = ppf.ROIAverage(self.MIinput.GetImage(idx_list[i]), ROI_boolMasks, boolMask=True)
-                        logging.debug('No buffering: images read and averaged one by one. Result has shape {0}'.format(ISQavg.shape))
-                    else:
-                        if (buf_images is None):
-                            imgs = self.MIinput.Read(readrange, cropROI=None)
-                            logging.debug('No previously saved buffer: read from MIfile')
-                        else:
-                            imgs = buf_images[readrange[0]:readrange[1]:readrange[2]]
-                            logging.debug('Images retrieved from previously read buffer')
-                        ISQavg, NormList = ppf.ROIAverage(np.square(imgs), ROI_boolMasks, boolMask=True)
+                    ISQavg, NormList, buf_images = self.ROIaverageProduct(stack1=idx_list, stack2=idx_list, ROImasks=ROI_boolMasks, masks_isBool=True, no_buffer=no_buffer, imgs=buf_images)
                     cI = np.nan * np.ones((ISQavg.shape[1], ISQavg.shape[0], self.NumLagtimes()), dtype=float)
                     cI[:,:,0] = np.subtract(np.divide(ISQavg, np.square(ROIavgs_allExp[:,e,:])), 1).T
                     for lidx in range(1, self.NumLagtimes()):
                         if (self.dlsLags[lidx]<ISQavg.shape[0]):
-                            if (self.StackInput() or no_buffer):
-                                IXavg = np.nan*np.ones((ISQavg.shape[0]-self.dlsLags[lidx], self.CountROIs()), dtype=float)
-                                NormList = np.empty_like(IXavg)
-                                for i in range(len(idx_list)):
-                                    if (idx_list[i] + self.dlsLags[lidx] < ISQavg.shape[0]):
-                                        IXavg[i], NormList[i] = ppf.ROIAverage(np.multiply(self.MIinput.GetImage(idx_list[i]), 
-                                                                                           self.MIinput.GetImage(idx_list[i]+self.dlsLags[lidx])), 
-                                                                               ROI_boolMasks, boolMask=True)
-                            else:
-                                IXavg, NormList = ppf.ROIAverage(np.multiply(imgs[:-self.dlsLags[lidx]], imgs[self.dlsLags[lidx]:]), ROI_boolMasks, boolMask=True)
+                            IXavg, NormList, buf_images = self.ROIaverageProduct(stack1=idx_list[:-self.dlsLags[lidx]], stack2=idx_list[self.dlsLags[lidx]:], 
+                                                                     ROImasks=ROI_boolMasks, masks_isBool=True, no_buffer=no_buffer, imgs=buf_images)
                             # 'classic' cI formula
                             cI[:,:-self.dlsLags[lidx],lidx] = np.subtract(np.divide(IXavg, np.multiply(ROIavgs_allExp[:-self.dlsLags[lidx],e,:],
                                                                                                        ROIavgs_allExp[self.dlsLags[lidx]:,e,:])), 1).T
                             # d0 normalization
                             cI[:,:-self.dlsLags[lidx],lidx] = np.divide(cI[:,:-self.dlsLags[lidx],lidx], 0.5 * np.add(cI[:,:-self.dlsLags[lidx],0], cI[:,self.dlsLags[lidx]:,0]))
+                            logging.debug('Lagtime {0}/{1} (d{2}) completed'.format(lidx, self.NumLagtimes()-1, self.dlsLags[lidx]))
                     for ridx in range(cI.shape[0]):
+                        logging.debug('Now saving ROI {0} to file')
                         np.savetxt(os.path.join(self.outFolder, 'cI_ROI' + str(ridx).zfill(3) + '_e' + str(e).zfill(2) + '.dat'), 
-                                   np.append(self.imgTimes.reshape((-1, 1)), cI[ridx], axis=1), header=str_hdr_cI, **self.savetxt_kwargs)
+                                   np.append(self.imgTimes.reshape((-1, 1)), cI[ridx], axis=1), header='t' + '\t'.join(['d{0}'.format(l) for l in self.dlsLags]), **self.savetxt_kwargs)
 
+            logging.info('DLS analysis completed. Now ageraging correlation functions g2-1')
             self.AverageG2M1()
 
 
@@ -448,3 +500,13 @@ class SALS():
             
         # TODO: weighted average of histFits
         # TODO: dark and opt correction
+        
+    def _genROIs(self, ROI_specs, maskRaw=None):
+        if ROI_specs is None:
+            ROI_specs = [None, None]
+        self.ROIs, self.ROIcoords = GenerateROIs(ROI_specs, imgShape=self.MIinput.ImageShape(), centerPos=self.centerPos, maskRaw=maskRaw)
+        if self.CountEmptyROIs() > 0:
+            if self.CountValidROIs() > 0:
+                logging.warning('There are {0} out of {1} empty masks'.format(self.CountEmptyROIs(), self.CountROIs()))
+            else:
+                logging.error('ROI mask is empty (no valid ROIs found)')

@@ -105,8 +105,7 @@ class MIstack():
         if 'MIfile' not in self.MetaData.GetSections():
             logging.warn('No MIfile section found in MIstack metadata (available sections: ' + str(self.MetaData.GetSections()) + ')')
         else:
-            logging.debug('Now loading MIstack.MetaData from Config object. Available sections: ' + str(self.MetaData.GetSections()) +
-                          ' -- MIfile keys: ' + str(self.MetaData.ToDict(section='MIfile')))
+            logging.debug('Now loading MIstack.MetaData from Config object. Available sections: ' + str(self.MetaData.GetSections()))
         self.MIshape = self.MetaData.Get('MIfile', 'shape', [0,0,0], int)
         self.hdrSize = self.MetaData.Get('MIfile', 'hdr_len', 0, int)
         self.gapBytes = self.MetaData.Get('MIfile', 'gap_bytes', 0, int)

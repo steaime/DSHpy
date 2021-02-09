@@ -560,6 +560,10 @@ class MIfile():
             logging.debug('Now loading MIfile metadata (from filename: ' + str(meta_data) + ')')
         default_settings = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'config_MIfile.ini')
         self.MetaData = cf.LoadMetadata(meta_data, SectionName='MIfile', DefaultFiles=[default_settings])
+        if 'MIfile' not in self.MetaData.GetSections():
+            logging.warn('No MIfile section found in MIfile metadata (available sections: ' + str(self.MetaData.GetSections()) + ')')
+        else:
+            logging.debug('Now loading MIfile.MetaData from Config object. Available sections: ' + str(self.MetaData.GetSections()))
         self.MaxBufferSize = self.MetaData.Get('settings', 'max_buffer_size', 100000000, int)
         if (self.FileName is None):
             self.FileName = self.MetaData.Get('MIfile', 'filename', None)
