@@ -10,7 +10,7 @@ from DSH import MIstack as MIs
 from DSH import SharedFunctions as sf
 from DSH import PostProcFunctions as ppf
 
-def LoadFromConfig(ConfigFile, input_key='input', outFolder=None):
+def LoadFromConfig(ConfigFile, input_sect='input', outFolder=None):
     """Loads a SALS object from a config file like the one exported with VelMaps.ExportConfig()
     
     Parameters
@@ -26,8 +26,8 @@ def LoadFromConfig(ConfigFile, input_key='input', outFolder=None):
     """
     config = cf.Config(ConfigFile)
     froot = config.Get('global', 'root', '', str)
-    miin_fname = config.Get(input_key, 'mi_file', None, str)
-    miin_meta_fname = config.Get(input_key, 'meta_file', None, str)
+    miin_fname = config.Get(input_sect, 'mi_file', None, str)
+    miin_meta_fname = config.Get(input_sect, 'meta_file', None, str)
     input_stack = False
     if (miin_fname is not None):
         # if miin_fname is a string, let's use a single MIfile as input.
@@ -58,20 +58,20 @@ def LoadFromConfig(ConfigFile, input_key='input', outFolder=None):
         rSlices = np.geomspace(radRange[0], radRange[1], int(radRange[2])+1, endpoint=True)
         aSlices = np.linspace(angRange[0], angRange[1], int(angRange[2])+1, endpoint=True)
         if (outFolder is None):
-            outFolder = config.Get(input_key, 'out_folder', None, str)
+            outFolder = config.Get(input_sect, 'out_folder', None, str)
             if (outFolder is not None):
                 outFolder = os.path.join(config.Get('global', 'root', '', str), outFolder)
         mask = config.Get('SALS_parameters', 'px_mask', None, str)
-        mask = MI.ReadBinary(sf.PathJoinOrNone(froot, config.Get(input_key, 'px_mask', mask, str)),
+        mask = MI.ReadBinary(sf.PathJoinOrNone(froot, config.Get(input_sect, 'px_mask', mask, str)),
                              MIin.ImageShape(), MIin.DataFormat(), 0)
-        dark = MI.ReadBinary(sf.PathJoinOrNone(froot, config.Get(input_key, 'dark_bkg', None, str)), 
+        dark = MI.ReadBinary(sf.PathJoinOrNone(froot, config.Get(input_sect, 'dark_bkg', None, str)), 
                              MIin.ImageShape(), MIin.DataFormat(), 0)
-        opt = MI.ReadBinary(sf.PathJoinOrNone(froot, config.Get(input_key, 'opt_bkg', None, str)), 
+        opt = MI.ReadBinary(sf.PathJoinOrNone(froot, config.Get(input_sect, 'opt_bkg', None, str)), 
                             MIin.ImageShape(), MIin.DataFormat(), 0)
-        PD_data = sf.PathJoinOrNone(froot, config.Get(input_key, 'pd_file', None, str))
+        PD_data = sf.PathJoinOrNone(froot, config.Get(input_sect, 'pd_file', None, str))
         if (PD_data is not None):
             PD_data = np.loadtxt(PD_data, dtype=float)
-        img_times = config.Get(input_key, 'img_times', None, str)
+        img_times = config.Get(input_sect, 'img_times', None, str)
         if img_times is not None:
             # if miin_fname is a string, let's use a single text file as input.
             # otherwise, it can be a list: in that case, let's open each text file and append all results
@@ -82,12 +82,12 @@ def LoadFromConfig(ConfigFile, input_key='input', outFolder=None):
                 for cur_f in img_times:
                     tmp_times = np.append(tmp_times, np.loadtxt(os.path.join(froot, cur_f), dtype=float, usecols=config.Get('format', 'img_times_colidx', 0, int), skiprows=1))
                 img_times = tmp_times
-        exp_times = sf.PathJoinOrNone(froot, config.Get(input_key, 'exp_times', None, str))
+        exp_times = sf.PathJoinOrNone(froot, config.Get(input_sect, 'exp_times', None, str))
         if (exp_times is not None):
             exp_times = np.unique(np.loadtxt(exp_times, dtype=float, usecols=config.Get('format', 'exp_times_colidx', 0, int)))
         dlsLags = config.Get('SALS_parameters', 'dls_lags', None, int)
         tavgT = config.Get('SALS_parameters', 'timeavg_T', None, int)
-        return SALS(MIin, outFolder, ctrPos, [rSlices, aSlices], mask, dark, opt, PD_data, img_times, exp_times, dlsLags, tavgT)
+        return SALS(MIin, outFolder, ctrPos, [rSlices, aSlices], mask, [dark, opt, PD_data], exp_times, dlsLags, img_times, tavgT)
 
 def GenerateROIs(ROI_specs, imgShape, centerPos, maskRaw=None):
     """ Generate ROI specs for SALS analysis
@@ -133,8 +133,7 @@ def GenerateROIs(ROI_specs, imgShape, centerPos, maskRaw=None):
 class SALS():
     """ Class to do small angle static and dynamic light scattering from a MIfile """
     
-    def __init__(self, MIin, outFolder, centerPos, ROIs=None, maskRaw=None, DarkBkg=None, OptBkg=None, 
-                 PDdata=None, imgTimes=None, expTimes=[1], dlsLags=None, timeAvg_T=None):
+    def __init__(self, MIin, outFolder, centerPos, ROIs=None, maskRaw=None, BkgCorr=None, expTimes=[1], dlsLags=None, imgTimes=None, timeAvg_T=None):
         """
         Initialize SALS
 
@@ -163,48 +162,27 @@ class SALS():
                     False values (zeroes) will be excluded
                     If None, all pixels will be included.
                     Disregarded if ROIs is already a raw mask
-        DarkBkg :    None, float array or MIfile with dark measurement from the camera. 
-                    If None, dark subtraction will be skipped
-                    If MIfile, all images from MIfile will be averaged and the raw result will be stored
-        OptBkg :     None, float array or MIfile with empty cell measurement. Sale as MIdark
-        PDdata :    2D float array of shape (Nimgs+2, 2), where Nimgs is the number of images.
-                    i-th item is (PD0, PD1), where PD0 is the reading of the incident light, 
-                    and PD1 is the reading of the transmitted light.
-                    Only useful if DarkBkg or OptBkg is not None
+        BkgCorr :   Eventually, data for background correction: [DarkBkg, OptBkg, PDdata], where:
+                    DarkBkg :    None, float array or MIfile with dark measurement from the camera. 
+                                If None, dark subtraction will be skipped
+                                If MIfile, all images from MIfile will be averaged and the raw result will be stored
+                    OptBkg :     None, float array or MIfile with empty cell measurement. Sale as MIdark
+                    PDdata :    2D float array of shape (Nimgs+2, 2), where Nimgs is the number of images.
+                                i-th item is (PD0, PD1), where PD0 is the reading of the incident light, 
+                                and PD1 is the reading of the transmitted light.
+                                Only useful if DarkBkg or OptBkg is not None
         imgTimes :  None or float array of length Nimgs. i-th element will be the time of the image
                     if None, i-th time will be computed using the FPS from the MIfile Metadata
         expTimes :  list of floats
         """
         
-        # TODO: replace this with loading from ini config file, move initialization to separate function
         self.MIinput   = MIin
         self.outFolder = outFolder
         sf.CheckCreateFolder(self.outFolder)
         self.centerPos = centerPos
         self._genROIs(ROIs, maskRaw=maskRaw)
-
-        if (isinstance(DarkBkg, MI.MIfile)):
-            self.DarkBkg = DarkBkg.zAverage()
-        else:
-            self.DarkBkg = DarkBkg
-        if (isinstance(OptBkg, MI.MIfile)):
-            self.OptBkg = OptBkg.zAverage()
-        else:
-            self.OptBkg = OptBkg
-        self.PDdata    = PDdata
-        if imgTimes is None:
-            self.imgTimes = np.arange(0, self.ImageNumber() * 1./self.MIinput.GetFPS(), 1./self.MIinput.GetFPS())
-            logging.debug('{0} image times automatically generated from MI metadata (fps={1}Hz)'.format(len(self.imgTimes), self.MIinput.GetFPS()))
-        else:
-            if (len(imgTimes) < self.ImageNumber()):
-                raise ValueError('Image times ({0}) should at least be as many as the image number ({1}).'.format(len(imgTimes), self.ImageNumber()))
-            elif (len(imgTimes) > self.ImageNumber()):
-                logging.warn('More image times ({0}) than images ({1}). Only first {1} image times will be considered'.format(len(imgTimes), self.ImageNumber()))
-                self.imgTimes  = imgTimes[:self.ImageNumber()]
-            else:
-                self.imgTimes  = imgTimes
-                logging.debug('{0} image times loaded (Image number: {1})'.format(len(self.imgTimes), self.ImageNumber()))
-                
+        self._loadBkg(BkgCorr)
+        self._loadTimes(imgTimes)
         # check that expTimes is sorted:
         assert np.all(np.diff(expTimes) >= 0), 'Exposure times ' + str(expTimes) + ' must be sorted!'
         self.expTimes  = expTimes
@@ -215,14 +193,7 @@ class SALS():
                 dlsLags = np.append([0], dlsLags)
         self.dlsLags = dlsLags
         self.timeAvg_T = timeAvg_T
-        self.HistogramSLS = False
-        
-        self.MaxSafeAvgIntensity = 40
-        self.dt_tolerance = 1e-2  #1e-4
-        self.dt_tolerance_isrelative = True
-        self.DebugMode = False
-        self.savetxt_kwargs = {'delimiter':'\t', 'comments':'#'}
-        self.loadtxt_kwargs = {**self.savetxt_kwargs, 'skiprows':1}
+        self._initConstants()
         
     def CountROIs(self):
         return self.ROIcoords.shape[0]
@@ -510,3 +481,29 @@ class SALS():
                 logging.warning('There are {0} out of {1} empty masks'.format(self.CountEmptyROIs(), self.CountROIs()))
             else:
                 logging.error('ROI mask is empty (no valid ROIs found)')
+    def _loadBkg(self, BkgCorr):
+        if BkgCorr is None:
+            BkgCorr = [None, None, None]
+        self.DarkBkg, self.OptBkg, self.PDdata = BkgCorr
+    def _loadTimes(self, imgTimes=None):
+        if imgTimes is None:
+            self.imgTimes = np.arange(0, self.ImageNumber() * 1./self.MIinput.GetFPS(), 1./self.MIinput.GetFPS())
+            logging.debug('{0} image times automatically generated from MI metadata (fps={1}Hz)'.format(len(self.imgTimes), self.MIinput.GetFPS()))
+        else:
+            if (len(imgTimes) < self.ImageNumber()):
+                raise ValueError('Image times ({0}) should at least be as many as the image number ({1}).'.format(len(imgTimes), self.ImageNumber()))
+            elif (len(imgTimes) > self.ImageNumber()):
+                logging.warn('More image times ({0}) than images ({1}). Only first {1} image times will be considered'.format(len(imgTimes), self.ImageNumber()))
+                self.imgTimes  = imgTimes[:self.ImageNumber()]
+            else:
+                self.imgTimes  = imgTimes
+                logging.debug('{0} image times loaded (Image number: {1})'.format(len(self.imgTimes), self.ImageNumber()))
+    def _initConstants(self):
+        #Constants
+        self.HistogramSLS = False
+        self.MaxSafeAvgIntensity = 40
+        self.dt_tolerance = 1e-2  #1e-4
+        self.dt_tolerance_isrelative = True
+        self.DebugMode = False
+        self.savetxt_kwargs = {'delimiter':'\t', 'comments':'#'}
+        self.loadtxt_kwargs = {**self.savetxt_kwargs, 'skiprows':1}
