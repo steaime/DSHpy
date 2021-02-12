@@ -34,6 +34,20 @@ def LastIntInStr(my_string):
     else:
         return None
     
+def AllFloatInStr(my_string):
+    arr_str = re.findall(r"[-+]?\d*\.\d+|\d+", my_string)
+    res_float = []
+    for item in arr_str:
+        res_float.append(float(item))
+    return res_float
+
+def FirstFloatInStr(my_string):
+    arr = AllFloatInStr(my_string)
+    if (len(arr) > 0):
+        return arr[0]
+    else:
+        return None
+    
 def ValidateRange(Range, MaxVal, MinVal=None, replaceNone=True):
     if Range is None:
         if replaceNone:
