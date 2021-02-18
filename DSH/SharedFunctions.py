@@ -48,6 +48,13 @@ def FirstFloatInStr(my_string):
     else:
         return None
     
+def LastFloatInStr(my_string):
+    arr = AllFloatInStr(my_string)
+    if (len(arr) > 0):
+        return arr[-1]
+    else:
+        return None
+    
 def ValidateRange(Range, MaxVal, MinVal=None, replaceNone=True):
     if Range is None:
         if replaceNone:
@@ -261,6 +268,26 @@ def ExtractIndexFromStrings(StringList, index_pos=0, index_notfound=-1):
         else:
             res.append(index_notfound)
     return res
+
+def LoadResFile(fname, delimiter=',', comments='#', readHeader=True, isolateFirst=0):
+    if (readHeader):
+        f = open(fname)
+        header = f.readline()
+        hdr_list = header.split(delimiter)
+    res_arr = np.loadtxt(fname, comments=comments, delimiter=delimiter)
+    if (isolateFirst>0):
+        firstcol = np.squeeze(res_arr[:,:isolateFirst])
+        res_arr = np.squeeze(res_arr[:,isolateFirst:])
+        hdr_list = hdr_list[isolateFirst:]
+        if (readHeader):
+            return res_arr, hdr_list, firstcol
+        else:
+            return res_arr, firstcol
+    else:
+        if (readHeader):
+            return res_arr, hdr_list
+        else:
+            return res_arr
 
 def filter_kwdict_funcparams(my_dict, my_func):
     return {k: v for k, v in my_dict.items() \

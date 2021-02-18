@@ -10,6 +10,35 @@ from DSH import MIstack as MIs
 from DSH import SharedFunctions as sf
 from DSH import PostProcFunctions as ppf
 
+def OpenSLS(froot, open_raw=False):
+    if open_raw:
+        fname = os.path.join(froot, 'I_r_raw.dat')
+    else:
+        fname = os.path.join(froot, 'I_r.dat')
+    res_Ir, res_hdr, r_phi = sf.LoadResFile(fname, delimiter='\t', comments='#', 
+                                               readHeader=True, isolateFirst=2)
+    times = np.asarray([sf.FirstFloatInStr(hdr) for hdr in res_hdr])
+    if open_raw:
+        exptimes = np.asarray([sf.LastFloatInStr(hdr) for hdr in res_hdr])
+        return np.squeeze(res_Ir.reshape((res_Ir.shape[0], -1, len(set(exptimes))))), r_phi[:,0], r_phi[:,1], times, exptimes
+    else:
+        return res_Ir, r_phi[:,0], r_phi[:,1], times
+
+def OpenCIs(froot):
+    res = []
+    fnames_list = sf.FindFileNames(froot, Prefix='cI_', Ext='.dat', Sort='ASC')
+    ROI_list = [sf.FirstIntInStr(name) for name in fnames_list]
+    exptime_list = [sf.LastIntInStr(name) for name in fnames_list]
+    lagtimes = []
+    imgtimes = []
+    for i, fname in enumerate(fnames_list):
+        res_cI, res_hdr, col_times = sf.LoadResFile(os.path.join(froot, fname), delimiter='\t', comments='#', 
+                                                   readHeader=True, isolateFirst=1)
+        res.append(res_cI)
+        lagtimes.append(np.asarray([sf.FirstIntInStr(hdr) for hdr in res_hdr]))
+        imgtimes.append(col_times)
+    return res, imgtimes, lagtimes, ROI_list, exptime_list
+
 def LoadFromConfig(ConfigFile, input_sect='input', outFolder=None):
     """Loads a SALS object from a config file like the one exported with VelMaps.ExportConfig()
     
@@ -211,6 +240,8 @@ class SALS():
         return len(self.dlsLags)
     def StackInput(self):
         return self.MIinput.IsStack()
+    def GetOutFolder(self):
+        return self.outFolder
     def IsTimingConstant(self, times=None, tolerance=None, tolerance_isrelative=None):
         if times is None:
             times = self.imgTimes
@@ -381,7 +412,10 @@ class SALS():
                     AvgRes[i], NormList[i] = ppf.ROIAverage(self.GetOrReadImage(stack1[i], imgs), ROImasks, boolMask=masks_isBool)
                 else:
                     if (stack1[i]==stack2[i]):
-                        AvgRes[i], NormList[i] = ppf.ROIAverage(np.square(self.GetOrReadImage(stack1[i], imgs)), ROImasks, boolMask=masks_isBool)
+                        cur_val, cur_norm = ppf.ROIAverage(np.square(self.GetOrReadImage(stack1[i], imgs)), ROImasks, boolMask=masks_isBool)
+                        AvgRes[i], NormList[i] = cur_val, cur_norm
+                        if (cur_val<0):
+                            logging.warn('Negative mean square value ({0})'.format(stack1[i]))
                     else:
                         AvgRes[i], NormList[i] = ppf.ROIAverage(np.multiply(self.GetOrReadImage(stack1[i], imgs), self.GetOrReadImage(stack2[i], imgs)), ROImasks, boolMask=masks_isBool)
         else:
@@ -392,6 +426,10 @@ class SALS():
             else:
                 cur_stack = np.multiply(imgs[stack1], imgs[stack2])
             AvgRes, NormList = ppf.ROIAverage(cur_stack, ROImasks, boolMask=masks_isBool)
+
+        if (self.DebugMode):
+            if (np.any(AvgRes<0)):
+                logging.warn('Negative values in ROI averages')
             
         return AvgRes, NormList, imgs
     
@@ -431,6 +469,9 @@ class SALS():
                     ISQavg, NormList, buf_images = self.ROIaverageProduct(stack1=idx_list, stack2=idx_list, ROImasks=ROI_boolMasks, masks_isBool=True, no_buffer=no_buffer, imgs=buf_images)
                     cI = np.nan * np.ones((ISQavg.shape[1], ISQavg.shape[0], self.NumLagtimes()), dtype=float)
                     cI[:,:,0] = np.subtract(np.divide(ISQavg, np.square(ROIavgs_allExp[:,e,:])), 1).T
+                    if (self.DebugMode):
+                        if np.any(cI[:,:,0] < 0):
+                            logging.warn('Negative values in d0 contrast!')
                     for lidx in range(1, self.NumLagtimes()):
                         if (self.dlsLags[lidx]<ISQavg.shape[0]):
                             IXavg, NormList, buf_images = self.ROIaverageProduct(stack1=idx_list[:-self.dlsLags[lidx]], stack2=idx_list[self.dlsLags[lidx]:], 
@@ -444,7 +485,7 @@ class SALS():
                     for ridx in range(cI.shape[0]):
                         logging.debug('Now saving ROI {0} to file')
                         np.savetxt(os.path.join(self.outFolder, 'cI_ROI' + str(ridx).zfill(3) + '_e' + str(e).zfill(2) + '.dat'), 
-                                   np.append(self.imgTimes.reshape((-1, 1)), cI[ridx], axis=1), header='t' + '\t'.join(['d{0}'.format(l) for l in self.dlsLags]), **self.savetxt_kwargs)
+                                   np.append(self.imgTimes.reshape((-1, 1)), cI[ridx], axis=1), header='t\t' + '\t'.join(['d{0}'.format(l) for l in self.dlsLags]), **self.savetxt_kwargs)
 
             logging.info('DLS analysis completed. Now ageraging correlation functions g2-1')
             self.AverageG2M1()
@@ -504,6 +545,6 @@ class SALS():
         self.MaxSafeAvgIntensity = 40
         self.dt_tolerance = 1e-2  #1e-4
         self.dt_tolerance_isrelative = True
-        self.DebugMode = False
+        self.DebugMode = True
         self.savetxt_kwargs = {'delimiter':'\t', 'comments':'#'}
         self.loadtxt_kwargs = {**self.savetxt_kwargs, 'skiprows':1}
