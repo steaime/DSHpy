@@ -591,8 +591,8 @@ def azimuthalAverage(image, center=None, stddev=False, returnradii=False, return
 
 def SquareDistFromMean(data):
     return np.square(np.subtract(data, np.mean(data)))
-    
-def ROIAverage(image, ROImask, boolMask=False, weights=None, masknans=False, evalFunc=None, evalParams={}):
+
+def ROIAverage(image, ROImask, boolMask=False, weights=None, masknans=False, dtype=float, evalFunc=None, evalParams={}, debug=False):
     """
     Calculate the average value of an image on a series of ROIs.
 
@@ -608,6 +608,8 @@ def ROIAverage(image, ROImask, boolMask=False, weights=None, masknans=False, eva
     masknans     - assume the presence of NaNs in the array: mask them and don't count them in
                    the normalization by setting their weight to zero. Set it to False if you are
                    sure that there are no NaNs to improve calculation speed
+    dtype        - Datatype of the accumulator in which the elements are summed. 
+                   If the accumulator is too small, np.sum generates overflow
     evalFunc     - if None, simple average will be computed.
                    Otherwise, what will be averaged will be a function of the pixel values 
                    ex: to compute the variance, use SquareDistFromMean()
@@ -625,7 +627,6 @@ def ROIAverage(image, ROImask, boolMask=False, weights=None, masknans=False, eva
     if image.shape[0]==0:
         return None, None
     
-    use_weights = (weights is not None or masknans)
     if boolMask:
         nbins = len(ROImask)
         ROIboolMask = ROImask
@@ -633,40 +634,55 @@ def ROIAverage(image, ROImask, boolMask=False, weights=None, masknans=False, eva
         nbins = np.max(ROImask)+1
         ROIboolMask = [ROImask==b for b in range(nbins)]
         
-    if weights is None:
+    use_weights = (weights is not None or masknans)
+    if weights is None and use_weights:
         if (image.ndim > 2):
             weights = np.ones_like(image[0])
         else:
             weights = np.ones_like(image)
     if masknans:
         weights = np.multiply(weights, ~np.isnan(image))
-        
     if use_weights:
         use_img = np.multiply(image, weights)
+        # normalization factor for each bin
+        if (weights.ndim > 2):
+            norm = np.array([[np.sum(np.multiply(weights[i], ROIboolMask[b])) for b in range(nbins)] for i in range(weights.shape[0])])
+        else:
+            norm = np.array([np.sum(np.multiply(weights, ROIboolMask[b])) for b in range(nbins)])
+            if (use_img.ndim > 2):
+                norm = [norm] * use_img.shape[0]
     else:
         use_img = image
-        
-    # normalization factor for each bin
-    if (weights.ndim > 2):
-        norm = np.array([[np.sum(np.multiply(weights[i], ROIboolMask[b])) for b in range(nbins)] for i in range(weights.shape[0])])
-    else:
-        norm = np.array([np.sum(np.multiply(weights, ROIboolMask[b])) for b in range(nbins)])
+        norm = np.array([np.sum(ROIboolMask[b]) for b in range(nbins)])
         if (use_img.ndim > 2):
             norm = [norm] * use_img.shape[0]
-            
+        
+    if debug:
+        logging.debug('  ROIAverage function called with {0}D input of shape {1}'.format(use_img.ndim, use_img.shape))
+        logging.debug('  Normalization has shape {0}, factors range from {1} to {2}'.format(norm.shape, np.min(norm), np.max(norm)))
+        if use_weights:
+            if weights is None:
+                logging.warn('  WARNING: use_weights is True but weights is None!')
+            else:
+                logging.debug('  Weight image. Weights has shape {0} and range from {1} to {2}'.format(weights.shape, np.min(weights), np.max(weights)))
+            strprint = '  Weighted image'
+        else:
+            strprint = '  No weighting. Original image'
+        logging.debug(strprint + ' has shape {0} and ranges from {1} to {2}'.format(use_img.shape, np.min(use_img), np.max(use_img)))
     
     if (use_img.ndim > 2):
         if evalFunc==None:
-            ROI_avg = np.array([[np.divide(np.nansum(np.multiply(use_img[i], ROIboolMask[b])), norm[i][b]) 
+            ROI_avg = np.array([[np.true_divide(np.sum(np.multiply(use_img[i], ROIboolMask[b]), dtype=dtype), norm[i][b]) 
                                  for b in range(nbins)] for i in range(use_img.shape[0])])
         else:
-            ROI_avg = np.array([[np.divide(np.nansum(np.multiply(evalFunc(use_img[i], **evalParams), ROIboolMask[b])), norm[i][b]) 
+            ROI_avg = np.array([[np.true_divide(np.sum(np.multiply(evalFunc(use_img[i], **evalParams), ROIboolMask[b]), dtype=dtype), norm[i][b]) 
                                  for b in range(nbins)] for i in range(use_img.shape[0])])
     else:
         if evalFunc==None:
-            ROI_avg = np.array([np.divide(np.nansum(np.multiply(use_img, ROIboolMask[b])), norm[b]) for b in range(nbins)])
+            ROI_avg = np.array([np.true_divide(np.sum(np.multiply(use_img, ROIboolMask[b]), dtype=dtype), norm[b]) for b in range(nbins)])
         else:
-            ROI_avg = np.array([np.divide(np.nansum(np.multiply(evalFunc(use_img, **evalParams), ROIboolMask[b])), norm[b]) for b in range(nbins)])
+            ROI_avg = np.array([np.true_divide(np.sum(np.multiply(evalFunc(use_img, **evalParams), ROIboolMask[b]), dtype=dtype), 
+                                                norm[b]) for b in range(nbins)])
     
     return ROI_avg, norm
 

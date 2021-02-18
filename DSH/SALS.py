@@ -412,24 +412,25 @@ class SALS():
                     AvgRes[i], NormList[i] = ppf.ROIAverage(self.GetOrReadImage(stack1[i], imgs), ROImasks, boolMask=masks_isBool)
                 else:
                     if (stack1[i]==stack2[i]):
-                        cur_val, cur_norm = ppf.ROIAverage(np.square(self.GetOrReadImage(stack1[i], imgs)), ROImasks, boolMask=masks_isBool)
-                        AvgRes[i], NormList[i] = cur_val, cur_norm
-                        if (cur_val<0):
-                            logging.warn('Negative mean square value ({0})'.format(stack1[i]))
+                        AvgRes[i], NormList[i] = ppf.ROIAverage(np.square(self.GetOrReadImage(stack1[i], imgs)), ROImasks, boolMask=masks_isBool)
                     else:
                         AvgRes[i], NormList[i] = ppf.ROIAverage(np.multiply(self.GetOrReadImage(stack1[i], imgs), self.GetOrReadImage(stack2[i], imgs)), ROImasks, boolMask=masks_isBool)
+                    if (self.DebugMode):
+                        if (np.any(AvgRes[i]<0)):
+                            min_idx = np.argmin(AvgRes[i])
+                            logging.warn('Negative cross product value (image1: {0}, image2: {1}, ROI{2} avg: {3})'.format(stack1[i], stack2[i], min_idx, AvgRes[i][min_idx]))
+                            logging.debug('   >>> Debug output for ROIAverage function:')
+                            ppf.ROIAverage(np.multiply(self.GetOrReadImage(stack1[i], imgs), self.GetOrReadImage(stack2[i], imgs)), ROImasks, boolMask=masks_isBool, debug=True)
         else:
             if imgs is None:
                 imgs = self.MIinput.Read()
-            if (stack1==stack2):
+            if stack2 is None:
+                cur_stack = imgs[stack1]
+            elif (stack1==stack2):
                 cur_stack = np.square(imgs[stack1])
             else:
                 cur_stack = np.multiply(imgs[stack1], imgs[stack2])
             AvgRes, NormList = ppf.ROIAverage(cur_stack, ROImasks, boolMask=masks_isBool)
-
-        if (self.DebugMode):
-            if (np.any(AvgRes<0)):
-                logging.warn('Negative values in ROI averages')
             
         return AvgRes, NormList, imgs
     
@@ -443,6 +444,9 @@ class SALS():
         """
         
         ROI_boolMasks = [self.ROIs==b for b in range(self.CountROIs())]
+        
+        if no_buffer:
+            self.MIinput.OpenForReading()
         
         all_avg, NormList, buf_images = self.ROIaverageProduct(stack1=list(range(self.ImageNumber())), stack2=None, ROImasks=ROI_boolMasks, masks_isBool=True, no_buffer=no_buffer)
         ROIavgs_allExp = all_avg.reshape((self.NumTimes(), self.NumExpTimes(), -1))
@@ -483,7 +487,7 @@ class SALS():
                             cI[:,:-self.dlsLags[lidx],lidx] = np.divide(cI[:,:-self.dlsLags[lidx],lidx], 0.5 * np.add(cI[:,:-self.dlsLags[lidx],0], cI[:,self.dlsLags[lidx]:,0]))
                             logging.debug('Lagtime {0}/{1} (d{2}) completed'.format(lidx, self.NumLagtimes()-1, self.dlsLags[lidx]))
                     for ridx in range(cI.shape[0]):
-                        logging.debug('Now saving ROI {0} to file')
+                        logging.debug('Now saving ROI {0} to file'.format(ridx))
                         np.savetxt(os.path.join(self.outFolder, 'cI_ROI' + str(ridx).zfill(3) + '_e' + str(e).zfill(2) + '.dat'), 
                                    np.append(self.imgTimes.reshape((-1, 1)), cI[ridx], axis=1), header='t\t' + '\t'.join(['d{0}'.format(l) for l in self.dlsLags]), **self.savetxt_kwargs)
 
