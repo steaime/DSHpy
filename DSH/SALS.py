@@ -445,6 +445,10 @@ class SALS():
         
         ROI_boolMasks = [self.ROIs==b for b in range(self.CountROIs())]
         
+        logging.info('SALS Analysis started! Will analyze {0} images ({1} times, {2} exposure times)'.format(self.ImageNumber(), self.NumTimes(), self.NumExpTimes()))
+        logging.info('Analysis will resolve {0} ROIs and DLS will be performed on {1} lagtimes. Output will be saved in folder {2}'.format(self.CountROIs(), self.NumLagtimes(), self.outFolder))
+        logging.info('Now starting with SLS...')
+        
         if no_buffer:
             self.MIinput.OpenForReading()
         
@@ -469,7 +473,7 @@ class SALS():
                 for e in range(self.NumExpTimes()):
                     readrange = self.MIinput.Validate_zRange([e, -1, self.NumExpTimes()])
                     idx_list = list(range(*readrange))
-                    logging.debug('Now performing DLS on {0}-th exposure time. Using image range {1} ({2} images)'.format(e, readrange, len(idx_list)))
+                    logging.info('Now performing DLS on {0}-th exposure time. Using image range {1} ({2} images)'.format(e, readrange, len(idx_list)))
                     ISQavg, NormList, buf_images = self.ROIaverageProduct(stack1=idx_list, stack2=idx_list, ROImasks=ROI_boolMasks, masks_isBool=True, no_buffer=no_buffer, imgs=buf_images)
                     cI = np.nan * np.ones((ISQavg.shape[1], ISQavg.shape[0], self.NumLagtimes()), dtype=float)
                     cI[:,:,0] = np.subtract(np.divide(ISQavg, np.square(ROIavgs_allExp[:,e,:])), 1).T
@@ -485,13 +489,13 @@ class SALS():
                                                                                                        ROIavgs_allExp[self.dlsLags[lidx]:,e,:])), 1).T
                             # d0 normalization
                             cI[:,:-self.dlsLags[lidx],lidx] = np.divide(cI[:,:-self.dlsLags[lidx],lidx], 0.5 * np.add(cI[:,:-self.dlsLags[lidx],0], cI[:,self.dlsLags[lidx]:,0]))
-                            logging.debug('Lagtime {0}/{1} (d{2}) completed'.format(lidx, self.NumLagtimes()-1, self.dlsLags[lidx]))
+                            logging.info('Lagtime {0}/{1} (d{2}) completed'.format(lidx, self.NumLagtimes()-1, self.dlsLags[lidx]))
                     for ridx in range(cI.shape[0]):
-                        logging.debug('Now saving ROI {0} to file'.format(ridx))
+                        logging.info('Now saving ROI {0} to file'.format(ridx))
                         np.savetxt(os.path.join(self.outFolder, 'cI_ROI' + str(ridx).zfill(3) + '_e' + str(e).zfill(2) + '.dat'), 
                                    np.append(self.imgTimes.reshape((-1, 1)), cI[ridx], axis=1), header='t\t' + '\t'.join(['d{0}'.format(l) for l in self.dlsLags]), **self.savetxt_kwargs)
 
-            logging.info('DLS analysis completed. Now ageraging correlation functions g2-1')
+            logging.info('DLS analysis completed. Now averaging correlation functions g2-1')
             self.AverageG2M1()
 
 
@@ -549,6 +553,6 @@ class SALS():
         self.MaxSafeAvgIntensity = 40
         self.dt_tolerance = 1e-2  #1e-4
         self.dt_tolerance_isrelative = True
-        self.DebugMode = True
+        self.DebugMode = False
         self.savetxt_kwargs = {'delimiter':'\t', 'comments':'#'}
         self.loadtxt_kwargs = {**self.savetxt_kwargs, 'skiprows':1}
