@@ -10,12 +10,23 @@ from DSH import MIstack as MIs
 from DSH import SharedFunctions as sf
 from DSH import PostProcFunctions as ppf
 
+TXT_DELIMITER = '\t'
+TXT_COMMENT = '#'
+SLS_RAW_FNAME = 'I_r_raw.dat'
+SLS_FNAME = 'I_r'
+CI_PREFIX = 'cI'
+G2M1_PREFIX = 'g2m1'
+ROI_PREFIX = 'ROI'
+ROI_IDXLEN = 3
+EXP_PREFIX = 'e'
+EXP_IDXLEN = 2
+
 def OpenSLS(froot, open_raw=False):
     if open_raw:
-        fname = os.path.join(froot, 'I_r_raw.dat')
+        fname = os.path.join(froot, SLS_RAW_FNAME)
     else:
-        fname = os.path.join(froot, 'I_r.dat')
-    res_Ir, res_hdr, r_phi = sf.LoadResFile(fname, delimiter='\t', comments='#', 
+        fname = os.path.join(froot, SLS_FNAME)
+    res_Ir, res_hdr, r_phi = sf.LoadResFile(fname, delimiter=TXT_DELIMITER, comments=TXT_COMMENT, 
                                                readHeader=True, isolateFirst=2)
     times = np.asarray([sf.FirstFloatInStr(hdr) for hdr in res_hdr])
     if open_raw:
@@ -26,18 +37,38 @@ def OpenSLS(froot, open_raw=False):
 
 def OpenCIs(froot):
     res = []
-    fnames_list = sf.FindFileNames(froot, Prefix='cI_', Ext='.dat', Sort='ASC')
+    fnames_list = sf.FindFileNames(froot, Prefix=CI_PREFIX+'_', Ext='.dat', Sort='ASC')
     ROI_list = [sf.FirstIntInStr(name) for name in fnames_list]
     exptime_list = [sf.LastIntInStr(name) for name in fnames_list]
     lagtimes = []
     imgtimes = []
     for i, fname in enumerate(fnames_list):
-        res_cI, res_hdr, col_times = sf.LoadResFile(os.path.join(froot, fname), delimiter='\t', comments='#', 
+        res_cI, res_hdr, col_times = sf.LoadResFile(os.path.join(froot, fname), delimiter=TXT_DELIMITER, comments=TXT_COMMENT, 
                                                    readHeader=True, isolateFirst=1)
         res.append(res_cI)
         lagtimes.append(np.asarray([sf.FirstIntInStr(hdr) for hdr in res_hdr]))
         imgtimes.append(col_times)
     return res, imgtimes, lagtimes, ROI_list, exptime_list
+
+def OpenG2M1s(froot, expt_idx=None, roi_idx=None):
+    res = []
+    filter_str = ''
+    if roi_idx is not None:
+        filter_str += '_' + ROI_PREFIX + str(roi_idx).zfill(ROI_IDXLEN)
+    if expt_idx is not None:
+        filter_str += '_' + EXP_PREFIX + + str(expt_idx).zfill(EXP_IDXLEN)
+    fnames_list = sf.FindFileNames(froot, Prefix=G2M1_PREFIX, Ext='.dat', FilterString=filter_str, Sort='ASC')
+    ROI_list = [sf.FirstIntInStr(name) for name in fnames_list]
+    exptime_list = [sf.LastIntInStr(name) for name in fnames_list]
+    lagtimes = []
+    imgtimes = []
+    for i, fname in enumerate(fnames_list):
+        res_g2m1, res_hdr = sf.LoadResFile(os.path.join(froot, fname), delimiter=TXT_DELIMITER, comments=TXT_COMMENT, 
+                                                   readHeader=True, isolateFirst=0)
+        res.append(res_g2m1[:,1::2].T)
+        lagtimes.append(res_g2m1[:,::2].T)
+        imgtimes.append(np.asarray([sf.FirstFloatInStr(res_hdr[j]) for j in range(1, len(res_hdr), 2)]))
+    return res, lagtimes, imgtimes, ROI_list, exptime_list
 
 def LoadFromConfig(ConfigFile, input_sect='input', outFolder=None):
     """Loads a SALS object from a config file like the one exported with VelMaps.ExportConfig()
@@ -272,17 +303,17 @@ class SALS():
         roi_norms = np.zeros((IofR.shape[-1], 1))
         roi_norms[:len(NormF),0] = NormF
         np.savetxt(os.path.join(self.outFolder, 'ROIcoords.dat'), np.append(self.ROIcoords, roi_norms, axis=1), 
-                   header='r[px]\tphi[rad]\tdr[px]\tdphi[rad]\tnorm', **self.savetxt_kwargs)
+                   header='r[px]'+TXT_DELIMITER+'phi[rad]'+TXT_DELIMITER+'dr[px]'+TXT_DELIMITER+'dphi[rad]'+TXT_DELIMITER+'norm', **self.savetxt_kwargs)
         MI.WriteBinary(os.path.join(self.outFolder, 'ROI_mask.raw'), self.ROIs, 'i')
-        str_hdr_Ir = 'r[px]\tphi[rad]' + ''.join(['\tt{0:.2f}'.format(self.imgTimes[i]) for i in range(0, self.ImageNumber(), self.NumExpTimes())])
-        np.savetxt(os.path.join(self.outFolder, 'I_r.dat'), np.append(self.ROIcoords[:IofR.shape[1],:2], IofR.T, axis=1), 
+        str_hdr_Ir = 'r[px]'+TXT_DELIMITER+'phi[rad]' + ''.join([TXT_DELIMITER+'t{0:.2f}'.format(self.imgTimes[i]) for i in range(0, self.ImageNumber(), self.NumExpTimes())])
+        np.savetxt(os.path.join(self.outFolder, SLS_FNAME), np.append(self.ROIcoords[:IofR.shape[1],:2], IofR.T, axis=1), 
                    header=str_hdr_Ir, **self.savetxt_kwargs)
         if AllExpData is not None:
             ROIavgs_allExp, BestExptime_Idx = AllExpData
             np.savetxt(os.path.join(self.outFolder, 'exptimes.dat'), np.append(self.ROIcoords[:,:2], BestExptime_Idx.T, axis=1), 
                        header=str_hdr_Ir, **self.savetxt_kwargs)
-            str_hdr_raw = 'r[px]\tphi[rad]' + ''.join(['\tt{0:.2f}_e{1:.3f}'.format(self.imgTimes[i], self.expTimes[i%len(self.expTimes)]) for i in range(len(self.imgTimes))])
-            np.savetxt(os.path.join(self.outFolder, 'I_r_raw.dat'), np.append(self.ROIcoords[:,:2], ROIavgs_allExp.reshape((-1, ROIavgs_allExp.shape[-1])).T, axis=1), 
+            str_hdr_raw = 'r[px]'+TXT_DELIMITER+'phi[rad]' + ''.join([TXT_DELIMITER+'t{0:.2f}_e{1:.3f}'.format(self.imgTimes[i], self.expTimes[i%len(self.expTimes)]) for i in range(len(self.imgTimes))])
+            np.savetxt(os.path.join(self.outFolder, SLS_RAW_FNAME), np.append(self.ROIcoords[:,:2], ROIavgs_allExp.reshape((-1, ROIavgs_allExp.shape[-1])).T, axis=1), 
                        header=str_hdr_raw, **self.savetxt_kwargs)
 
     def ReadCIfile(self, fname):
@@ -324,7 +355,7 @@ class SALS():
     def AverageG2M1(self):
         if self.timeAvg_T is None:
             self.timeAvg_T = self.NumTimes()
-        cI_fnames = sf.FindFileNames(self.outFolder, Prefix='cI_', Ext='.dat')
+        cI_fnames = sf.FindFileNames(self.outFolder, Prefix=CI_PREFIX+'_', Ext='.dat')
         
         for cur_f in cI_fnames:
             cur_cI, cur_times, roi_idx, exp_idx = self.ReadCIfile(cur_f)
@@ -336,7 +367,7 @@ class SALS():
                 g2m1 = np.nan * np.ones((self.NumLagtimes(), tavg_num), dtype=float)
                 for tavgidx in range(tavg_num):
                     g2m1[:,tavgidx] = np.nanmean(cur_cI[tavgidx*self.timeAvg_T:(tavgidx+1)*self.timeAvg_T,:], axis=0)
-                str_hdr_g = self.txt_comment + 'dt' + ''.join(['\tt{0:.2f}'.format(cur_times[tavgidx*self.timeAvg_T]) for tavgidx in range(tavg_num)])
+                str_hdr_g = self.txt_comment + 'dt' + ''.join([TXT_DELIMITER+'t{0:.2f}'.format(cur_times[tavgidx*self.timeAvg_T]) for tavgidx in range(tavg_num)])
                 g2m1_out = np.append(g2m1_lags.reshape((-1, 1)), g2m1, axis=0).T
             else:
                 g2m1_alllags, g2m1_laglist = self.FindTimelags(times=cur_times)
@@ -355,12 +386,12 @@ class SALS():
                                 g2m1[cur_tavg_idx,cur_lagidx] += cur_cI[tidx,lidx]
                 g2m1 = np.divide(g2m1, g2m1_avgnum)
     
-                str_hdr_g = '\t'.join(['dt\tt{0:.2f}'.format(cur_times[tavgidx*self.timeAvg_T]) for tavgidx in range(tavg_num)])
+                str_hdr_g = str(TXT_DELIMITER).join(['dt'+TXT_DELIMITER+'t{0:.2f}'.format(cur_times[tavgidx*self.timeAvg_T]) for tavgidx in range(tavg_num)])
                 g2m1_out = np.empty((g2m1.shape[1], 2*tavg_num), dtype=float)
                 g2m1_out[:,0::2] = g2m1_lags.T
                 g2m1_out[:,1::2] = g2m1.T
 
-            np.savetxt(os.path.join(self.outFolder, 'g2m1' + cur_f[2:]), g2m1_out, header=str_hdr_g, **self.savetxt_kwargs)
+            np.savetxt(os.path.join(self.outFolder, G2M1_PREFIX + cur_f[2:]), g2m1_out, header=str_hdr_g, **self.savetxt_kwargs)
     
     def GetOrReadImage(self, img_idx, buffer=None):
         """ Retrieve image from buffer if present, otherwise read if from MIfile
@@ -446,6 +477,8 @@ class SALS():
         ROI_boolMasks = [self.ROIs==b for b in range(self.CountROIs())]
         
         logging.info('SALS Analysis started! Will analyze {0} images ({1} times, {2} exposure times)'.format(self.ImageNumber(), self.NumTimes(), self.NumExpTimes()))
+        if (self.ImageNumber() != (self.NumTimes() * self.NumExpTimes())):
+            logging.warn('WARNING: Number of images ({0}) should correspond to the number of times ({1}) times the number of exposure times ({2})'.format(self.ImageNumber(), self.NumTimes(), self.NumExpTimes()))
         logging.info('Analysis will resolve {0} ROIs and DLS will be performed on {1} lagtimes. Output will be saved in folder {2}'.format(self.CountROIs(), self.NumLagtimes(), self.outFolder))
         logging.info('Now starting with SLS...')
         
@@ -492,8 +525,8 @@ class SALS():
                             logging.info('Lagtime {0}/{1} (d{2}) completed'.format(lidx, self.NumLagtimes()-1, self.dlsLags[lidx]))
                     for ridx in range(cI.shape[0]):
                         logging.info('Now saving ROI {0} to file'.format(ridx))
-                        np.savetxt(os.path.join(self.outFolder, 'cI_ROI' + str(ridx).zfill(3) + '_e' + str(e).zfill(2) + '.dat'), 
-                                   np.append(self.imgTimes.reshape((-1, 1)), cI[ridx], axis=1), header='t\t' + '\t'.join(['d{0}'.format(l) for l in self.dlsLags]), **self.savetxt_kwargs)
+                        np.savetxt(os.path.join(self.outFolder, CI_PREFIX+'_'+ROI_PREFIX + str(ridx).zfill(ROI_IDXLEN) + '_'+EXP_PREFIX + str(e).zfill(EXP_IDXLEN) + '.dat'), 
+                                   np.append(self.imgTimes[idx_list].reshape((-1, 1)), cI[ridx], axis=1), header='t'+TXT_DELIMITER + str(TXT_DELIMITER).join(['d{0}'.format(l) for l in self.dlsLags]), **self.savetxt_kwargs)
 
             logging.info('DLS analysis completed. Now averaging correlation functions g2-1')
             self.AverageG2M1()
@@ -554,5 +587,5 @@ class SALS():
         self.dt_tolerance = 1e-2  #1e-4
         self.dt_tolerance_isrelative = True
         self.DebugMode = False
-        self.savetxt_kwargs = {'delimiter':'\t', 'comments':'#'}
+        self.savetxt_kwargs = {'delimiter':TXT_DELIMITER, 'comments':TXT_COMMENT}
         self.loadtxt_kwargs = {**self.savetxt_kwargs, 'skiprows':1}
