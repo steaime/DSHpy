@@ -259,7 +259,7 @@ class MIfile():
         str_res += '\n| Filename      : ' + str(self.FileName)
         str_res += '\n| Header        : ' + str(self.hdrSize) + ' bytes'
         str_res += '\n| Shape         : ' + str(self.Shape) + ' px'
-        str_res += '\n| Pixel format  : ' + str(self.PixelFormat) + ' (' + str(self.PixelDepth) + ' bytes/px)'
+        str_res += '\n| Pixel format  : ' + str(self.Endianness) + str(self.PixelFormat) + ' (' + str(self.PixelDepth) + ' bytes/px)'
         str_res += '\n| Status        : '
         str_status = ''
         if (self.WriteFileHandle is not None):
