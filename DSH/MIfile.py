@@ -575,6 +575,10 @@ class MIfile():
         self.ImgWidth = self.Shape[2]
         self.PxPerImg = self.ImgHeight * self.ImgWidth
         self.PixelFormat = self.MetaData.Get('MIfile', 'px_format', 'B', str)
+        self.Endianness = self.MetaData.Get('MIfile', 'endian', '', str)
+        if self.Endianness not in ['', '>', '<']:
+            logging.warn('MIfile endianness "' + str(self.Endianness) + '" not recognized: set to default')
+            self.Endianness = ''
         self.PixelDepth = _data_depth[self.PixelFormat]
         self.PixelDataType = _data_types[self.PixelFormat]
         self.FPS = self.MetaData.Get('MIfile', 'fps', 1.0, float)
@@ -613,7 +617,7 @@ class MIfile():
                           ': ' + str(len(fileContent)) + ' instead of ' + str(bytes_to_read) + ' bytes (' + str(px_num) +\
                           ' pixels) returned from file ' + str(self.ReadingFileName))
         # get data type from the depth in bytes
-        struct_format = ('%s' + self.PixelFormat) % px_num
+        struct_format = (self.Endianness + '%s' + self.PixelFormat) % px_num
         # unpack data structure in a tuple (than converted into 1D array) of numbers
         return np.asarray(struct.unpack(struct_format, fileContent))
     
