@@ -2,7 +2,7 @@
 from setuptools import setup
 
 setup(name='DSH',
-      version='0.5',
+      version='0.6',
       description='Analyze speckle fields, compute correlations, derive motion maps',
       url='https://github.com/steaime/DSHpy',
       author='Stefano Aime',
