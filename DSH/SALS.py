@@ -114,10 +114,12 @@ def LoadFromConfig(ConfigFile, input_sect='input', outFolder=None):
     else:
         r_max = ppf.MaxRadius(MIin.ImageShape(), ctrPos)
         radRange = sf.ValidateRange(config.Get('SALS_parameters', 'r_range', None, float), r_max, MinVal=1, replaceNone=True)
-        angRange = sf.ValidateRange(config.Get('SALS_parameters', 'a_range', None, float), 2*np.pi, replaceNone=True)
+        angRange = config.Get('SALS_parameters', 'a_range', None, float)
         rSlices = np.geomspace(radRange[0], radRange[1], int(radRange[2])+1, endpoint=True)
         aSlices = np.linspace(angRange[0], angRange[1], int(angRange[2])+1, endpoint=True)
-        if (outFolder is None):
+        logging.debug(' > radial slices specs: ' + str(radRange) + ' (original input: ' + str(config.Get('SALS_parameters', 'r_range', None, float)) + '). ' + str(len(rSlices)) + ' slices generated: ' + str(rSlices))
+        logging.debug(' > angular slices specs: ' + str(angRange) + ' (original input: ' + str(config.Get('SALS_parameters', 'a_range', None, float)) + '). ' + str(len(aSlices)) + ' slices generated: ' + str(aSlices))
+       if (outFolder is None):
             outFolder = config.Get(input_sect, 'out_folder', None, str)
             if (outFolder is not None):
                 outFolder = os.path.join(config.Get('global', 'root', '', str), outFolder)

@@ -56,6 +56,8 @@ def LastFloatInStr(my_string):
         return None
     
 def ValidateRange(Range, MaxVal, MinVal=None, replaceNone=True):
+    """ Validates a range of positive quantities (Note: must be positive!)
+    """
     if Range is None:
         if replaceNone:
             return [MinVal, MaxVal, 1]
