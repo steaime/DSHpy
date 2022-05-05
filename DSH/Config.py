@@ -28,6 +28,7 @@ def LoadMetadata(MetaData, SectionName=None, DefaultFiles=[]):
     ----------
     MetaData : dict or filename
     SectionName : if MetaData is a dictionnary, eventually load subsection of configuration parameters
+                    if MetaData is a filename, only load this section from the configuration file
     DefaultFiles : list of full path containing default configuration parameters
     
     Returns
@@ -38,17 +39,20 @@ def LoadMetadata(MetaData, SectionName=None, DefaultFiles=[]):
         logging.debug('Appending input dictionary to section ' + str(SectionName))
         outConfig = Config(None, defaultConfigFiles=DefaultFiles)
         outConfig.Import(MetaData, section_name=SectionName)
-    else:
-        outConfig = Config(MetaData, defaultConfigFiles=DefaultFiles)
+    elif (type(MetaData) in [str]):
+        outConfig = Config(MetaData, defaultConfigFiles=DefaultFiles, LoadSectionOnly=SectionName)
         logging.debug('Loading config file ' + str(MetaData) + ' (' + str(outConfig.CountSections()) + 
                       ' sections, ' + str(outConfig.CountKeys()) + ' keys)')
+    else:
+        outConfig = Config(None, defaultConfigFiles=DefaultFiles)
+        outConfig.Import(MetaData.ToDict(), section_name=SectionName)
     
     return outConfig
 
 class Config():
     """Class that develops on configparser with customized methods"""
     
-    def __init__(self, ConfigFile=None, defaultConfigFiles=[]):
+    def __init__(self, ConfigFile=None, defaultConfigFiles=[], LoadSectionOnly=None):
         """Initializes the configfile class
         
         Parameters
@@ -57,6 +61,9 @@ class Config():
         defaultConfigFiles : list of filenames with default configurations
                         parameters not present in the main configuration file
                         will be loaded from the default configuration files
+        LoadSectionOnly : string or None.
+                        if not None, after reading the whole configuration, 
+                        only retain the specified section
         """
         self.config = configparser.ConfigParser(allow_no_value=True)
         for conf_f in defaultConfigFiles:
@@ -69,6 +76,13 @@ class Config():
                 self.config.read(ConfigFile)
             else:
                 raise IOError('Configuration file ' + str(ConfigFile) + ' not found')
+        if LoadSectionOnly is not None:
+            if (self.config.has_section(LoadSectionOnly)):
+                tmp_config = configparser.ConfigParser(allow_no_value=True)
+                tmp_config.read_dict({LoadSectionOnly:self.config._sections[LoadSectionOnly]})
+                self.config = tmp_config
+            else:
+                raise IOError('Specified section ' + str(LoadSectionOnly) + ' not found in ' + str(self.config._sections.keys()))
 
     def __repr__(self):
         return '<Config class: %s sections, %s keys>' % (self.CountSections(), self.CountKeys())
@@ -161,6 +175,11 @@ class Config():
         ----------
         section : section to export as a dictionary
                 if None, export all sections
+        example:
+        if section==None, function will return
+            {'section1' : {'elem1' : val1, 'elem2' : val2}, 'section2' : {...}, ...}
+        if section=='section1', function will return
+            {'elem1' : val1, 'elem2' : val2}
         """
         if (section is None):
             return dict(self.config._sections)
@@ -168,14 +187,24 @@ class Config():
             if (self.config.has_section(section)):
                 return dict(self.config._sections[section])
             else:
-                print('WARNING: section not found in current configuration. Available sections are: ' + str(self.GetSections()))
+                logging.warn('Config.ToDict() warning: section "' + str(section) + 
+                            '" not found in current configuration. Available sections are: ' + str(self.GetSections()))
                 return {}
     
     def CountSections(self):
         return len(self.config.sections())
     
     def CountKeys(self):
-        num_keys = 0
-        for cur_sect in self.config.sections():
-            num_keys += len(self.config._sections[cur_sect].keys())
-        return num_keys
+        return np.sum([len(self.config._sections[s].keys()) for s in self.config.sections()])
+
+    def RenameSection(self, SectionTo, SectionFrom=None):
+        if SectionFrom is not None:
+            if (self.config.has_section(SectionFrom)):
+                items = self.config.items(SectionFrom)
+                self.config.add_section(SectionTo)
+                for item in items:
+                    self.config.set(SectionTo, item[0], item[1])
+                self.config.remove_section(SectionFrom)
+            else:
+                logging.warn('Config.RenameSection() warning: section "' + str(SectionFrom) + 
+                            '" not found in current configuration. Available sections are: ' + str(self.GetSections()))

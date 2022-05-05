@@ -1,5 +1,6 @@
 import os
 import numpy as np
+import collections
 import logging
 from DSH import Config as cf
 from DSH import MIfile as MI
@@ -61,13 +62,16 @@ class MIstack():
         self.MetaData = MetaData
         self.IdxList = []
         self.MIshape = [0,0,0]
+        self.ImgsPerMIfile = 0
+        self.PixelFormat = '-'
+        self.PixelDepth = 0
         self.StackType = StackType
         self._loaded = False
         if Load:
             self.LoadMetadata(MetaDataSection=MetaDataSection)
             if (len(MIfiles)>0):
                 if (isinstance(MIfiles[0],str)):
-                    self.LoadFiles(MIfiles, metadata_section=MetaDataSection, open_mifiles=OpenFiles, replace_previous=True)
+                    self.LoadFiles(MIfiles, metadata_section='MIfile', open_mifiles=OpenFiles, replace_previous=True)
     
     def __repr__(self):
         return '<MIstack [%s]: %sx%sx%sx%sx%s bytes>' % (self.StackType, self.Count(), self.ImgsPerMIfile, self.ImgHeight, self.ImgWidth, self.PixelDepth)
@@ -95,17 +99,28 @@ class MIstack():
         
         Parameters
         ----------
-        MetaData : string or dict.
-        MetaDataSection : if self.MetaData is a dictionnary, load subsection of the configuration parameters
+        MetaData : string, dict, or None. 
+                    If None, just use self.Metadata to update class properties
+                    If string or dict: load metadata from file or dict into a Config object and store it in self.Metadata
+                                        Next, use this info to update class properties
+        MetaDataSection : string or None
+                    MIstack class assumes that the metadata object has relevant parameters in a section named 'MIfile'.
+                    If this is already the case the input metadata, set MetaDataSection to None.
+                    Otherwise, function will read the section called MetaDataSection and rename it to 'MIfile'.
         """
         if (MetaData is not None):
             self.MetaData = MetaData
         assert (self.MetaData is not None), 'No Metadata to be loaded'
-        self.MetaData = cf.LoadMetadata(self.MetaData, MetaDataSection)
+
+        if type(self.MetaData) in [str, dict, collections.OrderedDict]:
+            self.MetaData = cf.LoadMetadata(self.MetaData, SectionName=MetaDataSection)
+        self.MetaData.RenameSection('MIfile', MetaDataSection)
+        
         if 'MIfile' not in self.MetaData.GetSections():
             logging.warn('No MIfile section found in MIstack metadata (available sections: ' + str(self.MetaData.GetSections()) + ')')
         else:
             logging.debug('Now loading MIstack.MetaData from Config object. Available sections: ' + str(self.MetaData.GetSections()))
+
         self.MIshape = self.MetaData.Get('MIfile', 'shape', [0,0,0], int)
         self.hdrSize = self.MetaData.Get('MIfile', 'hdr_len', 0, int)
         self.gapBytes = self.MetaData.Get('MIfile', 'gap_bytes', 0, int)
@@ -184,6 +199,9 @@ class MIstack():
             for midx in range(len(self.MIfiles)):
                 if isinstance(self.MIfiles[midx], MI.MIfile):
                     self.MIfiles[midx].Close()
+    
+    def ReadAll(self, zRange=None, cropROI=None):
+        return [_MI.Read(zRange=zRange, cropROI=cropROI) for _MI in self.MIfiles]
     
     def GetImage(self, img_idx, MI_idx=None, cropROI=None):
         """Read single image from MIfile

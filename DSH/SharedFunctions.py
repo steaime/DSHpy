@@ -120,9 +120,9 @@ def StrParse(my_string, cast_type=None):
             res = json.loads(res)
         else:
             res = ast.literal_eval(res)
-    if (type(res) in [list,tuple]):
+    if (type(res) in [list]):
         for i in range(len(res)):
-            if (type(res[i]) in [list,tuple]):
+            if (type(res[i]) in [list]):
                 if (cast_type is not None):
                     for j in range(len(res[i])):
                         res[i][j] = cast_type(res[i][j])
@@ -130,6 +130,8 @@ def StrParse(my_string, cast_type=None):
                 if (cast_type is not None):
                     res[i] = cast_type(res[i])
         return res
+    elif (type(res) in [tuple]):
+        return tuple(map(cast_type, res))
     elif (cast_type is bool):
         if (type(res) is bool):
             return res
