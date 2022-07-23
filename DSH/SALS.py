@@ -104,9 +104,12 @@ def LoadFromConfig(ConfigFile, input_sect='input', outFolder=None):
         logging.error('SALS.LoadFromConfig ERROR: medatada filename must be specified when loading a MIstack')
         return None
     if input_stack:
+        mifile_info = 'MIstack ' + str(miin_fname)
         MIin = MIs.MIstack(miin_fname, miin_meta_fname, Load=True, StackType='t')
     else:
+        mifile_info = 'MIfile ' + str(miin_fname)
         MIin = MI.MIfile(miin_fname, miin_meta_fname)
+    logging.debug('SALS.LoadFromConfig loading ' + str(mifile_info) + ' (metadata filename: ' + str(miin_meta_fname) + ')')
     ctrPos = config.Get('SALS_parameters', 'center_pos', None, float)
     if (ctrPos is None):
         logging.error('SALS.LoadFromConfig ERROR: no SALS_parameters.center_pos parameter found in config file ' + str(ConfigFile))
@@ -119,11 +122,12 @@ def LoadFromConfig(ConfigFile, input_sect='input', outFolder=None):
         aSlices = np.linspace(angRange[0], angRange[1], int(angRange[2])+1, endpoint=True)
         logging.debug(' > radial slices specs: ' + str(radRange) + ' (original input: ' + str(config.Get('SALS_parameters', 'r_range', None, float)) + '). ' + str(len(rSlices)) + ' slices generated: ' + str(rSlices))
         logging.debug(' > angular slices specs: ' + str(angRange) + ' (original input: ' + str(config.Get('SALS_parameters', 'a_range', None, float)) + '). ' + str(len(aSlices)) + ' slices generated: ' + str(aSlices))
-       if (outFolder is None):
+        if (outFolder is None):
             outFolder = config.Get(input_sect, 'out_folder', None, str)
             if (outFolder is not None):
                 outFolder = os.path.join(config.Get('global', 'root', '', str), outFolder)
         mask = config.Get('SALS_parameters', 'px_mask', None, str)
+        logging.debug(' > pixel mask: ' + str(mask))
         mask = MI.ReadBinary(sf.PathJoinOrNone(froot, config.Get(input_sect, 'px_mask', mask, str)),
                              MIin.ImageShape(), MIin.DataFormat(), 0)
         dark = MI.ReadBinary(sf.PathJoinOrNone(froot, config.Get(input_sect, 'dark_bkg', None, str)), 
@@ -149,6 +153,8 @@ def LoadFromConfig(ConfigFile, input_sect='input', outFolder=None):
             exp_times = np.unique(np.loadtxt(exp_times, dtype=float, usecols=config.Get('format', 'exp_times_colidx', 0, int)))
         dlsLags = config.Get('SALS_parameters', 'dls_lags', None, int)
         tavgT = config.Get('SALS_parameters', 'timeavg_T', None, int)
+        logging.debug('SALS.LoadFromConfig() returns SALS object with MIfile ' + str(mifile_info) + ', output folder ' + str(outFolder) + 
+                    ', center position ' + str(ctrPos) + ', ' + str(len(rSlices)) + ' radial and ' + str(len(aSlices)) + ' angular slices')
         return SALS(MIin, outFolder, ctrPos, [rSlices, aSlices], mask, [dark, opt, PD_data], exp_times, dlsLags, img_times, tavgT)
 
 def GenerateROIs(ROI_specs, imgShape, centerPos, maskRaw=None):

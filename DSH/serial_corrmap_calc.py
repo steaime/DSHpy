@@ -27,7 +27,7 @@ if __name__ == '__main__':
                 g_params[param_kw] = sys.argv[argidx]
                 param_kw = None
     if (len(inp_fnames)<=0):
-        inp_fnames = [os.path.join(os.path.dirname(os.path.abspath(__file__)), 'serial_corrmap_config.ini')]
+        inp_fnames = [os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config', 'serial_corrmap_config.ini')]
     
     if ('-silent' not in cmd_list):
         print('\n\nBATCH CORRELATION MAP CALCULATOR\nWorking on {0} input files'.format(len(inp_fnames)))
