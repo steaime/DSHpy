@@ -45,6 +45,7 @@ def LoadMetadata(MetaData, SectionName=None, DefaultFiles=[]):
                       ' sections, ' + str(outConfig.CountKeys()) + ' keys)')
     else:
         outConfig = Config(None, defaultConfigFiles=DefaultFiles)
+
         if (MetaData is None):
             logging.warn('Config.LoadMetadata() warning: input metadata is None. Only default configuration parameters are loaded')
         else:
@@ -203,6 +204,7 @@ class Config():
     def RenameSection(self, SectionTo, SectionFrom=None):
         if SectionFrom is not None:
             if (self.config.has_section(SectionFrom)):
+
                 if (SectionFrom == SectionTo):
                     logging.debug('Config.RenameSection(): starting and destination sections coincide ("' + str(SectionFrom) + '"). No renaming')
                 else:
@@ -222,6 +224,7 @@ class Config():
                                             '" from ' + str(self.Get(SectionTo, item[0])) + ' to ' + str(item[1]))
                         self.config.set(SectionTo, item[0], item[1])
                     self.config.remove_section(SectionFrom)
+
             else:
                 logging.warn('Config.RenameSection() warning: section "' + str(SectionFrom) + 
                             '" not found in current configuration. Available sections are: ' + str(self.GetSections()))
