@@ -162,6 +162,9 @@ def GetFilenameFromCompletePath(my_string):
                 res = split2[-1]
     return res
 
+def GetFolderFromCompletePath(my_string):
+    return os.path.dirname(my_string)
+
 def CheckCreateFolder(folderPath):
     if (os.path.isdir(folderPath)):
         return True
@@ -329,4 +332,8 @@ def MoveListElement(lst, old_idx, new_idx):
     lst.insert(new_idx, lst.pop(old_idx))
     return lst
 
-
+def IsWithinTolerance(t1, t2, tolerance, tolerance_isrelative):
+    if tolerance_isrelative:
+        return (np.abs(t2 - t1) < tolerance * 0.5 * np.abs(t2 + t1))
+    else:
+        return (np.abs(t2 - t1) < tolerance)
