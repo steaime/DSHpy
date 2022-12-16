@@ -337,3 +337,15 @@ def IsWithinTolerance(t1, t2, tolerance, tolerance_isrelative):
         return (np.abs(t2 - t1) < tolerance * 0.5 * np.abs(t2 + t1))
     else:
         return (np.abs(t2 - t1) < tolerance)
+
+def CheckLoadTxtUsecols(fpath, usecols=None, delimiter=None):
+    with open(fpath, 'rb') as f:
+        lines = [f.readline()]
+    fshape = np.loadtxt(lines, delimiter=delimiter).shape
+    if (len(fshape) < 2):
+        return False
+    elif (fshape[1] <= np.max(usecols)):
+        return False
+    else:
+        return True
+    
