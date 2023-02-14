@@ -550,10 +550,14 @@ class SALS():
                 Ir = None
         if Ir is not None:
             if os.path.isfile(os.path.join(self.outFolder, SLS_RAW_FNAME)):
-                Ir_allexp = np.loadtxt(os.path.join(self.outFolder, EXPTIMES_FNAME), **self.savetxt_kwargs)
+                Ir_allexp = np.loadtxt(os.path.join(self.outFolder, SLS_RAW_FNAME), **self.savetxt_kwargs)
                 if (Ir_allexp.shape[1] > 2):
                     Ir_allexp = Ir_allexp[:,2:]
-                    Ir_allexp.reshape((Ir.shape[0], -1, Ir_allexp.shape[-1]))
+                    if self.DebugMode:
+                        logging.debug('Ir_allexp initial shape: ' + str(Ir_allexp.shape))
+                    Ir_allexp = Ir_allexp.reshape((Ir.shape[0], -1, Ir_allexp.shape[-1]))
+                    if self.DebugMode:
+                        logging.debug('Ir_allexp after reshaping: ' + str(Ir_allexp.shape))
                 else:
                     Ir_allexp = None
         if os.path.isfile(os.path.join(self.outFolder, EXPTIMES_FNAME)):
@@ -563,6 +567,8 @@ class SALS():
             else:
                 best_exptimes = None
                 
+        if self.DebugMode:
+            logging.debug('Ir_allexp final shape: ' + str(Ir_allexp.shape))
         return Ir_allexp, Ir, best_exptimes
                     
     def ReadCIfile(self, fname):
@@ -573,10 +579,10 @@ class SALS():
             logging.warning('cI result file {0} potentially corrupted: shape {1} does not match expected {2}'.format(fname, cur_cI.shape, (self.NumTimes(), self.NumLagtimes())))
         return cur_cI, cur_times, cur_lagidx_list, roi_idx, exp_idx
 
-    def AverageG2M1(self):
+    def AverageG2M1(self, filter_prefix=CI_PREFIX):
         if self.timeAvg_T is None:
             self.timeAvg_T = self.NumTimes()
-        cI_fnames = sf.FindFileNames(self.outFolder, Prefix=CI_PREFIX+'_', Ext='.dat')
+        cI_fnames = sf.FindFileNames(self.outFolder, Prefix=filter_prefix+'_', Ext='.dat')
         
         for cur_f in cI_fnames:
             AverageG2M1(os.path.join(self.outFolder, cur_f), average_T=self.timeAvg_T)
@@ -627,19 +633,21 @@ class SALS():
         if (self.StackInput() or no_buffer):
             AvgRes = np.nan*np.ones((len(stack1), num_ROI), dtype=float)
             for i in range(AvgRes.shape[0]):
-                if stack2 is None:
-                    AvgRes[i], NormList = ppf.ROIAverage(self.GetOrReadImage(stack1[i], imgs), ROImasks, boolMask=masks_isBool)
-                else:
-                    if (stack1[i]==stack2[i]):
-                        AvgRes[i], NormList = ppf.ROIAverage(np.square(self.GetOrReadImage(stack1[i], imgs)), ROImasks, boolMask=masks_isBool)
+                if stack1[i]>=0 and stack1[i] < self.MIinput.ImageNumber():
+                    if stack2 is None:
+                        AvgRes[i], NormList = ppf.ROIAverage(self.GetOrReadImage(stack1[i], imgs), ROImasks, boolMask=masks_isBool)
                     else:
-                        AvgRes[i], NormList = ppf.ROIAverage(np.multiply(self.GetOrReadImage(stack1[i], imgs), self.GetOrReadImage(stack2[i], imgs)), ROImasks, boolMask=masks_isBool)
-                    if (self.DebugMode):
-                        if (np.any(AvgRes[i]<0)):
-                            min_idx = np.argmin(AvgRes[i])
-                            logging.warn('Negative cross product value (image1: {0}, image2: {1}, ROI{2} avg: {3})'.format(stack1[i], stack2[i], min_idx, AvgRes[i][min_idx]))
-                            logging.debug('   >>> Debug output for ROIAverage function:')
-                            ppf.ROIAverage(np.multiply(self.GetOrReadImage(stack1[i], imgs), self.GetOrReadImage(stack2[i], imgs)), ROImasks, boolMask=masks_isBool, debug=True)
+                        if stack2[i]>=0 and stack2[i] < self.MIinput.ImageNumber():
+                            if (stack1[i]==stack2[i]):
+                                AvgRes[i], NormList = ppf.ROIAverage(np.square(self.GetOrReadImage(stack1[i], imgs)), ROImasks, boolMask=masks_isBool)
+                            else:
+                                AvgRes[i], NormList = ppf.ROIAverage(np.multiply(self.GetOrReadImage(stack1[i], imgs), self.GetOrReadImage(stack2[i], imgs)), ROImasks, boolMask=masks_isBool)
+                            if (self.DebugMode):
+                                if (np.any(AvgRes[i]<0)):
+                                    min_idx = np.argmin(AvgRes[i])
+                                    logging.warn('Negative cross product value (image1: {0}, image2: {1}, ROI{2} avg: {3})'.format(stack1[i], stack2[i], min_idx, AvgRes[i][min_idx]))
+                                    logging.debug('   >>> Debug output for ROIAverage function:')
+                                    ppf.ROIAverage(np.multiply(self.GetOrReadImage(stack1[i], imgs), self.GetOrReadImage(stack2[i], imgs)), ROImasks, boolMask=masks_isBool, debug=True)
         else:
             if imgs is None:
                 imgs = self.MIinput.Read()
@@ -701,7 +709,7 @@ class SALS():
         
         ROIavgs_allExp, ROIavgs_best, BestExptime_Idx = None, None, None
         if not force_calc:
-            ROIavgs_allExp, ROIavgs_best, BestExptime_Idx = self.LoadSLS()
+             ROIavgs_allExp, ROIavgs_best, BestExptime_Idx = self.LoadSLS()
         
         if ROIavgs_allExp is None or ROIavgs_best is None or BestExptime_Idx is None:
 
@@ -728,9 +736,16 @@ class SALS():
             ROIavgs_best, BestExptime_Idx = self.FindBestExptimes(ROIavgs_allExp)
             if saveFolder is not None:
                 self.SaveSLS(ROIavgs_best, NormList, [ROIavgs_allExp, BestExptime_Idx], save_folder=saveFolder)
-            logging.debug('SLS output saved')
+            
+            logging.debug('SALS.doSLS: output saved')
 
             # TODO: time average SLS
+        
+        else:
+
+            logging.info('SALS.doSLS: loading previously computed SLS')
+        
+        logging.debug('SALS.doSLS: raw result has shape ' + str(ROIavgs_allExp.shape))
         
         return ROIavgs_allExp, ROIavgs_best, BestExptime_Idx, buf_images
 
@@ -836,22 +851,61 @@ class SALS():
                 else:
                     
                     cI = np.nan * np.ones((ISQavg.shape[1], len(DLS_reftimes), DLS_lagnum), dtype=float)
+                    # compute all d0s (even if it is not in the list of lagtimes)
+                    all_d0 = np.subtract(np.divide(ISQavg, np.square(ROIavgs_allExp[:,e,:])), 1).T
                     for t in DLS_reftimes:
+                        if self.DebugMode:
+                            logging.debug('SALS.doDLS - cI.shape : ' + str(cI.shape))
+                            logging.debug('SALS.doDLS - ISQavg.shape : ' + str(ISQavg.shape))
+                            logging.debug('SALS.doDLS - ROIavgs_allExp.shape : ' + str(ROIavgs_allExp.shape))
                         cI[:,t,0] = np.subtract(np.divide(ISQavg[t,:], np.square(ROIavgs_allExp[t,e,:])), 1)
                         
                     for ref_tidx in range(len(DLS_reftimes)):
                         
-                        cur_lagtimes = np.arange(self.NumTimes()-DLS_reftimes[ref_tidx])-DLS_reftimes[ref_tidx]
-                        IXavg, NormList = self.ROIaverageProduct(stack1=[idx_list[DLS_reftimes[ref_tidx]]]*len(cur_lagtimes), stack2=idx_list[cur_lagtimes+DLS_reftimes[ref_tidx]], 
-                                                                 ROImasks=ROI_boolMasks, masks_isBool=True, no_buffer=no_buffer, imgs=buf_images)
+                        if lagtimes=='all':
+                            temp_lagtimes = np.arange(self.NumTimes()-DLS_reftimes[ref_tidx])-DLS_reftimes[ref_tidx]
+                        else:
+                            temp_lagtimes = DLS_lags
                         
-                        for lidx in range(len(cur_lagtimes)):
-                            # 'classic' cI formula
-                            cI[:,ref_tidx,lidx] = np.subtract(np.divide(IXavg[DLS_reftimes[ref_tidx],:], np.multiply(ROIavgs_allExp[DLS_reftimes[ref_tidx],e,:],
-                                                                                                       ROIavgs_allExp[DLS_reftimes[ref_tidx]+cur_lagtimes[lidx],e,:])), 1)
-                            # d0 normalization
-                            cI[:,ref_tidx,lidx] = np.divide(cI[:,ref_tidx,lidx], 0.5 * np.add(cI[:,ref_tidx,0], cI[:,DLS_reftimes[ref_tidx]+cur_lagtimes[lidx],0]))
-                            logging.info('Lagtime {0}/{1} (tref={2}) completed'.format(ref_tidx, len(DLS_reftimes), DLS_reftimes[ref_tidx]))
+                        cur_stack2 = []
+                        cur_lagtimes = []
+                        for curlag in temp_lagtimes:
+                            if curlag+DLS_reftimes[ref_tidx] >= 0 and curlag+DLS_reftimes[ref_tidx] < len(idx_list):
+                                cur_stack2.append(curlag+DLS_reftimes[ref_tidx])
+                                cur_lagtimes.append(curlag)
+
+                        if len(cur_stack2)>0:
+
+                            IXavg, NormList = self.ROIaverageProduct(stack1=[idx_list[DLS_reftimes[ref_tidx]]]*len(cur_stack2), stack2=cur_stack2, 
+                                                                    ROImasks=ROI_boolMasks, masks_isBool=True, no_buffer=no_buffer, imgs=buf_images)
+                            
+                            if self.DebugMode:
+                                logging.debug('IXavg.shape = ' + str(IXavg.shape))
+                            for lidx in range(len(cur_lagtimes)):
+
+                                cur_tidx2 = DLS_reftimes[ref_tidx]+cur_lagtimes[lidx]
+                                if cur_tidx2>=0 and cur_tidx2 < ISQavg.shape[0]:
+
+                                    if self.DebugMode:
+                                        logging.debug('Correlating reftime {0} (t={1}) and lagtime {2} (d={3})'.format(ref_tidx, DLS_reftimes[ref_tidx], lidx, cur_lagtimes[lidx]))
+                                    if cur_lagtimes[lidx]==0:
+                                        cI[:,ref_tidx,lidx] = all_d0[:,ref_tidx]
+                                    else:
+                                        # 'classic' cI formula
+                                        if self.DebugMode:
+                                            logging.debug('IXavg test: ' + str(IXavg[DLS_reftimes[ref_tidx],0]))
+                                            logging.debug('ROIavgs_allExp test: ' + str(ROIavgs_allExp[DLS_reftimes[ref_tidx],e,0]))
+                                        cI[:,ref_tidx,lidx] = np.subtract(np.divide(IXavg[lidx,:], 
+                                                                                    np.multiply(ROIavgs_allExp[DLS_reftimes[ref_tidx],e,:],
+                                                                                                ROIavgs_allExp[cur_tidx2,e,:])), 1)
+                                    # d0 normalization
+                                    cI[:,ref_tidx,lidx] = np.divide(cI[:,ref_tidx,lidx], 0.5 * np.add(all_d0[:,DLS_reftimes[ref_tidx]], all_d0[:,cur_tidx2]))
+                            
+                            logging.info('Reference time {0}/{1} (tref={2}) completed'.format(ref_tidx, len(DLS_reftimes), DLS_reftimes[ref_tidx]))
+
+                        else:
+
+                            logging.warn('Reference time {0}/{1} (tref={2}) empty'.format(ref_tidx, len(DLS_reftimes), DLS_reftimes[ref_tidx]))
                                 
                                 
                         
@@ -859,17 +913,19 @@ class SALS():
                 for ridx in range(cI.shape[0]):
                     logging.info('Now saving ROI {0} to file'.format(ridx))
                     if reftimes in ['auto', 'all'] and lagtimes=='auto':
+                        save_prefix = CI_PREFIX
                         np.savetxt(os.path.join(self.outFolder, CI_PREFIX+'_'+ROI_PREFIX + str(ridx).zfill(ROI_IDXLEN) + '_'+EXP_PREFIX + str(e).zfill(EXP_IDXLEN) + '.dat'), 
                                    np.append(self.imgTimes[idx_list].reshape((-1, 1)), cI[ridx], axis=1), 
                                    header='t'+TXT_DELIMITER + str(TXT_DELIMITER).join(['d{0}'.format(l) for l in DLS_lags]), **self.savetxt_kwargs)
                     else:
+                        save_prefix = CUSTCI_PREFIX
                         np.savetxt(os.path.join(self.outFolder, CUSTCI_PREFIX+'_'+ROI_PREFIX + str(ridx).zfill(ROI_IDXLEN) + '_'+EXP_PREFIX + str(e).zfill(EXP_IDXLEN) + '.dat'), 
-                                   np.append(self.imgTimes[idx_list].reshape((-1, 1)), cI[ridx], axis=1), 
+                                   np.append(np.asarray([self.imgTimes[idx_list[tref]] for tref in DLS_reftimes]).reshape((-1, 1)), cI[ridx], axis=1), 
                                    header='t'+TXT_DELIMITER + str(TXT_DELIMITER).join(['d{0}'.format(l) for l in DLS_lags]), **self.savetxt_kwargs)                    
                     
 
         logging.info('DLS analysis completed. Now averaging correlation functions g2-1')
-        self.AverageG2M1()
+        self.AverageG2M1(filter_prefix=save_prefix)
 
 
 
