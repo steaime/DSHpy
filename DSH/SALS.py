@@ -19,10 +19,12 @@ EXPTIMES_FNAME = 'exptimes.dat'
 CI_PREFIX = 'cI'
 CUSTCI_PREFIX = 'custCI'
 G2M1_PREFIX = 'g2m1'
+CUSTG2M1_PREFIX = 'custg2m1'
 ROI_PREFIX = 'ROI'
 ROI_IDXLEN = 3
 EXP_PREFIX = 'e'
 EXP_IDXLEN = 2
+CI_TIME_COLIDX = 1
 
 SALS_DT_TOLERANCE = 1e-2
 SALS_DT_TOLERANCE_ISREL = True
@@ -46,11 +48,11 @@ def ReadCIfile(fpath):
     roi_idx = sf.FirstIntInStr(fname)
     exp_idx = sf.LastIntInStr(fname)
     cur_cI = np.loadtxt(fpath, delimiter=TXT_DELIMITER, comments=TXT_COMMENT, skiprows=1)
-    cur_times = cur_cI[:,0]
-    cur_cI = cur_cI[:,1:] # skip first column with image times
+    cur_times = cur_cI[:,CI_TIME_COLIDX]
+    cur_cI = cur_cI[:,CI_TIME_COLIDX+1:] # skip first column with image index and second column with image times
     with open(fpath, "r") as file:
         hdr_line = file.readline().strip()
-    cur_lagidx_list = sf.ExtractIndexFromStrings(hdr_line.split(TXT_DELIMITER)[1:])
+    cur_lagidx_list = sf.ExtractIndexFromStrings(hdr_line.split(TXT_DELIMITER)[CI_TIME_COLIDX+1:])
     return cur_cI, cur_times, cur_lagidx_list, roi_idx, exp_idx
     
 def OpenCIs(froot):
@@ -62,7 +64,9 @@ def OpenCIs(froot):
     imgtimes = []
     for i, fname in enumerate(fnames_list):
         res_cI, res_hdr, col_times = sf.LoadResFile(os.path.join(froot, fname), delimiter=TXT_DELIMITER, comments=TXT_COMMENT, 
-                                                   readHeader=True, isolateFirst=1)
+                                                   readHeader=True, isolateFirst=CI_TIME_COLIDX+1)
+        if col_times.ndim>1: #this happens if CI_TIME_COLIDX>0
+            col_times = col_times[:,CI_TIME_COLIDX]
         res.append(res_cI)
         lagtimes.append(np.asarray([sf.FirstIntInStr(hdr) for hdr in res_hdr]))
         imgtimes.append(col_times)
@@ -178,13 +182,26 @@ def LoadImageTimes(img_times_source, root_folder=None, usecols=0, skiprows=1, de
         # if img_times_source is a string, let's use a single text file as input.
         # otherwise, it can be a list: in that case, let's open each text file and append all results
         if (isinstance(img_times_source, str)):
-            res = np.loadtxt(os.path.join(root_folder, img_times_source), dtype=float, usecols=usecols, skiprows=skiprows)
+            fpath = os.path.join(root_folder, img_times_source)
+            if CheckLoadTxtUsecols(fpath, usecols=usecols):
+                res = np.loadtxt(fpath, dtype=float, usecols=usecols, skiprows=skiprows)
+            else:
+                res = [default_value]
+                logging.warning('DSH.SALS.LoadImageTimes(): file ' + str(fpath) + ' incompatible with usecols ' + str(usecols) + '. Returning default value ' + str(res))
         else:
             res = np.empty(shape=(0,), dtype=float)
             for cur_f in img_times_source:
-                res = np.append(res, np.loadtxt(os.path.join(root_folder, cur_f), dtype=float, usecols=usecols, skiprows=skiprows))
+                fpath = os.path.join(root_folder, cur_f)
+                if CheckLoadTxtUsecols(fpath, usecols=usecols):
+                    res = np.append(res, np.loadtxt(fpath, dtype=float, usecols=usecols, skiprows=skiprows))
+                else:
+                    logging.warning('DSH.SALS.LoadImageTimes(): file ' + str(fpath) + ' incompatible with usecols ' + str(usecols) + '. Skipping file from list')
+            if len(res)<=0:
+                res = [default_value]
+                logging.warning('DSH.SALS.LoadImageTimes(): no ok file in list ' + str(img_times_source) + ' returning default value ' + str(res))
     else:
-        res = default_value
+        res = [default_value]
+        logging.debug('DSH.SALS.LoadImageTimes(): no file specified. Returning default value ' + str(res))
     return res
 
 def GenerateROIs(ROI_specs, imgShape, centerPos, maskRaw=None):
@@ -277,7 +294,7 @@ def FindTimelags(times, lags, subset_len=None):
     logging.debug('unique_laglist has {0} elements. First line has {1} elements, ranging from {2} to {3}'.format(len(unique_laglist), len(unique_laglist[0]), unique_laglist[0][0], unique_laglist[0][-1]))
     return alllags, unique_laglist
     
-def AverageG2M1(cI_file, average_T=None):
+def AverageG2M1(cI_file, average_T=None, save_prefix=G2M1_PREFIX):
     cur_cI, cur_times, cur_lagidx_list, roi_idx, exp_idx = ReadCIfile(cI_file)
     
     g2m1, g2m1_lags = AverageCorrTimetrace(cur_cI, cur_times, cur_lagidx_list, average_T)
@@ -287,7 +304,7 @@ def AverageG2M1(cI_file, average_T=None):
     g2m1_out[:,0::2] = g2m1_lags.T
     g2m1_out[:,1::2] = g2m1.T
     
-    np.savetxt(os.path.join(os.path.dirname(cI_file), G2M1_PREFIX + sf.GetFilenameFromCompletePath(cI_file)[2:]), 
+    np.savetxt(os.path.join(os.path.dirname(cI_file), save_prefix + sf.GetFilenameFromCompletePath(cI_file)[2:]), 
            g2m1_out, header=str_hdr_g, delimiter=TXT_DELIMITER, comments=TXT_COMMENT)
 
 def AverageCorrTimetrace(CorrData, ImageTimes, Lagtimes_idxlist, average_T=None):
@@ -536,36 +553,43 @@ class SALS():
             ROIavgs_allExp, BestExptime_Idx = AllExpData
             np.savetxt(os.path.join(save_folder, EXPTIMES_FNAME), np.append(self.ROIcoords[:,:2], BestExptime_Idx.T, axis=1), 
                        header=str_hdr_Ir, **self.savetxt_kwargs)
-            str_hdr_raw = 'r[px]'+TXT_DELIMITER+'phi[rad]' + ''.join([TXT_DELIMITER+'t{0:.2f}_e{1:.3f}'.format(self.imgTimes[i], self.expTimes[i%len(self.expTimes)]) for i in range(len(self.imgTimes))])
+            str_hdr_raw = 'r[px]'+TXT_DELIMITER+'phi[rad]' + ''.join([TXT_DELIMITER+'t{0:.2f}_e{1:.3f}'.format(self.imgTimes[i], self.expTimes[i%len(self.expTimes)]) 
+                                                                      for i in range(len(self.imgTimes))])
             np.savetxt(os.path.join(save_folder, SLS_RAW_FNAME), np.append(self.ROIcoords[:,:2], ROIavgs_allExp.reshape((-1, ROIavgs_allExp.shape[-1])).T, axis=1), 
                        header=str_hdr_raw, **self.savetxt_kwargs)
 
     def LoadSLS(self):
         Ir_allexp, Ir, best_exptimes = None, None, None
-        if os.path.isfile(os.path.join(self.outFolder, SLS_FNAME)):
-            Ir = np.loadtxt(os.path.join(self.outFolder, SLS_FNAME), **self.savetxt_kwargs)
+        sls_fpath = os.path.join(self.outFolder, SLS_FNAME)
+        if os.path.isfile(sls_fpath):
+            Ir = np.loadtxt(sls_fpath, **self.savetxt_kwargs)
             if (Ir.shape[1] > 2):
-                Ir = Ir[:,2:]
+                Ir = Ir[:,2:].T
+                logging.debug('Loading SLS data from {0}: output has shape {1}'.format(sls_fpath, Ir.shape))
             else:
                 Ir = None
+                logging.warn('Loading SLS data from {0} failed: None returned'.format(sls_fpath))
         if Ir is not None:
-            if os.path.isfile(os.path.join(self.outFolder, SLS_RAW_FNAME)):
-                Ir_allexp = np.loadtxt(os.path.join(self.outFolder, SLS_RAW_FNAME), **self.savetxt_kwargs)
+            slsraw_fpath = os.path.join(self.outFolder, SLS_RAW_FNAME)
+            if os.path.isfile(slsraw_fpath):
+                Ir_allexp = np.loadtxt(slsraw_fpath, **self.savetxt_kwargs)
                 if (Ir_allexp.shape[1] > 2):
-                    Ir_allexp = Ir_allexp[:,2:]
-                    if self.DebugMode:
-                        logging.debug('Ir_allexp initial shape: ' + str(Ir_allexp.shape))
-                    Ir_allexp = Ir_allexp.reshape((Ir.shape[0], -1, Ir_allexp.shape[-1]))
-                    if self.DebugMode:
-                        logging.debug('Ir_allexp after reshaping: ' + str(Ir_allexp.shape))
+                    Ir_allexp = Ir_allexp[:,2:].T
+                    #Ir_allexp.reshape((Ir.shape[0], -1, Ir_allexp.shape[-1]))
+                    Ir_allexp = np.expand_dims(Ir_allexp, axis=1)
+                    logging.debug('Loading SLS raw data from {0}: output has shape {1}'.format(slsraw_fpath, Ir_allexp.shape))
                 else:
                     Ir_allexp = None
-        if os.path.isfile(os.path.join(self.outFolder, EXPTIMES_FNAME)):
-            best_exptimes = np.loadtxt(os.path.join(self.outFolder, EXPTIMES_FNAME), **self.savetxt_kwargs)
+                    logging.warn('Loading SLS raw data from {0} failed: None returned'.format(slsraw_fpath))
+        slsexp_fpath = os.path.join(self.outFolder, EXPTIMES_FNAME)
+        if os.path.isfile(slsexp_fpath):
+            best_exptimes = np.loadtxt(slsexp_fpath, **self.savetxt_kwargs)
             if (best_exptimes.shape[1] > 2):
-                best_exptimes = best_exptimes[:,2:]
+                best_exptimes = best_exptimes[:,2:].T
+                logging.debug('Loading SLS exposure times from {0}: output has shape {1}'.format(slsexp_fpath, best_exptimes.shape))
             else:
                 best_exptimes = None
+                logging.warn('Loading SLS exposure times from {0} failed: None returned'.format(slsexp_fpath))
                 
         if self.DebugMode:
             logging.debug('Ir_allexp final shape: ' + str(Ir_allexp.shape))
@@ -579,13 +603,13 @@ class SALS():
             logging.warning('cI result file {0} potentially corrupted: shape {1} does not match expected {2}'.format(fname, cur_cI.shape, (self.NumTimes(), self.NumLagtimes())))
         return cur_cI, cur_times, cur_lagidx_list, roi_idx, exp_idx
 
-    def AverageG2M1(self, filter_prefix=CI_PREFIX):
+    def AverageG2M1(self, filter_prefix=CI_PREFIX, save_prefix=G2M1_PREFIX):
         if self.timeAvg_T is None:
             self.timeAvg_T = self.NumTimes()
-        cI_fnames = sf.FindFileNames(self.outFolder, Prefix=filter_prefix+'_', Ext='.dat')
+        cI_fnames = sf.FindFileNames(self.outFolder, Prefix=filter_prefix, Ext='.dat')
         
         for cur_f in cI_fnames:
-            AverageG2M1(os.path.join(self.outFolder, cur_f), average_T=self.timeAvg_T)
+            AverageG2M1(os.path.join(self.outFolder, cur_f), average_T=self.timeAvg_T, save_prefix=save_prefix)
     
     def GetOrReadImage(self, img_idx, buffer=None):
         """ Retrieve image from buffer if present, otherwise read if from MIfile
@@ -653,7 +677,7 @@ class SALS():
                 imgs = self.MIinput.Read()
             if stack2 is None:
                 cur_stack = imgs[stack1]
-            elif (stack1==stack2):
+            elif np.array_equal(stack1, stack2):
                 cur_stack = np.square(imgs[stack1])
             else:
                 cur_stack = np.multiply(imgs[stack1], imgs[stack2])
@@ -741,11 +765,12 @@ class SALS():
 
             # TODO: time average SLS
         
+        strlog = 'SALS.doSLS analysis returned: raw data (shape: {0}), I(r) data (shape: {1}), exptime data (shape: {2})'.format(ROIavgs_allExp.shape, ROIavgs_best.shape, BestExptime_Idx.shape)
+        if buf_images is None:
+            strlog += ', no buffer images'
         else:
-
-            logging.info('SALS.doSLS: loading previously computed SLS')
-        
-        logging.debug('SALS.doSLS: raw result has shape ' + str(ROIavgs_allExp.shape))
+            strlog += ', buffer images (shape {0})'.format(buf_images.shape)
+        logging.debug(strlog)
         
         return ROIavgs_allExp, ROIavgs_best, BestExptime_Idx, buf_images
 
@@ -793,8 +818,8 @@ class SALS():
             DLS_lags = np.asarray(self.dlsLags)
             DLS_lagnum = len(DLS_lags)
         elif lagtimes=='all':
-            DLS_lags = []
-            DLS_lagnum = self.ImageNumber()
+            DLS_lags = np.append(np.asarray([0]), np.arange(self.NumTimes()))
+            DLS_lagnum = self.NumTimes()+1
         else:
             DLS_lags = np.asarray(lagtimes)
             DLS_lagnum = len(DLS_lags)
@@ -804,7 +829,7 @@ class SALS():
         else:
             DLS_reftimes = np.asarray(reftimes)
             
-        logging.info('SALS Analysis started! Will analyze {0} images ({1} times, {2} exposure times)'.format(self.ImageNumber(), self.NumTimes(), self.NumExpTimes()))
+        logging.info('SALS Analysis started! Input data is {0} images ({1} times, {2} exposure times)'.format(self.ImageNumber(), self.NumTimes(), self.NumExpTimes()))
         if (self.ImageNumber() != (self.NumTimes() * self.NumExpTimes())):
             logging.warn('WARNING: Number of images ({0}) should correspond to the number of times ({1}) times the number of exposure times ({2})'.format(self.ImageNumber(), self.NumTimes(), self.NumExpTimes()))
         logging.info('Analysis will resolve {0} ROIs and DLS will be performed on {1} reference times and {2} lagtimes. Output will be saved in folder {3}'.format(self.CountROIs(), len(DLS_reftimes), DLS_lagnum, self.outFolder))
@@ -822,19 +847,20 @@ class SALS():
         
         if DLS_lags is None:
             logging.warn('No lagtimes specified for DLS')
-        elif len(DLS_reftimes)<=1:
+        elif len(DLS_reftimes)<1:
             logging.warn('At least 1 reference time needed for DLS (' + str(len(DLS_reftimes)) + ' given)')
         else:
             logging.info('SLS analysis completed. Now doing DLS ({0} exposure times, {1} time points, {2} lagtimes)'.format(self.NumExpTimes(), len(DLS_reftimes), DLS_lagnum))
             for e in range(self.NumExpTimes()):
                 readrange = self.MIinput.Validate_zRange([e, -1, self.NumExpTimes()])
-                idx_list = list(range(*readrange))
+                idx_list = np.arange(*readrange)
                 logging.info('Now performing DLS on {0}-th exposure time. Using image range {1} ({2} images)'.format(e, readrange, len(idx_list)))
                 ISQavg, NormList = self.ROIaverageProduct(stack1=idx_list, stack2=idx_list, ROImasks=ROI_boolMasks, masks_isBool=True, no_buffer=no_buffer, imgs=buf_images)
                                                         
                 if reftimes in ['auto', 'all'] and lagtimes=='auto':
                     cI = np.nan * np.ones((ISQavg.shape[1], ISQavg.shape[0], DLS_lagnum), dtype=float)
                     cI[:,:,0] = np.subtract(np.divide(ISQavg, np.square(ROIavgs_allExp[:,e,:])), 1).T
+                    logging.info('Contrast (d0) processed')
                     for lidx in range(1, DLS_lagnum):
                         if (DLS_lags[lidx]<ISQavg.shape[0]):
                         
@@ -849,17 +875,18 @@ class SALS():
                     
                     
                 else:
-                    
+                    # Shape of output cIs: [num_ROIs, num_reftimes, num_lagtimes]
                     cI = np.nan * np.ones((ISQavg.shape[1], len(DLS_reftimes), DLS_lagnum), dtype=float)
+                    logging.info('Computing cI with custom-defined set of reference time and/or lag times: result has shape {0} ({1} ROIs, {2} reference times, {3} lag times)'.format(cI.shape, 
+                                    self.CountROIs(), len(DLS_reftimes), DLS_lagnum))
+
                     # compute all d0s (even if it is not in the list of lagtimes)
                     all_d0 = np.subtract(np.divide(ISQavg, np.square(ROIavgs_allExp[:,e,:])), 1).T
-                    for t in DLS_reftimes:
-                        if self.DebugMode:
-                            logging.debug('SALS.doDLS - cI.shape : ' + str(cI.shape))
-                            logging.debug('SALS.doDLS - ISQavg.shape : ' + str(ISQavg.shape))
-                            logging.debug('SALS.doDLS - ROIavgs_allExp.shape : ' + str(ROIavgs_allExp.shape))
-                        cI[:,t,0] = np.subtract(np.divide(ISQavg[t,:], np.square(ROIavgs_allExp[t,e,:])), 1)
-                        
+                    if self.DebugMode:
+                        logging.debug('SALS.doDLS - cI.shape : ' + str(cI.shape))
+                        logging.debug('SALS.doDLS - ISQavg.shape : ' + str(ISQavg.shape))
+                        logging.debug('SALS.doDLS - ROIavgs_allExp.shape : ' + str(ROIavgs_allExp.shape))
+                    
                     for ref_tidx in range(len(DLS_reftimes)):
                         
                         if lagtimes=='all':
@@ -912,20 +939,25 @@ class SALS():
                 # Save data to file
                 for ridx in range(cI.shape[0]):
                     logging.info('Now saving ROI {0} to file'.format(ridx))
-                    if reftimes in ['auto', 'all'] and lagtimes=='auto':
-                        save_prefix = CI_PREFIX
-                        np.savetxt(os.path.join(self.outFolder, CI_PREFIX+'_'+ROI_PREFIX + str(ridx).zfill(ROI_IDXLEN) + '_'+EXP_PREFIX + str(e).zfill(EXP_IDXLEN) + '.dat'), 
-                                   np.append(self.imgTimes[idx_list].reshape((-1, 1)), cI[ridx], axis=1), 
-                                   header='t'+TXT_DELIMITER + str(TXT_DELIMITER).join(['d{0}'.format(l) for l in DLS_lags]), **self.savetxt_kwargs)
+                    if reftimes in ['auto', 'all'] and lagtimes=='auto' and save_transposed==False:
+                        fname_prefix = CI_PREFIX + '_'
+                        saveg2m1_prefix = G2M1_PREFIX
                     else:
-                        save_prefix = CUSTCI_PREFIX
-                        np.savetxt(os.path.join(self.outFolder, CUSTCI_PREFIX+'_'+ROI_PREFIX + str(ridx).zfill(ROI_IDXLEN) + '_'+EXP_PREFIX + str(e).zfill(EXP_IDXLEN) + '.dat'), 
-                                   np.append(np.asarray([self.imgTimes[idx_list[tref]] for tref in DLS_reftimes]).reshape((-1, 1)), cI[ridx], axis=1), 
-                                   header='t'+TXT_DELIMITER + str(TXT_DELIMITER).join(['d{0}'.format(l) for l in DLS_lags]), **self.savetxt_kwargs)                    
+                        fname_prefix = CUSTCI_PREFIX + '_'
+                        saveg2m1_prefix = CUSTG2M1_PREFIX
+                    fpath = os.path.join(self.outFolder, fname_prefix + ROI_PREFIX + str(ridx).zfill(ROI_IDXLEN) + '_'+EXP_PREFIX + str(e).zfill(EXP_IDXLEN) + '.dat')
+                    if save_transposed:
+                        np.savetxt(fpath, np.append(DLS_lags[1:].reshape((-1, 1)), cI[ridx,:,1:].T, axis=1), 
+                                   header='t+tau'+TXT_DELIMITER + str(TXT_DELIMITER).join(['t{0}'.format(l) for l in DLS_reftimes]), **self.savetxt_kwargs)    
+                    else:
+                        np.savetxt(fpath, np.append(np.append(idx_list[DLS_reftimes].reshape((-1, 1)), self.imgTimes[idx_list[DLS_reftimes]].reshape((-1, 1)), axis=1), cI[ridx], axis=1), 
+                                   header='idx'+TXT_DELIMITER+'t'+TXT_DELIMITER + str(TXT_DELIMITER).join(['d{0}'.format(l) for l in DLS_lags]), **self.savetxt_kwargs)                  
                     
-
-        logging.info('DLS analysis completed. Now averaging correlation functions g2-1')
-        self.AverageG2M1(filter_prefix=save_prefix)
+        if save_transposed:
+            logging.info('DLS analysis completed.')
+        else:
+            logging.info('DLS analysis completed. Now averaging correlation functions g2-1')
+            self.AverageG2M1(filter_prefix=fname_prefix, save_prefix=saveg2m1_prefix)
 
 
 
