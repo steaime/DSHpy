@@ -7,6 +7,7 @@ from scipy import ndimage as nd
 import importlib.util
 
 from DSH import SharedFunctions as sf
+from DSH import ROIproc as rp
 
 if importlib.util.find_spec('astropy') is not None:
     from astropy import convolution as astroconv
@@ -235,68 +236,6 @@ def RectReslice(im, seg, vrange=None, shape=None, fillval=np.nan):
         roi[i] = SectImage(im, probe, len(us), fillval=fillval)
     return roi, [us, vs]
 
-def GenerateGrid2D(shape, extent=None, center=[0, 0], angle=0, coords='cartesian', indexing='xy'):
-    '''Generates a grid of pixel coordinates
-    
-    Parameters
-    ----------
-    shape:  shape of the map [num_rows, num_cols].
-    extent: extent of the mapping [x_left, x_right, y_bottom, y_top], 
-            in physical units. They can be reversed (e.g. x2<x1)
-            If None, it will be set to [0, shape[1], shape[0], 0]
-    center: center of the coordinate system, in physical units
-    angle:  Eventually rotate the coordinate system by angle, in radians
-            for cartesian coordinates:
-            - 0 means (xt, xn)=(x, y)
-            - pi/2 means (xt, xn)=(y, -x)
-              (note: +y points downward if indexing='xy')
-            for polar coordinates:
-            - 0 means theta=0 along +x
-            - pi/2 means theta=0 along +y
-              (note: this means downwards if indexing='xy')
-    coords: ['cartesian'|'polar'] to return [x,y] or [r,theta] respectively
-    indexing: ['xy'|'ij'], numpy.meshgrid indexing method
-    
-    Returns
-    -------
-    _grid  : couple of 2D arrays with coordinates for each pixel
-             (either [x, y] or [r, theta], with theta in [-pi, pi] range)
-    '''
-    
-    # Note: matplotlib extent is [x_left, x_right, y_bottom, y_top], 
-    # meshgrid extent is [x_left, x_right, y_top, y_bottom] if indexing='xy'
-    if extent is None:
-        x_left, x_right, y_bottom, y_top = 0, shape[1], shape[0], 0
-    else:
-        x_left, x_right, y_bottom, y_top = extent
-    
-    # Pixel coordinates in physical units
-    _grid = np.meshgrid(np.linspace(x_left-center[0], x_right-center[0], shape[1]),\
-                        np.linspace(y_top-center[1], y_bottom-center[1], shape[0]), indexing=indexing)
-    
-    if coords=='cartesian':    
-        if (angle != 0):
-            # Coordinatees in the rotated reference frame
-            _xt, _xn = np.multiply(_grid[0], np.cos(angle)) - np.multiply(_grid[1], np.sin(angle)),\
-                       np.multiply(_grid[1], np.cos(angle)) + np.multiply(_grid[0], np.sin(angle))
-#            logging.debug('Cartesian grid generated with angle={0}. xt_range={1}, xn_range={2}'.format(angle, [np.min(_xt), np.max(_xt)],
-#                                                                                                [np.min(_xn), np.max(_xn)]))
-            return [_xt, _xn]
-        else:
-#            logging.debug('Cartesian grid generated with angle=0. xrange={0}, yrange={1}'.format([np.min(_grid[0]), np.max(_grid[0])],
-#                                                                                                [np.min(_grid[1]), np.max(_grid[1])]))
-            return _grid
-    elif coords=='polar':
-        _theta = np.arctan2(_grid[1], _grid[0])-angle
-        if (angle != 0):
-            _theta = np.mod(_theta+np.pi, 2*np.pi)-np.pi
-        _r = np.linalg.norm(_grid, axis=0)
-#        logging.debug('Polar grid generated with angle={0}. r_range={1}, theta_range={2}'.format(angle, [np.min(_r), np.max(_r)],
-#                                                                                            [np.min(_theta), np.max(_theta)]))
-        return [_r, _theta]
-    else:
-        raise ValueError('Unknown coordinate system ' + str(coords))
-
 def ProbePolarLocs(loc, matrix, center, return_if_outside=False):
     """Probe matrix cell whose location is closest to given location
 
@@ -342,7 +281,7 @@ def ProbeLocation2D(loc, matrix, coords=None, metric='cartesian', interpolate='n
         return None
     else:
         if coords is None:
-            coords = GenerateGrid2D(matrix.shape, coords=metric)
+            coords = rp.GenerateGrid2D(matrix.shape, coords=metric)
         if not return_if_outside:
             if (loc[0]<np.min(coords[0]) or loc[0]>np.max(coords[0])) and (loc[1]<np.min(coords[1]) or loc[1]>np.max(coords[1])):
                 return None
@@ -355,112 +294,6 @@ def ProbeLocation2D(loc, matrix, coords=None, metric='cartesian', interpolate='n
             raise ValueError('Metric ' + str(metric) + ' not supported')
         min_pos = np.unravel_index(dist.argmin(), dist.shape)
         return matrix[min_pos]
-
-
-def GenerateMasks(coords, shape, center=None, common_mask=None, binary_res=False, coordsystem='polar', ref_angle=0):
-    """Generate a list of regions of interest, labelled either in the form of binary images, 
-    each one with 0s everywhere and 1 inside the region of interest,
-    or by mask index, 0-based (in this case only one mask is returned).
-    Pixels belonging to no mask will be labeled with -1
-    
-    Parameters
-    ----------
-    coords       : list of mask coordinates in the form 
-                    - [r, a, dr, da], as the one generated by PolarMaskCoords(), if coordsystem=='polar'
-                    - [x, y, dx, dy], if coordsystem=='cartesian'
-    shape        : shape of the binary image (num_rows, num_cols)
-    center       : center of polar coordinates. If None, it will be the center of the image
-    common_mask  : eventually specify common mask to be multiplied to every mask
-    binary_res   : if True, returns list of binary masks, otherwise label pixels by binary masks
-                   Warning: no overlap is allowed at this time with this indexing scheme
-    coordsystem  : {'polar', 'cartesian'} to specify the coordinate system coords live in
-    ref_angle    : eventually tilt the reference frame by ref_angle (0 is positive x axis)
-    
-    Returns
-    -------
-    if binary_res: a 3D array, one page per binary images (mask)
-    else: a 2D array with labels (0-based), one per binary image.
-          Pixels belonging to no mask will be labeled with -1
-          from this, binary masks can be generated by using np.where() 
-          note: in case of overlaps, overlapping pixels will be associated to first ROI only
-    """
-    if (center == None):
-        center = np.multiply(coords, 0.5)          
-    
-    px_coord_0, px_coord_1 = GenerateGrid2D(shape, center=center, angle=ref_angle, coords=coordsystem)
-    if common_mask is None:
-        common_mask = np.ones_like(px_coord_0, dtype=int)
-        
-    if binary_res:
-        res = np.zeros((len(coords), shape[0], shape[1]), dtype=np.dtype('b'))
-    else:
-        res = np.zeros(shape, dtype=int)
-    for m_idx in range(len(coords)):
-        rmin, rmax, amin, amax = coords[m_idx][0]-0.5*coords[m_idx][2], coords[m_idx][0]+0.5*coords[m_idx][2], coords[m_idx][1]-0.5*coords[m_idx][3], coords[m_idx][1]+0.5*coords[m_idx][3]        
-        cur_mask = np.where(np.logical_and(common_mask>0,
-                                           np.logical_and(np.logical_and(px_coord_0>=rmin, px_coord_0<rmax),
-                                                          np.logical_and(px_coord_1>=amin, px_coord_1<amax))),
-                            1, 0)
-        if False:
-            cur_mask = np.multiply(common_mask, np.multiply(\
-                            np.multiply(0.5 * (np.sign(np.add    (-(coords[m_idx][0]-0.5*coords[m_idx][2])+np.finfo(np.float32).eps, px_coord_0)) + 1),\
-                                        0.5 * (np.sign(np.subtract((coords[m_idx][0]+0.5*coords[m_idx][2])-np.finfo(np.float32).eps, px_coord_0)) + 1)),\
-                            np.multiply(0.5 * (np.sign(np.add    (-(coords[m_idx][1]-0.5*coords[m_idx][3])+np.finfo(np.float32).eps, px_coord_1)) + 1),\
-                                        0.5 * (np.sign(np.subtract((coords[m_idx][1]+0.5*coords[m_idx][3])-np.finfo(np.float32).eps, px_coord_1)) + 1))).astype(int))
-        if binary_res:
-            res[m_idx] += cur_mask
-        else:
-            res += cur_mask*(m_idx+1)*np.where(res>0, 0, 1)
-    
-    if binary_res:
-        logging.debug('{0} binary polar masks created with shape {1} and center {2}'.format(len(coords), shape, center))
-        return res
-    else:
-        logging.debug('Integer polar mask created with shape {0} and center {1}. {2} ROIs added ({3} empty)'.format(shape, center, len(coords), len(coords)-np.max(res)))
-        return res-1
-
-def PolarMaskCoords(r_list, a_list=None, flatten_res=True):
-    """Generate a list of polar masks coordinates, each mask of the form [r, a, dr, da]
-    
-    Parameters
-    ----------
-    r_list    : list of radii (in pixel units) or list of couples [r_min, r_max]
-    a_list    : list of angles (in radians) or list of couples [a_min, a_max]. 
-                Zero angle corresponds with the +x axis direction
-                None corresponds to [0, 2*np.pi]
-    flatten_res: if True, flatten the (r, a) dimensions into a single list.
-                otherwise, return a 3D array with separate r and a axes
-    
-    Returns
-    -------
-    mSpecs: 2D or 3D array, depending on flatten_res. Last dimension is [r, a, dr, da]
-    """
-    if a_list is None:
-        a_list = [0, 2*np.pi]
-    if (not sf.IsIterable(r_list[0])):
-        tmp_list = []
-        for i in range(len(r_list)-1):
-            tmp_list.append([r_list[i], r_list[i+1]])
-        r_list = tmp_list
-    if (not sf.IsIterable(a_list[0])):
-        tmp_list = []
-        for i in range(len(a_list)-1):
-            tmp_list.append([a_list[i], a_list[i+1]])
-        a_list = tmp_list
-    mSpecs = np.empty((len(r_list), len(a_list), 4), dtype=float)
-    for r_idx in range(len(r_list)):
-        for a_idx in range(len(a_list)):
-            #print('{0} ; {1} ; {2} ; {3}'.format(r_idx, a_idx, r_list[r_idx], a_list[a_idx]))
-            mSpecs[r_idx, a_idx] = [0.5*(r_list[r_idx][0] + r_list[r_idx][1]),\
-                                    0.5*(a_list[a_idx][0] + a_list[a_idx][1]),\
-                                    r_list[r_idx][1] - r_list[r_idx][0],\
-                                    a_list[a_idx][1] - a_list[a_idx][0]]
-    logging.debug('PolarMaskCoords created with\n\t- {0} radial annuli from {1:.2f} (+- {2:.2f}) px to {3:.2f} (+- {4:.2f}) px '.format(len(r_list), mSpecs[0,0,0], 0.5*mSpecs[0,0,2], mSpecs[-1,0,0], 0.5*mSpecs[-1,0,2]) +
-                  'and\n\t- {0} azimuthal sectors from {1} (+- {2:.2f}) rad to {3:.2f} (+- {4:.2f}) rad'.format(len(a_list), mSpecs[0,0,1], 0.5*mSpecs[0,0,3], mSpecs[0,-1,1], 0.5*mSpecs[0,-1,3]))
-    if flatten_res:
-        return mSpecs.reshape(-1, mSpecs.shape[-1])
-    else:
-        return mSpecs
     
 def MaxRadius(image_shape, center):
     """ Calculate maximum radius given image shape and center
@@ -510,12 +343,12 @@ def radialAverage(image, nbins, center, r_range=None, stddev=False, weights=None
     bin_centers = (bins[1:]+bins[:-1])/2.0
 
     if stddev:
-        ang_prof, norm = ROIAverage(image, whichbin-1, weights=weights, masknans=masknans, evalFunc=SquareDistFromMean)
+        ang_prof, norm = rp.ROIAverage(image, whichbin-1, weights=weights, masknans=masknans, evalFunc=SquareDistFromMean)
         ang_prof = np.sqrt(ang_prof)
     else:
         # NOTE: np.digitize produces output in the [0, nbins+1] range, 0 denoting unassigned pixels. 
         #       ROIAverage expects a mask in the [-1, nbins] range, -1 denoting unassigned pixels.
-        ang_prof, norm = ROIAverage(image, whichbin-1, weights=weights, masknans=masknans)
+        ang_prof, norm = rp.ROIAverage(image, whichbin-1, weights=weights, masknans=masknans)
 
     if interpnan:
         ang_prof = np.interp(bin_centers,bin_centers[ang_prof==ang_prof], ang_prof[ang_prof==ang_prof],left=left,right=right)
@@ -570,10 +403,10 @@ def azimuthalAverage(image, center=None, stddev=False, returnradii=False, return
     whichbin = np.digitize(r,bins)
     
     if stddev:
-        radial_prof, norm = ROIAverage(image, whichbin-1, weights=weights, masknans=masknans, evalFunc=SquareDistFromMean)
+        radial_prof, norm = rp.ROIAverage(image, whichbin-1, weights=weights, masknans=masknans, evalFunc=SquareDistFromMean)
         radial_prof = np.sqrt(radial_prof)
     else:
-        radial_prof, norm = ROIAverage(image, whichbin-1, weights=weights, masknans=masknans)
+        radial_prof, norm = rp.ROIAverage(image, whichbin-1, weights=weights, masknans=masknans)
     
     if interpnan:
         radial_prof = np.interp(bin_centers,bin_centers[radial_prof==radial_prof], radial_prof[radial_prof==radial_prof],left=left,right=right)
@@ -592,131 +425,6 @@ def azimuthalAverage(image, center=None, stddev=False, returnradii=False, return
 def SquareDistFromMean(data):
     return np.square(np.subtract(data, np.mean(data)))
 
-def ROIAverage(image, ROImask, boolMask=False, weights=None, masknans=False, dtype=float, evalFunc=None, evalParams={}, debug=False):
-    """
-    Calculate the average value of an image on a series of ROIs.
-
-    Parameters
-    ----------
-    image        - 2D image or 3D ndarray with list of images
-    ROImask      - if boolMask : list of 2D bool arrays same size as image
-                   else : 2D int array with same size as image, with each pixel labeled with the index of the
-                          ROI it belongs to (0 based). Each pixel can only belong to one ROI.
-                          Pixels not belonging to any ROI must be labeled with -1
-    weights      - can do a weighted average instead of a simple average if this keyword parameter
-                   is set.  weights.shape must = image.shape.
-    masknans     - assume the presence of NaNs in the array: mask them and don't count them in
-                   the normalization by setting their weight to zero. Set it to False if you are
-                   sure that there are no NaNs to improve calculation speed
-    dtype        - Datatype of the accumulator in which the elements are summed. 
-                   If the accumulator is too small, np.sum generates overflow
-    evalFunc     - if None, simple average will be computed.
-                   Otherwise, what will be averaged will be a function of the pixel values 
-                   ex: to compute the variance, use SquareDistFromMean()
-    evalParams   - eventually specify additional parameters for evalFunc
-
-    Returns
-    -------
-    ROI_avg   : if image is 2D: 1D float array with ROI-averaged data
-                if image is 3D: 2D float array, one image per row, one ROI per column.
-                If a bin contains NO DATA, it will have a NAN value because of the
-                divide-by-sum-of-weights component.
-    norm      : sum of weights within the ROI. If weights==None, this reduces to the number of pixels in the ROI
-    """
-    
-    if image.shape[0]==0:
-        return None, None
-    
-    if boolMask:
-        nbins = len(ROImask)
-        ROIboolMask = ROImask
-    else:
-        nbins = np.max(ROImask)+1
-        ROIboolMask = [ROImask==b for b in range(nbins)]
-        
-    use_weights = (weights is not None or masknans)
-    if weights is None and use_weights:
-        if (image.ndim > 2):
-            weights = np.ones_like(image[0])
-        else:
-            weights = np.ones_like(image)
-    if masknans:
-        weights = np.multiply(weights, ~np.isnan(image))
-    if use_weights:
-        use_img = np.multiply(image, weights)
-        # normalization factor for each bin
-        if (weights.ndim > 2):
-            norm = np.array([[np.sum(np.multiply(weights[i], ROIboolMask[b])) for b in range(nbins)] for i in range(weights.shape[0])])
-        else:
-            norm = np.array([np.sum(np.multiply(weights, ROIboolMask[b])) for b in range(nbins)])
-            if (use_img.ndim > 2):
-                norm = [norm] * use_img.shape[0]
-    else:
-        use_img = image
-        norm = np.array([np.sum(ROIboolMask[b]) for b in range(nbins)])
-        if (use_img.ndim > 2):
-            norm = [norm] * use_img.shape[0]
-        
-    if debug:
-        logging.debug('  ROIAverage function called with {0}D input of shape {1}'.format(use_img.ndim, use_img.shape))
-        logging.debug('  Normalization has shape {0}, factors range from {1} to {2}'.format(norm.shape, np.min(norm), np.max(norm)))
-        if use_weights:
-            if weights is None:
-                logging.warn('  WARNING: use_weights is True but weights is None!')
-            else:
-                logging.debug('  Weight image. Weights has shape {0} and range from {1} to {2}'.format(weights.shape, np.min(weights), np.max(weights)))
-            strprint = '  Weighted image'
-        else:
-            strprint = '  No weighting. Original image'
-        logging.debug(strprint + ' has shape {0} and ranges from {1} to {2}'.format(use_img.shape, np.min(use_img), np.max(use_img)))
-    
-    if (use_img.ndim > 2):
-        if evalFunc==None:
-            ROI_avg = np.array([[np.true_divide(np.sum(np.multiply(use_img[i], ROIboolMask[b]), dtype=dtype), norm[i][b]) 
-                                 for b in range(nbins)] for i in range(use_img.shape[0])])
-        else:
-            ROI_avg = np.array([[np.true_divide(np.sum(np.multiply(evalFunc(use_img[i], **evalParams), ROIboolMask[b]), dtype=dtype), norm[i][b]) 
-                                 for b in range(nbins)] for i in range(use_img.shape[0])])
-    else:
-        if evalFunc==None:
-            ROI_avg = np.array([np.true_divide(np.sum(np.multiply(use_img, ROIboolMask[b]), dtype=dtype), norm[b]) for b in range(nbins)])
-        else:
-            ROI_avg = np.array([np.true_divide(np.sum(np.multiply(evalFunc(use_img, **evalParams), ROIboolMask[b]), dtype=dtype), 
-                                                norm[b]) for b in range(nbins)])
-    
-    return ROI_avg, norm
-
-def ROIEval(image, ROImask, evalFuncs, evalParams={}):
-    """
-    Evaluate a function or a list of functions on image values restricted to ROIs.
-
-    Parameters
-    ----------
-    image        - The 2D image
-    ROImask      - 2D int array with same size as image, with each pixel labeled with the index of the
-                   ROI it belongs to (0 based). Each pixel can only belong to one ROI.
-                   Pixels not belonging to any ROI must be labeled with -1
-    evalFuncs    - Function or list of functions to be evaluated. First argument should be array-like (it will be pixel values)
-                   return value can be anything (does not need to be numeric)
-    evalParams   - Dict or list of dicts, eventually specify additional parameters for evalFunc
-
-    Returns
-    -------
-    ROIres   :  if single function is given: list of results, one item per ROI
-                if multiple functions : list of lists of results
-                                        ROIres[i][j] will be evaluation of i-th function on j-th ROI
-    """
-    if sf.IsIterable(evalFuncs):
-        flatten_res = False
-    else:
-        evalFuncs = [evalFuncs]
-        flatten_res = True
-    evalParams = sf.CheckIterableVariable(evalParams, len(evalFuncs), force_length=True)
-    ROIres = [[f(image[ROImask==b], **evalParams[i]) for b in range(np.max(ROImask))] for i, f in enumerate(evalFuncs)]
-    if flatten_res:
-        return ROIres[0]
-    else:
-        return ROIres
 
 def FindAzimuthalExtrema(arr, center=[0,0], search_start=[0], update_search=True, r_avg_w=2, r_avg_cut=0, search_range=np.pi/4,
                          extrema_ismin=True, fit_range=None,  accept_range=None, r_step=1, r_start=None, angbins=360, 

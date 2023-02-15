@@ -12,7 +12,9 @@ if 'json' in pkg_installed:
 else:
     import ast
     use_json = False
-  
+    
+    
+
 def AllIntInStr(my_string):
     arr_str = re.findall(r'\d+', my_string)
     res_int = []
@@ -276,26 +278,6 @@ def ExtractIndexFromStrings(StringList, index_pos=0, index_notfound=-1):
             res.append(index_notfound)
     return res
 
-def LoadResFile(fname, delimiter=',', comments='#', readHeader=True, isolateFirst=0):
-    if (readHeader):
-        f = open(fname)
-        header = f.readline()
-        hdr_list = header.split(delimiter)
-    res_arr = np.loadtxt(fname, comments=comments, delimiter=delimiter)
-    if (isolateFirst>0):
-        firstcol = np.squeeze(res_arr[:,:isolateFirst])
-        res_arr = np.squeeze(res_arr[:,isolateFirst:])
-        hdr_list = hdr_list[isolateFirst:]
-        if (readHeader):
-            return res_arr, hdr_list, firstcol
-        else:
-            return res_arr, firstcol
-    else:
-        if (readHeader):
-            return res_arr, hdr_list
-        else:
-            return res_arr
-
 def filter_kwdict_funcparams(my_dict, my_func):
     return {k: v for k, v in my_dict.items() \
             if k in [p.name for p in inspect.signature(my_func).parameters.values()]}
@@ -346,6 +328,16 @@ def CheckLoadTxtUsecols(fpath, usecols=None, delimiter=None):
         return False
     elif (fshape[1] <= np.max(usecols)):
         return False
+def CountFileLines(fname):
+    with open(fname) as f:
+        for i, _ in enumerate(f):
+            pass
+    return i + 1
+
+def CountFileColumns(fpath, delimiter=None, firstlineonly=True):
+    if firstlineonly:
+        with open(fpath, 'rb') as f:
+            source = [f.readline()]
     else:
-        return True
-    
+        source = fpath
+    return np.loadtxt(source, delimiter=delimiter, ndmin=2).shape[1]
