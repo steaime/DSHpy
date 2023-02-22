@@ -25,7 +25,7 @@ def LoadResFile(fname, readHeader=True, isolateFirst=0, delimiter=',', comments=
         else:
             return res_arr
 
-def OpenRawSLS(fname, delimiter='\t', comments='#')
+def OpenRawSLS(fname, delimiter='\t', comments='#'):
     res_Ir, res_hdr, roi_coord = LoadResFile(fname, delimiter=delimiter, comments=comments, readHeader=True, isolateFirst=2)
     times = np.asarray([sf.FirstFloatInStr(hdr) for hdr in res_hdr])
     exptimes = np.asarray([sf.LastFloatInStr(hdr) for hdr in res_hdr])
@@ -97,3 +97,55 @@ def OpenG2M1s(froot, expt_idx=None, roi_idx=None, fname_prefix='g2m1_', time_col
         lagtimes.append(res_g2m1[:,::2].T)
         imgtimes.append(np.asarray([sf.FirstFloatInStr(res_hdr[j]) for j in range(1, len(res_hdr), 2)]))
     return res, lagtimes, imgtimes, ROI_list, exptime_list
+
+def LoadImageTimes(img_times_source, usecols=0, skiprows=1, root_folder=None, return_unique=False):
+    '''
+    Load image times from file or list of files
+    
+    Parameters
+    ----------
+    - img_times_source : file name or list of filenames
+    - usecols          : index of column containing image times in file
+    - skiprows         : number of rows to be skipped at the beginning of the file
+    - root_folder      : root folder path. If specified, img_times_source will be interpreted as a relative path
+    - return_unique    : if True, remove duplicates before returning result
+    '''
+    if img_times_source is not None:
+        if usecols is None:
+            max_col = 0
+        elif np.isscalar(usecols):
+            max_col = usecols
+        else:
+            max_col = np.max(usecols)
+        # if img_times_source is a string, let's use a single text file as input.
+        # otherwise, it can be a list: in that case, let's open each text file and append all results
+        if (isinstance(img_times_source, str)):
+            if root_folder is None:
+                fpath = img_times_source
+            else:
+                fpath = os.path.join(root_folder, img_times_source)
+            if sf.CountFileColumns(fpath, firstlineonly=False) > max_col:
+                res = np.loadtxt(fpath, dtype=float, usecols=usecols, skiprows=skiprows, ndmin=2)
+            else:
+                res = None
+                logging.warning('DSH.SALS.LoadImageTimes(): file ' + str(fpath) + ' incompatible with usecols ' + str(usecols) + '. Returning default value ' + str(res))
+        else:
+            res = np.empty(shape=(0,), dtype=float)
+            for cur_f in img_times_source:
+                if root_folder is None:
+                    fpath = cur_f
+                else:
+                    fpath = os.path.join(root_folder, cur_f)
+                if sf.CountFileColumns(fpath, firstlineonly=False) > max_col:
+                    res = np.append(res, np.loadtxt(fpath, dtype=float, usecols=usecols, skiprows=skiprows, ndmin=2))
+                else:
+                    logging.warning('DSH.SALS.LoadImageTimes(): file ' + str(fpath) + ' incompatible with usecols ' + str(usecols) + '. Skipping file from list')
+            if len(res)<=0:
+                res = None
+                logging.warning('DSH.SALS.LoadImageTimes(): no ok file in list ' + str(img_times_source) + ' returning default value ' + str(res))
+    else:
+        res = None
+        logging.debug('DSH.SALS.LoadImageTimes(): no file specified. Returning default value ' + str(res))
+    if res is not None and return_unique:
+        res = np.unique(res)
+    return res

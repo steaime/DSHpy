@@ -203,7 +203,7 @@ class MIstack():
     def ReadAll(self, zRange=None, cropROI=None):
         return [_MI.Read(zRange=zRange, cropROI=cropROI) for _MI in self.MIfiles]
     
-    def GetImage(self, img_idx, MI_idx=None, cropROI=None):
+    def GetImage(self, img_idx, MI_idx=None, cropROI=None, buffer=None, buf_indexes=None):
         """Read single image from MIfile
         
         Parameters
@@ -224,8 +224,16 @@ class MIstack():
             img_in_mi = img_idx % self.ImgsPerMIfile
         else:
             img_in_mi = img_idx
-        return self.MIfiles[MI_idx].GetImage(img_in_mi, cropROI=cropROI)
-                
+        idx_in_buffer = MI.ValidateBufferIndex(img_idx, buffer, buf_indexes)
+        if (idx_in_buffer is None):
+            return self.MIfiles[MI_idx].GetImage(img_in_mi, cropROI=cropROI)
+        else:
+            if (cropROI is None):
+                return buffer[idx_in_buffer]
+            else:
+                cropROI = self.ValidateROI(cropROI)
+                return buffer[idx_in_buffer][cropROI[1]:cropROI[1]+cropROI[3],cropROI[0]:cropROI[0]+cropROI[2]]
+    
     def GetTimetrace(self, pxLocs, zRange=None, idx_list=None, excludeIdxs=[], returnCoords=False,\
                          squeezeResult=True, readConsecutive=1, lagFlip=False, zStep=1, mask_cropROI=None):
         """Returns (t, tau) data for a given set of pixels (assumes self.StackType=='tau')

@@ -172,6 +172,25 @@ def ValidateROI(ROI, ImageShape, replaceNone=False):
 def Validate_zRange(zRange, zSize, replaceNone=True):
     return sf.ValidateRange(zRange, zSize, MinVal=0, replaceNone=replaceNone)
 
+def ValidateBufferIndex(img_idx, buffer=None, buf_indexes=None):
+    """Checks if image index is already in buffer and returns buffer position
+
+    Parameters
+    ----------
+    img_idx : index of the image, 0-based. If -N, it will get the Nth last image
+    buffer  : None or 3D array. Buffer of images
+    buf_indexes : None or list of indexes of images in buffer. 
+                  If None, buf_indexes = [0, 1, ..., buffer.shape[0]-1]
+    """
+    if buffer is not None:
+        if buf_indexes is None:
+            if len(buffer) > img_idx:
+                return img_idx
+        else:
+            if img_idx in buf_indexes:
+                return buf_indexes.index(img_idx)
+    return None
+
 def ReadBinary(fname, shape, px_format, offset=0, endian=''):
     """ Read binary file to np.ndarray
     
@@ -220,7 +239,7 @@ def WriteBinary(fname, data, data_format, hdr_list=None):
     data = data.flatten().astype(_data_types[data_format])
     fwrite.write(struct.pack(('%s' + data_format) % len(data), *data))
     fwrite.close()
-
+    
 class MIfile():
     """ Class to read/write multi image file (MIfile) """
     
@@ -312,7 +331,7 @@ class MIfile():
             self.Close()
         return res_3D
     
-    def GetImage(self, img_idx, cropROI=None):
+    def GetImage(self, img_idx, cropROI=None, buffer=None, buf_indexes=None):
         """Read single image from MIfile
         
         Parameters
@@ -321,22 +340,32 @@ class MIfile():
         cropROI : if None, full image is returned
                   otherwise, [topleftx (0-based), toplefty (0-based), width, height]
                   width and/or height can be -1 to signify till the end of the image
+        buffer  : None or 3D array. Buffer of images already read
+        buf_indexes : None or list of indexes of images in buffer. 
+                      If None, buf_indexes = [0, 1, ..., buffer.shape[0]-1]
         """
         if (img_idx<0):
             img_idx += self.ImgNumber
+        idx_in_buffer = ValidateBufferIndex(img_idx, buffer, buf_indexes)
         if (cropROI is None):
-            return self.GetStack(start_idx=img_idx, imgs_num=1).reshape(self.ImgHeight, self.ImgWidth)
+            if (idx_in_buffer is None):
+                return self.GetStack(start_idx=img_idx, imgs_num=1).reshape(self.ImgHeight, self.ImgWidth)
+            else:
+                return buffer[idx_in_buffer]
         else:
             cropROI = self.ValidateROI(cropROI)
-            if (cropROI[0]==0 and cropROI[2]==self.ImgWidth):
-                res_arr = self._read_pixels(px_num=cropROI[2]*cropROI[3], seek_pos=self._get_offset(img_idx=img_idx, row_idx=cropROI[1], col_idx=cropROI[0]))
-                return res_arr.reshape(cropROI[3], cropROI[2])
+            if (idx_in_buffer is None):
+                if (cropROI[0]==0 and cropROI[2]==self.ImgWidth):
+                    res_arr = self._read_pixels(px_num=cropROI[2]*cropROI[3], seek_pos=self._get_offset(img_idx=img_idx, row_idx=cropROI[1], col_idx=cropROI[0]))
+                    return res_arr.reshape(cropROI[3], cropROI[2])
+                else:
+                    res = []
+                    for row_idx in range(cropROI[1],cropROI[1]+cropROI[3]):
+                        res.append(self._read_pixels(px_num=cropROI[2], seek_pos=self._get_offset(img_idx=img_idx, row_idx=row_idx, col_idx=cropROI[0])))
+                    return np.asarray(res)
             else:
-                res = []
-                for row_idx in range(cropROI[1],cropROI[1]+cropROI[3]):
-                    res.append(self._read_pixels(px_num=cropROI[2], seek_pos=self._get_offset(img_idx=img_idx, row_idx=row_idx, col_idx=cropROI[0])))
-                return np.asarray(res)
-        
+                return buffer[idx_in_buffer][cropROI[1]:cropROI[1]+cropROI[3],cropROI[0]:cropROI[0]+cropROI[2]]
+    
     def GetStack(self, start_idx=0, imgs_num=-1):
         """Read contiguous image stack from MIfile
         WARNING: there is no control on eventual gap between images.

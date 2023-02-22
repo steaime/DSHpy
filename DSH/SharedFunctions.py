@@ -319,7 +319,7 @@ def IsWithinTolerance(t1, t2, tolerance, tolerance_isrelative):
         return (np.abs(t2 - t1) < tolerance * 0.5 * np.abs(t2 + t1))
     else:
         return (np.abs(t2 - t1) < tolerance)
-
+    
 def CheckLoadTxtUsecols(fpath, usecols=None, delimiter=None):
     with open(fpath, 'rb') as f:
         lines = [f.readline()]
@@ -328,6 +328,7 @@ def CheckLoadTxtUsecols(fpath, usecols=None, delimiter=None):
         return False
     elif (fshape[1] <= np.max(usecols)):
         return False
+
 def CountFileLines(fname):
     with open(fname) as f:
         for i, _ in enumerate(f):
@@ -341,3 +342,48 @@ def CountFileColumns(fpath, delimiter=None, firstlineonly=True):
     else:
         source = fpath
     return np.loadtxt(source, delimiter=delimiter, ndmin=2).shape[1]
+
+
+def FindLags(series, lags_index, subset_len=None):
+    '''
+    Find lags given a list of time points and a list of lag indexes
+    
+    Parameters
+    ----------
+    series:          list of time points (float), not necessarily equally spaced
+    lags_index:           list of lag indexes (int, >=0)
+    subset_len:     int (>0) or None. Eventually divide the analysis in sections of subset_len datapoints each
+                    If None, it will be set to the total number of datapoints (it will analyze the whole section)
+                
+    Returns
+    -------
+    allags:         2D list. allags[i][j] = series[j+lag[i]] - series[j]
+                    NOTE: len(allags[i]) depends on i (no element is added to the list if j+lag[i] >= len(series))
+    unique_laglist: 2D list. Element [i][j] is j-th lagtime of i-th analyzed subsection
+    '''
+    if subset_len is None:
+        subset_len = len(series)
+    logging.debug('FindTimelags: now finding lags in series (' + str(len(series)) + 
+                  ' points, divided into sections of ' + str(subset_len) + ' datapoints each) with ' + 
+                  str(len(lags_index)) + ' lag indexes: ' + str(lags_index))
+    alllags = []
+    for lidx in range(len(lags_index)):
+        if (lags_index[lidx]==0):
+            alllags.append(np.zeros_like(series, dtype=float))
+        elif (lags_index[lidx] < len(series)):
+            alllags.append(np.subtract(series[lags_index[lidx]:], series[:-lags_index[lidx]]))
+        else:
+            alllags.append([])
+    logging.debug('alllags list has {0} elements, with lengths ranging from {1} to {2}'.format(len(alllags), len(alllags[0]), len(alllags[-1])))
+    unique_laglist = []
+    for tavgidx in range(int(math.ceil(len(series)*1./subset_len))):
+        cur_uniquelist = np.unique([alllags[i][j] for i in range(len(lags_index)) 
+                                    for j in range(tavgidx*subset_len, min((tavgidx+1)*subset_len, len(alllags[i])))])
+        cur_coarsenedlist = [cur_uniquelist[0]]
+        for lidx in range(1, len(cur_uniquelist)):
+            if not sf.IsWithinTolerance(cur_uniquelist[lidx], cur_coarsenedlist[-1], 
+                                          tolerance=SALS_DT_TOLERANCE, tolerance_isrelative=SALS_DT_TOLERANCE_ISREL):
+                cur_coarsenedlist.append(cur_uniquelist[lidx])
+        unique_laglist.append(cur_coarsenedlist)
+    logging.debug('unique_laglist has {0} elements. First line has {1} elements, ranging from {2} to {3}'.format(len(unique_laglist), len(unique_laglist[0]), unique_laglist[0][0], unique_laglist[0][-1]))
+    return alllags, unique_laglist
