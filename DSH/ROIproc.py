@@ -300,10 +300,14 @@ def ROIAverage(image, ROImask, boolMask=False, weights=None, norm=None, masknans
     Parameters
     ----------
     image        - 2D image or 3D ndarray with list of images
-    ROImask      - if boolMask : list of 2D bool arrays same size as image
-                   else : 2D int array with same size as image, with each pixel labeled with the index of the
+    ROImask      - if boolMask : list of 2D bool arrays.
+                          if BoundingBoxes is specified, ROImask[i] should have a size determined by BoundingBoxes[i] 
+                          otherwise, each ROImask should have the same size as the input image(s)
+                   else : 2D int array with same size as the input image(s), with each pixel labeled with the index of the
                           ROI it belongs to (0 based). Each pixel can only belong to one ROI.
                           Pixels not belonging to any ROI must be labeled with -1
+                   It can be none if BoundingBoxes is specified. In this case, 
+                   bounding boxes themselves will be used as ROIs
     weights      - can do a weighted average instead of a simple average if this keyword parameter
                    is set.  weights.shape must = image.shape.
     norm         - Normalization factors. Equals the number of pixel belonging to each ROI if average is not weighted
@@ -329,17 +333,28 @@ def ROIAverage(image, ROImask, boolMask=False, weights=None, norm=None, masknans
     norm      : sum of weights within the ROI. If weights==None, this reduces to the number of pixels in the ROI
     """
     
+    
     if image.shape[0]==0:
         return None, None
     
     rbb = BoundingBoxes
     
-    if boolMask:
-        nbins = len(ROImask)
-        ROIboolMask = ROImask
+    if ROImask is None:
+        if BoundingBoxes is None:
+            raise ValueError('either ROImask or BoundingBoxes must be specified!')
+        else:
+            nbins = len(BoundingBoxes)
+            ROIboolMask = None
     else:
-        nbins = np.max(ROImask)+1
-        ROIboolMask = [ROImask==b for b in range(nbins)]
+        if boolMask:
+            nbins = len(ROImask)
+            ROIboolMask = ROImask
+        else:
+            nbins = np.max(ROImask)+1
+            if BoundingBoxes is None:
+                ROIboolMask = [ROImask==b for b in range(nbins)]
+            else:
+                ROIboolMask = [ROImask[rbb[b][0]:rbb[b][2],rbb[b][1]:rbb[b][3]]==b for b in range(nbins)]
         
     use_weights = (weights is not None or masknans)
     if weights is None and use_weights:
@@ -357,12 +372,18 @@ def ROIAverage(image, ROImask, boolMask=False, weights=None, norm=None, masknans
                 if BoundingBoxes is None:
                     norm = np.array([[np.sum(np.multiply(weights[i], ROIboolMask[b])) for b in range(nbins)] for i in range(weights.shape[0])])
                 else:
-                    norm = np.array([[np.sum(np.multiply(weights[i][rbb[0]:rbb[2],rbb[1]:rbb[3]], ROIboolMask[b][rbb[0]:rbb[2],rbb[1]:rbb[3]])) for b in range(nbins)] for i in range(weights.shape[0])])
+                    if ROIboolMask is None:
+                        norm = np.array([[np.sum(weights[i][rbb[b][0]:rbb[b][2],rbb[b][1]:rbb[b][3]]) for b in range(nbins)] for i in range(weights.shape[0])])
+                    else:
+                        norm = np.array([[np.sum(np.multiply(weights[i][rbb[b][0]:rbb[b][2],rbb[b][1]:rbb[b][3]], ROIboolMask[b])) for b in range(nbins)] for i in range(weights.shape[0])])
             else:
                 if BoundingBoxes is None:
                     norm = np.array([np.sum(np.multiply(weights, ROIboolMask[b])) for b in range(nbins)])
                 else:
-                    norm = np.array([np.sum(np.multiply(weights[rbb[0]:rbb[2],rbb[1]:rbb[3]], ROIboolMask[b][rbb[0]:rbb[2],rbb[1]:rbb[3]])) for b in range(nbins)])
+                    if ROIboolMask is None:
+                        norm = np.array([np.sum(weights[rbb[b][0]:rbb[b][2],rbb[b][1]:rbb[b][3]]) for b in range(nbins)])
+                    else:
+                        norm = np.array([np.sum(np.multiply(weights[rbb[b][0]:rbb[b][2],rbb[b][1]:rbb[b][3]], ROIboolMask[b])) for b in range(nbins)])
                 if (use_img.ndim > 2):
                     norm = [norm] * use_img.shape[0]
     else:
@@ -371,7 +392,10 @@ def ROIAverage(image, ROImask, boolMask=False, weights=None, norm=None, masknans
             if BoundingBoxes is None:
                 norm = np.array([np.sum(ROIboolMask[b]) for b in range(nbins)])
             else:
-                norm = np.array([np.sum(ROIboolMask[b][rbb[0]:rbb[2],rbb[1]:rbb[3]]) for b in range(nbins)])
+                if ROIboolMask is None:
+                    norm = np.array([(rbb[b][2]-rbb[b][0])*(rbb[b][3]-rbb[b][1]) for b in range(nbins)])
+                else:
+                    norm = np.array([np.sum(ROIboolMask[b]) for b in range(nbins)])
         if (norm.ndim==1 and use_img.ndim > 2):
             norm = np.asarray([norm] * use_img.shape[0])
         
@@ -388,7 +412,7 @@ def ROIAverage(image, ROImask, boolMask=False, weights=None, norm=None, masknans
             strprint = '  No weighting. Original image'
         logging.debug(strprint + ' has shape {0} and ranges from {1} to {2}'.format(use_img.shape, np.min(use_img), np.max(use_img)))
         if BoundingBoxes is not None:
-            logging.debug('  Using bounding boxes (shape: {0})'.format(rbb.shape))
+            logging.debug('  Using bounding boxes (len: {0})'.format(len(rbb)))
             
     
     if (use_img.ndim > 2):
@@ -397,30 +421,46 @@ def ROIAverage(image, ROImask, boolMask=False, weights=None, norm=None, masknans
                 ROI_avg = np.array([[np.true_divide(np.sum(np.multiply(use_img[i], ROIboolMask[b]), dtype=dtype), norm[i][b]) 
                                      for b in range(nbins)] for i in range(use_img.shape[0])])
             else:
-                ROI_avg = np.array([[np.true_divide(np.sum(np.multiply(use_img[i][rbb[b][0]:rbb[b][2],rbb[b][1]:rbb[b][3]], ROIboolMask[b][rbb[b][0]:rbb[b][2],rbb[b][1]:rbb[b][3]]), 
-                                                           dtype=dtype), norm[i][b]) for b in range(nbins)] for i in range(use_img.shape[0])])
+                if ROIboolMask is None:
+                    ROI_avg = np.array([[np.true_divide(np.sum(use_img[i][rbb[b][0]:rbb[b][2],rbb[b][1]:rbb[b][3]], 
+                                                               dtype=dtype), norm[i][b]) for b in range(nbins)] for i in range(use_img.shape[0])])
+                else:
+                    ROI_avg = np.array([[np.true_divide(np.sum(np.multiply(use_img[i][rbb[b][0]:rbb[b][2],rbb[b][1]:rbb[b][3]], ROIboolMask[b]), 
+                                                               dtype=dtype), norm[i][b]) for b in range(nbins)] for i in range(use_img.shape[0])])
         else:
             if BoundingBoxes is None:
                 ROI_avg = np.array([[np.true_divide(np.sum(np.multiply(evalFunc(use_img[i], **evalParams), ROIboolMask[b]), dtype=dtype), norm[i][b]) 
                                      for b in range(nbins)] for i in range(use_img.shape[0])])
             else:
-                ROI_avg = np.array([[np.true_divide(np.sum(np.multiply(evalFunc(use_img[i][rbb[b][0]:rbb[b][2],rbb[b][1]:rbb[b][3]], **evalParams), ROIboolMask[b][rbb[b][0]:rbb[b][2],rbb[b][1]:rbb[b][3]]), 
-                                                           dtype=dtype), norm[i][b]) for b in range(nbins)] for i in range(use_img.shape[0])])
+                if ROIboolMask is None:
+                    ROI_avg = np.array([[np.true_divide(np.sum(evalFunc(use_img[i][rbb[b][0]:rbb[b][2],rbb[b][1]:rbb[b][3]], **evalParams), 
+                                                               dtype=dtype), norm[i][b]) for b in range(nbins)] for i in range(use_img.shape[0])])                    
+                else:
+                    ROI_avg = np.array([[np.true_divide(np.sum(np.multiply(evalFunc(use_img[i][rbb[b][0]:rbb[b][2],rbb[b][1]:rbb[b][3]], **evalParams), ROIboolMask[b]), 
+                                                               dtype=dtype), norm[i][b]) for b in range(nbins)] for i in range(use_img.shape[0])])
                 
     else:
         if evalFunc==None:
             if BoundingBoxes is None:
                 ROI_avg = np.array([np.true_divide(np.sum(np.multiply(use_img, ROIboolMask[b]), dtype=dtype), norm[b]) for b in range(nbins)])
             else:
-                ROI_avg = np.array([np.true_divide(np.sum(np.multiply(use_img[rbb[b][0]:rbb[b][2],rbb[b][1]:rbb[b][3]], ROIboolMask[b][rbb[b][0]:rbb[b][2],rbb[b][1]:rbb[b][3]]), 
-                                                          dtype=dtype), norm[b]) for b in range(nbins)])
+                if ROIboolMask is None:
+                    ROI_avg = np.array([np.true_divide(np.sum(use_img[rbb[b][0]:rbb[b][2],rbb[b][1]:rbb[b][3]], 
+                                                              dtype=dtype), norm[b]) for b in range(nbins)])                    
+                else:
+                    ROI_avg = np.array([np.true_divide(np.sum(np.multiply(use_img[rbb[b][0]:rbb[b][2],rbb[b][1]:rbb[b][3]], ROIboolMask[b]), 
+                                                              dtype=dtype), norm[b]) for b in range(nbins)])
         else:
             if BoundingBoxes is None:
                 ROI_avg = np.array([np.true_divide(np.sum(np.multiply(evalFunc(use_img, **evalParams), ROIboolMask[b]), dtype=dtype),
                                                    norm[b]) for b in range(nbins)])
             else:
-                ROI_avg = np.array([np.true_divide(np.sum(np.multiply(evalFunc(use_img[rbb[b][0]:rbb[b][2],rbb[b][1]:rbb[b][3]], **evalParams), ROIboolMask[b][rbb[b][0]:rbb[b][2],rbb[b][1]:rbb[b][3]]), 
-                                                          dtype=dtype), norm[b]) for b in range(nbins)])
+                if ROIboolMask is None:
+                    ROI_avg = np.array([np.true_divide(np.sum(evalFunc(use_img[rbb[b][0]:rbb[b][2],rbb[b][1]:rbb[b][3]], **evalParams), 
+                                                              dtype=dtype), norm[b]) for b in range(nbins)])                    
+                else:
+                    ROI_avg = np.array([np.true_divide(np.sum(np.multiply(evalFunc(use_img[rbb[b][0]:rbb[b][2],rbb[b][1]:rbb[b][3]], **evalParams), ROIboolMask[b]), 
+                                                              dtype=dtype), norm[b]) for b in range(nbins)])
                 
     
     return ROI_avg, norm
@@ -464,21 +504,21 @@ def LoadImageTimes(img_times_source, usecols=0, skiprows=1, root_folder=None, de
     return iof.LoadImageTimes(img_times_source, usecols=usecols, skiprows=skiprows, root_folder=root_folder, return_unique=return_unique)
 
     
-def AverageG2M1(cI_file, average_T=None, save_fname=None):
-    cur_cI, cur_times, cur_lagidx_list, roi_idx, exp_idx = ReadCIfile(cI_file)
+def AverageG2M1(cI_file, average_T=None, save_fname=None, save_prefix='g2m1', cut_prefix_len=2, delimiter='\t', comment='#'):
+    cur_cI, cur_times, cur_lagidx_list = iof.ReadCIfile(cI_file)
     
     g2m1, g2m1_lags = AverageCorrTimetrace(cur_cI, cur_times, cur_lagidx_list, average_T)
     
-    str_hdr_g = str(TXT_DELIMITER).join(['dt'+TXT_DELIMITER+'t{0:.2f}'.format(cur_times[tavgidx*average_T]) for tavgidx in range(g2m1.shape[0])])
+    str_hdr_g = str(delimiter).join(['dt'+delimiter+'t{0:.2f}'.format(cur_times[tavgidx*average_T]) for tavgidx in range(g2m1.shape[0])])
     g2m1_out = np.empty((g2m1.shape[1], 2*g2m1.shape[0]), dtype=float)
     g2m1_out[:,0::2] = g2m1_lags.T
     g2m1_out[:,1::2] = g2m1.T
     
     if save_fname is None:
-        save_fname = G2M1_PREFIX + sf.GetFilenameFromCompletePath(cI_file)[len(CI_PREFIX):]
+        save_fname = save_prefix + sf.GetFilenameFromCompletePath(cI_file)[cut_prefix_len:]
     
     np.savetxt(os.path.join(os.path.dirname(cI_file), save_fname), 
-           g2m1_out, header=str_hdr_g, delimiter=TXT_DELIMITER, comments=TXT_COMMENT)
+           g2m1_out, header=str_hdr_g, delimiter=delimiter, comments=comment)
 
 def AverageCorrTimetrace(CorrData, ImageTimes, Lagtimes_idxlist, average_T=None):
     '''
@@ -504,7 +544,7 @@ def AverageCorrTimetrace(CorrData, ImageTimes, Lagtimes_idxlist, average_T=None)
     else:
         tavg_num = int(math.ceil(CorrData.shape[0]*1.0/average_T))
             
-    g2m1_alllags, g2m1_laglist = FindTimelags(times=ImageTimes, lags=Lagtimes_idxlist, subset_len=average_T)
+    g2m1_alllags, g2m1_laglist = sf.FindLags(series=ImageTimes, lags_index=Lagtimes_idxlist, subset_len=average_T)
     g2m1 = np.zeros((tavg_num, np.max([len(l) for l in g2m1_laglist])), dtype=float)
     g2m1_lags = np.nan * np.ones_like(g2m1, dtype=float)
     g2m1_avgnum = np.zeros_like(g2m1, dtype=int)
@@ -555,7 +595,7 @@ class ROIproc():
         """
         
         self.MIinput   = MIin
-        self.SetROImasks(ROImasks, CommonMask=None, ROIcoords=ROIcoords)
+        self.SetROImasks(ROImasks, ROIcoords=ROIcoords)
         self._loadTimes(imgTimes)
         self.SetExptimes(expTimes)
         self._initConstants()
@@ -615,20 +655,15 @@ class ROIproc():
             curROIs = np.where(CommonMask==0, -1, ROIs)
 
         return self.SetROImasks(ROImasks=[curROIs==b for b in range(np.max(curROIs)+1)], 
-                                CommonMask=CommonMask, ROIcoords=ROIcoords, ROIcoord_names=ROIcoord_names)
+                                ROIcoords=ROIcoords, ROIcoord_names=ROIcoord_names)
         
-    def SetROImasks(self, ROImasks, CommonMask=None, BoundingBoxMargin=0, ROIcoords=None, ROIcoord_names=None):
+    def SetROImasks(self, ROImasks, BoundingBoxMargin=0, ROIcoords=None, ROIcoord_names=None):
         '''
         Sets ROIs from list of binary masks
         
         Parameters
         ----------
         ROImasks :  list of binary masks
-        CommonMask :2D binary array with same shape as MIin.ImageShape()
-                    True values (nonzero) denote pixels that will be included in the analysis,
-                    False values (zeroes) will be excluded
-                    If None, all pixels will be included.
-                    Disregarded if ROIs is already a raw mask
         ROIcoords : None or ndarray with ROI coordinates.
                     If None, ROIcoords=np.arange(self.CountROIs())
         ROIcoord_names : list of str: coordinate names
@@ -642,14 +677,26 @@ class ROIproc():
         self.BoundingBox = globalBB
         self.CropROIbb = [self.BoundingBox[1], self.BoundingBox[0], self.BoundingBox[3]-self.BoundingBox[1], self.BoundingBox[2]-self.BoundingBox[0]]
         self.ROIboundingBoxes = []
+        self.ROI_masks_crop = []
+        trivial_cropbb = True
         for ridx in range(self.CountROIs()):
             if self.IsROIvalid(ridx):
                 cur_bb = FindBoundingBoxROI(self.ROI_masks[ridx], margin=0)
                 self.ROIboundingBoxes.append([cur_bb[0]-globalBB[0], cur_bb[1]-globalBB[1], cur_bb[2]-globalBB[0], cur_bb[3]-globalBB[1]])
+                cur_maskcrop = self.ROI_masks[ridx,cur_bb[0]:cur_bb[2],cur_bb[1]:cur_bb[3]]
+                if np.any(cur_maskcrop==0):
+                    self.ROI_masks_crop.append(cur_maskcrop)
+                    trivial_cropbb = False
+                else:
+                    self.ROI_masks_crop.append(np.ones((cur_bb[2]-cur_bb[0],cur_bb[3]-cur_bb[1])))
             else:
+                logging.debug('ROI {0} is empty'.format(ridx))
                 self.ROIboundingBoxes.append([0, 0, globalBB[2]-globalBB[0], globalBB[3]-globalBB[1]])
+                self.ROI_masks_crop.append(np.zeros((globalBB[2]-globalBB[0], globalBB[3]-globalBB[1]), dtype=np.dtype('b')))
+                trivial_cropbb = False
         self.ROIboundingBoxes = np.asarray(self.ROIboundingBoxes)
-        self.ROI_masks_crop = self.ROI_masks[:,globalBB[0]:globalBB[2],globalBB[1]:globalBB[3]]
+        if trivial_cropbb:
+            self.ROI_masks_crop = None
         
         if self.CountEmptyROIs() > 0:
             if self.CountValidROIs() > 0:
@@ -1098,7 +1145,8 @@ class ROIproc():
     def AverageG2M1(self, folder_path, average_N=None):
         if average_N is None:
             average_N = self.NumTimes()
-        cI_fnames = sf.FindFileNames(folder_path, Prefix='ci_', Ext='.dat')
+        cI_fnames = sf.FindFileNames(folder_path, Prefix='cI_', Ext='.dat')
         
         for cur_f in cI_fnames:
-            AverageG2M1(os.path.join(folder_path, cur_f), average_T=average_N, save_prefix='g2m1')
+            AverageG2M1(os.path.join(folder_path, cur_f), average_T=average_N, save_prefix='g2m1', 
+                        cut_prefix_len=len('cI'), delimiter=self.txt_delim, comment=self.txt_comm)

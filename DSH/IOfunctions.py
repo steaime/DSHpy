@@ -14,8 +14,8 @@ def LoadResFile(fname, readHeader=True, isolateFirst=0, delimiter=',', comments=
     if (isolateFirst>0):
         firstcol = np.squeeze(res_arr[:,:isolateFirst])
         res_arr = np.squeeze(res_arr[:,isolateFirst:])
-        hdr_list = hdr_list[isolateFirst:]
         if (readHeader):
+            hdr_list = hdr_list[isolateFirst:]
             return res_arr, hdr_list, firstcol
         else:
             return res_arr, firstcol
@@ -25,16 +25,18 @@ def LoadResFile(fname, readHeader=True, isolateFirst=0, delimiter=',', comments=
         else:
             return res_arr
 
-def OpenRawSLS(fname, delimiter='\t', comments='#'):
-    res_Ir, res_hdr, roi_coord = LoadResFile(fname, delimiter=delimiter, comments=comments, readHeader=True, isolateFirst=2)
-    times = np.asarray([sf.FirstFloatInStr(hdr) for hdr in res_hdr])
+def OpenRawSLS(fname, roi_numcoords=2, delimiter='\t', comments='#'):
+    res_Iav, res_hdr, roi_coord = LoadResFile(fname, delimiter=delimiter, comments=comments, readHeader=True, isolateFirst=roi_numcoords)
     exptimes = np.asarray([sf.LastFloatInStr(hdr) for hdr in res_hdr])
-    return np.squeeze(res_Ir.reshape((res_Ir.shape[0], -1, len(set(exptimes))))), roi_coord[:,0], roi_coord[:,1], times, exptimes
+    num_exptimes = len(set(exptimes))
+    times = np.squeeze(np.asarray([sf.FirstFloatInStr(hdr) for hdr in res_hdr]).reshape((-1, num_exptimes)))
+    exptimes = np.squeeze(exptimes.reshape((-1, num_exptimes)))
+    return np.squeeze(res_Iav.reshape((res_Iav.shape[0], -1, num_exptimes))), roi_coord, times, exptimes
 
-def OpenSLS(fname, delimiter='\t', comments='#'):
-    res_Ir, res_hdr, roi_coord = LoadResFile(fname, delimiter=delimiter, comments=comments, readHeader=True, isolateFirst=2)
+def OpenSLS(fname, roi_numcoords=2, delimiter='\t', comments='#'):
+    res_Iavg, res_hdr, roi_coord = LoadResFile(fname, delimiter=delimiter, comments=comments, readHeader=True, isolateFirst=roi_numcoords)
     times = np.asarray([sf.FirstFloatInStr(hdr) for hdr in res_hdr])
-    return res_Ir, roi_coord[:,0], roi_coord[:,1], times
+    return res_Iavg, roi_coord, times
 
 def ReadCIfile(fpath, time_colidx=1, delimiter='\t', comments='#'):
     """Loads a CI file
@@ -86,7 +88,7 @@ def OpenG2M1s(froot, expt_idx=None, roi_idx=None, fname_prefix='g2m1_', time_col
     if expt_idx is not None:
         filter_str += '_e' + str(expt_idx).zfill(2)
     fnames_list = sf.FindFileNames(froot, Prefix=fname_prefix, Ext='.dat', FilterString=filter_str, Sort='ASC')
-    ROI_list = [sf.FirstIntInStr(name) for name in fnames_list]
+    ROI_list = [sf.AllIntInStr(name)[-2] for name in fnames_list]
     exptime_list = [sf.LastIntInStr(name) for name in fnames_list]
     lagtimes = []
     imgtimes = []
