@@ -383,3 +383,59 @@ def FindLags(series, lags_index, subset_len=None, tolerance=1e-2, tolerance_isre
                 cur_coarsenedlist.append(cur_uniquelist[lidx])
         unique_laglist.append(cur_coarsenedlist)
     return alllags, unique_laglist
+
+def PixelCoordGrid(shape, extent=None, center=[0, 0], angle=0, coords='cartesian', indexing='xy'):
+    '''Generates a grid of pixel coordinates
+    
+    Parameters
+    ----------
+    shape:  shape of the map [num_rows, num_cols].
+    extent: extent of the mapping [x_left, x_right, y_bottom, y_top], 
+            in physical units. They can be reversed (e.g. x2<x1)
+            If None, it will be set to [0, shape[1], shape[0], 0]
+    center: center of the coordinate system, in physical units
+    angle:  Eventually rotate the coordinate system by angle, in radians
+            for cartesian coordinates:
+            - 0 means (xt, xn)=(x, y)
+            - pi/2 means (xt, xn)=(y, -x)
+              (note: +y points downward if indexing='xy')
+            for polar coordinates:
+            - 0 means theta=0 along +x
+            - pi/2 means theta=0 along +y
+              (note: this means downwards if indexing='xy')
+    coords: ['cartesian'|'polar'] to return [x,y] or [r,theta] respectively
+    indexing: ['xy'|'ij'], numpy.meshgrid indexing method
+    
+    Returns
+    -------
+    _grid  : couple of 2D arrays with coordinates for each pixel
+             (either [x, y] or [r, theta], with theta in [-pi, pi] range)
+    '''
+    
+    # Note: matplotlib extent is [x_left, x_right, y_bottom, y_top], 
+    # meshgrid extent is [x_left, x_right, y_top, y_bottom] if indexing='xy'
+    if extent is None:
+        x_left, x_right, y_bottom, y_top = 0, shape[1], shape[0], 0
+    else:
+        x_left, x_right, y_bottom, y_top = extent
+    
+    # Pixel coordinates in physical units
+    _grid = np.meshgrid(np.linspace(x_left-center[0], x_right-center[0], shape[1]),\
+                        np.linspace(y_top-center[1], y_bottom-center[1], shape[0]), indexing=indexing)
+    
+    if coords=='cartesian':    
+        if (angle != 0):
+            # Coordinatees in the rotated reference frame
+            _xt, _xn = np.multiply(_grid[0], np.cos(angle)) - np.multiply(_grid[1], np.sin(angle)),\
+                       np.multiply(_grid[1], np.cos(angle)) + np.multiply(_grid[0], np.sin(angle))
+            return [_xt, _xn]
+        else:
+            return _grid
+    elif coords=='polar':
+        _theta = np.arctan2(_grid[1], _grid[0])-angle
+        if (angle != 0):
+            _theta = np.mod(_theta+np.pi, 2*np.pi)-np.pi
+        _r = np.linalg.norm(_grid, axis=0)
+        return [_r, _theta]
+    else:
+        raise ValueError('Unknown coordinate system ' + str(coords))

@@ -331,7 +331,7 @@ class MIfile():
             self.Close()
         return res_3D
     
-    def GetImage(self, img_idx, cropROI=None, buffer=None, buf_indexes=None):
+    def GetImage(self, img_idx, cropROI=None, buffer=None, buf_indexes=None, buffer_crop=True):
         """Read single image from MIfile
         
         Parameters
@@ -343,6 +343,8 @@ class MIfile():
         buffer  : None or 3D array. Buffer of images already read
         buf_indexes : None or list of indexes of images in buffer. 
                       If None, buf_indexes = [0, 1, ..., buffer.shape[0]-1]
+        buffer_crop : if True, assume that images in buffer need to be cropped to specific ROI
+                      otherwise, assume that images in buffer are already cropped to specific ROI
         """
         if (img_idx<0):
             img_idx += self.ImgNumber
