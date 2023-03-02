@@ -8,8 +8,8 @@ from DSH import SharedFunctions as sf
 def LoadResFile(fname, readHeader=True, isolateFirst=0, delimiter=',', comments='#'):
     if (readHeader):
         f = open(fname)
-        header = f.readline()
-        hdr_list = header.split(delimiter)
+        header = f.readline()[len(comments):]
+        hdr_list = header.strip().split(delimiter)
     res_arr = np.loadtxt(fname, comments=comments, delimiter=delimiter)
     if (isolateFirst>0):
         firstcol = np.squeeze(res_arr[:,:isolateFirst])
@@ -151,3 +151,16 @@ def LoadImageTimes(img_times_source, usecols=0, skiprows=1, root_folder=None, re
     if res is not None and return_unique:
         res = np.unique(res)
     return res
+
+def LoadROIcoords(file_name, delimiter='\t', comments='#'):
+    data, hdr = LoadResFile(file_name, readHeader=True, isolateFirst=0, delimiter=delimiter, comments=comments)
+    num_coords = data.shape[1]-5
+    if num_coords <= 0:
+        logging.error('IOfunctions.LoadROIcoords() : error loading file ' + str(file_name) + ' at least 6 columns expected in data (shape=' + str(data.shape) + ')')
+        return None, None, None, None
+    else:
+        ROIcoords = np.squeeze(data[:,:num_coords])
+        ROInames = hdr[:num_coords]
+        NormFact = data[:,num_coords]
+        ROIbb = data[:,num_coords+1:]
+    return ROIcoords, ROInames, NormFact, ROIbb

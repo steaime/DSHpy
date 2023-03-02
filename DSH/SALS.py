@@ -7,6 +7,19 @@ import DSH
 from DSH import ROIproc as RP
 from DSH import SharedFunctions as sf
 
+def ValidatePolarSlices(ROI_specs, imgShape=None):
+    if ROI_specs is None:
+        ROI_specs = [None, None]
+    rSlices, aSlices = ROI_specs
+    if rSlices is None:
+        if imgShape is None:
+            raise ValueError('Image shape must be specified to retermine the range of radii')
+        else:
+            rSlices = [0, np.hypot(imgShape[0], imgShape[1])]
+    if aSlices is None:
+        aSlices = [-3.15, 3.15]
+    return rSlices, aSlices
+
 def GenerateROIs(ROI_specs, imgShape, centerPos, maskRaw=None):
     """ Generate ROI specs for SALS analysis
 
@@ -40,12 +53,7 @@ def GenerateROIs(ROI_specs, imgShape, centerPos, maskRaw=None):
     if ROI_specs is None:
         ROI_specs = [None, None]
     if (len(ROI_specs)==2):
-        rSlices, aSlices = ROI_specs
-        if rSlices is None:
-            rSlices = [0, np.hypot(imgShape[0], imgShape[1])]
-        if aSlices is None:
-            aSlices = [-3.15, 3.15]
-            
+        rSlices, aSlices = ValidatePolarSlices(ROI_specs, imgShape)
         ROIcoords = RP.MaskCoordsFromBoundaries(rSlices, aSlices, flatten_res=True)
         pxCoords = sf.PixelCoordGrid(shape=imgShape, center=centerPos, coords='polar')
         ROIs = RP.GenerateMasks(ROIcoords, pxCoords, common_mask=maskRaw)
@@ -58,8 +66,6 @@ def GenerateROIs(ROI_specs, imgShape, centerPos, maskRaw=None):
         a_min, a_max = RP.ROIEval(a_map, ROI_specs, [np.min, np.max])
         rSlices, aSlices = [[r_min[i], r_max[i]] for i in range(len(r_min))], [[a_min[i], a_max[i]] for i in range(len(a_min))]
         return GenerateROIs([rSlices, aSlices], imgShape, centerPos, maskRaw=maskRaw)
-
-    
     
 def LoadFromConfig(ConfigFile, input_sect='input', outFolder=None):
     """Loads a SALS object from a config file like the one exported with VelMaps.ExportConfig()
@@ -157,7 +163,7 @@ def LoadFromConfig(ConfigFile, input_sect='input', outFolder=None):
 class SALS(RP.ROIproc):
     """ Class to do small angle static and dynamic light scattering from a MIfile """
     
-    def __init__(self, MIin, centerPos, ROIcoords=None, maskRaw=None, imgTimes=None, expTimes=[1], BkgCorr=None):
+    def __init__(self, MIin, centerPos, ROIslices=None, maskRaw=None, imgTimes=None, expTimes=[1], BkgCorr=None):
         """
         Initialize SALS
 
@@ -198,12 +204,14 @@ class SALS(RP.ROIproc):
         """
         
         # Initialize ROIproc
-        ROImasks, ROIcoords = GenerateROIs(ROIcoords, imgShape=MIin.ImageShape(), centerPos=centerPos, maskRaw=maskRaw)
+        self.ROIslices = ValidatePolarSlices(ROIslices, MIin.ImageShape())
+        self.centerPos = centerPos
+        self.px_mask = maskRaw
+        ROImasks, ROIcoords = GenerateROIs(self.ROIslices, imgShape=MIin.ImageShape(), centerPos=self.centerPos, maskRaw=self.px_mask)
         RP.ROIproc.__init__(self, MIin, ROImasks, ROIcoords=ROIcoords, imgTimes=imgTimes, expTimes=expTimes)
         
         # SALS-specific initialization
         self._loadBkg(BkgCorr)
-        self.centerPos = centerPos
         
     def __repr__(self):
         if (self.MIinput.IsStack()):
@@ -233,8 +241,24 @@ class SALS(RP.ROIproc):
         self.DarkBkg, self.OptBkg, self.PDdata = BkgCorr
         
     def SetROImasks(self, ROImasks, ROIcoords=None):
-        return RP.ROIproc.SetROImasks(self, ROImasks, BoundingBoxMargin=0, ROIcoords=ROIcoords, ROIcoord_names=['r[px]', 'theta[rad]'])
+        ROImetadata = {'coords' : ROIcoords, 'coord_names' : ['r[px]', 'theta[rad]'], 'box_margin' : 0}
+        return RP.ROIproc.SetROImasks(self, ROImasks, ROImetadata=ROImetadata)
     
     def GenerateROIs(self, ROI_specs, maskRaw=None):
         ROImasks, ROIcoords = GenerateROIs(ROI_specs, imgShape=self.MIinput.ImageShape(), centerPos=self.centerPos, maskRaw=maskRaw)
         return self.SetROImasks(ROImasks, ROIcoords=ROIcoords)
+    
+    def GetSALSparams(self):
+        res = {'ctrPos' : list(self.centerPos), 'rSlices' : list(self.ROIslices[0]), 'aSlices' : list(self.ROIslices[1])}
+        return res
+    
+    def doDLS(self, saveFolder, lagtimes, reftimes='all', no_buffer=False, force_SLS=True, save_transposed=False, export_configparams=None):
+        additional_params = {'SALS' : self.GetSALSparams()}
+        # save raw mask, get filename
+        additional_params['SALS']['raw_mask'] = raw_mask_filename
+        additional_params['General']['generated_by'] = 'SALS.doDLS'
+        
+        if export_configparams is not None:
+            additional_params = sf.UpdateDict(additional_params, export_configparams)
+        return RP.ROIproc.doDLS(self, saveFolder, lagtimes=lagtimes, reftimes=reftimes, no_buffer=no_buffer, 
+                                force_SLS=force_SLS, save_transposed=save_transposed, export_configparams=additional_params)

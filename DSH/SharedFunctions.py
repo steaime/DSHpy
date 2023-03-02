@@ -1,9 +1,12 @@
 import os
 import re
 import inspect
+import logging
+import datetime
 import math
 import numpy as np
 import collections
+import collections.abc
 
 import pkg_resources
 pkg_installed = {pkg.key for pkg in pkg_resources.working_set}
@@ -125,16 +128,18 @@ def StrParse(my_string, cast_type=None):
             res = ast.literal_eval(res)
     if (type(res) in [list]):
         for i in range(len(res)):
-            if (type(res[i]) in [list]):
-                if (cast_type is not None):
+            if (cast_type is not None):
+                if (type(res[i]) in [list]):
                     for j in range(len(res[i])):
                         res[i][j] = cast_type(res[i][j])
-            else:
-                if (cast_type is not None):
+                else:
                     res[i] = cast_type(res[i])
         return res
     elif (type(res) in [tuple]):
-        return tuple(map(cast_type, res))
+        if (cast_type is not None):
+            return tuple(map(cast_type, res))
+        else:
+            return res
     elif (cast_type is bool):
         if (type(res) is bool):
             return res
@@ -168,6 +173,16 @@ def GetFilenameFromCompletePath(my_string):
 def GetFolderFromCompletePath(my_string):
     return os.path.dirname(my_string)
 
+def GetAbsolutePath(path, root_path=None):
+    if os.path.isabs(path):
+        return path
+    else:
+        if root_path is None:
+            return os.path.abspath(path)
+        else:
+            return os.path.abspath(os.path.join(root_path, path))
+            # for the relative path: relative_path = os.path.relpath(absolute_path, root_path)
+
 def CheckCreateFolder(folderPath):
     if (os.path.isdir(folderPath)):
         return True
@@ -179,6 +194,13 @@ def CheckCreateFolder(folderPath):
 def IsIterable(var):
     return isinstance(var, collections.abc.Iterable)
     
+def UpdateDict(dict_orig, dict_update):
+    for k, v in dict_update.items():
+        if isinstance(v, collections.abc.Mapping):
+            dict_orig[k] = UpdateDict(dict_orig.get(k, {}), v)
+        else:
+            dict_orig[k] = v
+    return dict_orig
 
 def CheckIterableVariable(var, n_dim, force_length=True, cast_type=None):
     """ Checks if a variable is an iterable with given dimensions (n_dim). 
@@ -300,14 +322,42 @@ def LockPrint(strOut, lock, silent=False):
         else:
             print(strOut)
 
-def LogWrite(strOut, fLog, lock=None, flushAfter=True, silent=True, add_prefix='\n'):
+def LogWrite(strOut, fLog=None, logLevel=None, lock=None, flushAfter=True, silent=True, add_prefix='\n'):
+    """
+    Log a message
+    
+    Parameters
+    ----------
+    strOut :    string, message to be logged
+    fLog :      None or handle to text file to write the message with add_prefix prepended
+    logLevel :  None or int. If not None, it specifies the logging level for python standard logging console
+                Default values are: 
+                    logging.NOTSET   = 0
+                    logging.DEBUG    = 10
+                    logging.INFO     = 20
+                    logging.WARN     = 30
+                    logging.ERROR    = 40
+                    logging.CRITICAL = 50
+                if None, no message will be logged
+    lock :      None or lock to avoid simultaneous writing to file
+    flushAfter: bool. If True, flush the text file after logging
+    silent :    bool. If True, print the message to standard print output
+    """
     if fLog is not None:
         LockAcquire(lock)
         fLog.write(add_prefix + strOut)
         if flushAfter:
             fLog.flush()
         LockRelease(lock)
+    if logLevel is not None:
+        logging.log(logLevel, strOut)
     LockPrint(strOut, lock, silent)
+
+def TimeStr(fmt="%H:%M:%S"):
+    return NowToStr(fmt=fmt)
+
+def NowToStr(fmt="%m/%d/%Y, %H:%M:%S"):
+    return datetime.datetime.now().strftime(fmt)
 
 def MoveListElement(lst, old_idx, new_idx):
     if (new_idx < 0):

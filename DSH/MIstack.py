@@ -158,6 +158,14 @@ class MIstack():
         return self.IdxList    
     def GetMIfiles(self):
         return self.MIfiles    
+    def GetFilename(self, absPath=False):
+        res = []
+        for cur_mi in self.MIfiles:
+            if absPath:
+                res.append(os.path.abspath(cur_mi.FileName))
+            else:
+                res.append(cur_mi.FileName)
+        return res
     def GetMIfile(self, MI_idx):
         if (MI_idx>0 and MI_idx<len(self.MIfiles)):
             return self.MIfiles[MI_idx]

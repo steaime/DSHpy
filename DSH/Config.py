@@ -17,39 +17,44 @@ def ExportDict(dict_to_export, out_filename, section_name=None):
     conf = Config()
     conf.Import(dict_to_export, section_name=section_name)
     conf.Export(out_filename)
-
-def LoadMetadata(MetaData, SectionName=None, DefaultFiles=[]):
     
-    """Reads metadata file
+def LoadMetadata(MetaData, SectionName=None, DefaultFiles=[]):
+    return LoadConfig(MetaData, SectionName, DefaultFiles)
+    
+def LoadConfig(ConfigData, SectionName=None, DefaultFiles=[]):
+    
+    """Reads configuration file
     it also reads the default configuration file
-    in case of duplicates, information from MetaDataFile is used
+    in case of duplicates, information from ConfigData is used
     
     Parameters
     ----------
-    MetaData : dict or filename
-    SectionName : if MetaData is a dictionnary, eventually load subsection of configuration parameters
-                    if MetaData is a filename, only load this section from the configuration file
+    ConfigData : dict or filename
+    SectionName : if ConfigData is a dictionnary, eventually load subsection of configuration parameters
+                    if ConfigData is a filename, only load this section from the configuration file
     DefaultFiles : list of full path containing default configuration parameters
     
     Returns
     -------
-    outConfig : Config object containing desired metadata
+    outConfig : Config object containing desired configuration data
     """
-    if (type(MetaData) in [dict, collections.OrderedDict]):
+    if (type(ConfigData) in [dict, collections.OrderedDict]):
         logging.debug('Appending input dictionary to section ' + str(SectionName))
         outConfig = Config(None, defaultConfigFiles=DefaultFiles)
-        outConfig.Import(MetaData, section_name=SectionName)
-    elif (type(MetaData) in [str]):
-        outConfig = Config(MetaData, defaultConfigFiles=DefaultFiles, LoadSectionOnly=SectionName)
-        logging.debug('Loading config file ' + str(MetaData) + ' (' + str(outConfig.CountSections()) + 
+        outConfig.Import(ConfigData, section_name=SectionName)
+    elif (type(ConfigData) in [str]):
+        outConfig = Config(ConfigData, defaultConfigFiles=DefaultFiles, LoadSectionOnly=SectionName)
+        logging.debug('Loading config file ' + str(ConfigData) + ' (' + str(outConfig.CountSections()) + 
                       ' sections, ' + str(outConfig.CountKeys()) + ' keys)')
     else:
         outConfig = Config(None, defaultConfigFiles=DefaultFiles)
 
-        if (MetaData is None):
-            logging.warn('Config.LoadMetadata() warning: input metadata is None. Only default configuration parameters are loaded')
+        if (ConfigData is None):
+            logging.warn('Config.LoadConfig() warning: input configuration data is None. Only default configuration parameters are loaded')
         else:
-            outConfig.Import(MetaData.ToDict(), section_name=SectionName)
+            # assume it is a Config object
+            logging.debug('Config.LoadConfig() assuming that input is of Config type ({0} sections)'.format(ConfigData.CountSections()))
+            outConfig.Import(ConfigData.ToDict(), section_name=SectionName)
     
     return outConfig
 
@@ -118,11 +123,13 @@ class Config():
         """
         if (section_name is None):
             for key in dict_config.keys():
-                if (type(dict_config[key]) is dict):
+                if (type(dict_config[key]) in [dict, collections.OrderedDict]):
                     if (not self.config.has_section(key)):
                         self.config.add_section(key)
                     for subkey in dict_config[key].keys():
                         self.config.set(key, subkey, str(dict_config[key][subkey]))
+                else:
+                    logging.debug('Config.Import() skipping section {0} as it has no keys (value: {1})'.format(key, dict_config[key]))
         else:
             if (not self.config.has_section(section_name)):
                 self.config.add_section(section_name)
@@ -166,10 +173,15 @@ class Config():
     def HasOption(self, sect, key):
         return self.config.has_option(sect, key)
     
+    def HasSection(self, sect):
+        return sect in self.config.sections()
+    
     def GetSections(self):
         return self.config.sections()
     
     def Set(self, sect, key, value):
+        """Add new key to section or set existing key value
+        """
         self.config.set(sect, key, str(value))
         
     def ToDict(self, section=None):

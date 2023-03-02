@@ -250,7 +250,7 @@ class MIfile():
         ----------
         FileName : filename of multi image file (full path, including folder)
                     it can be None: in this case Metadata will still be loaded
-                    if the option 'filename' is found in the Metadata, Filename will be updated
+                                    in this case, if the option 'filename' is found in the Metadata, Filename will be updated
         MetaData : string, dict or none. 
                     if string: filename of metadata file
                     if dict: dictionary with metadata. 
@@ -544,8 +544,11 @@ class MIfile():
             return False
         else:
             return (not self.ReadFileHandle.closed)
-    def GetFilename(self):
-        return self.FileName
+    def GetFilename(self, absPath=False):
+        if absPath:
+            return os.path.abspath(self.FileName)
+        else:
+            return self.FileName
     def ImageNumber(self):
         return int(self.ImgNumber)
     def ImageShape(self, indexing='ij'):
@@ -583,7 +586,8 @@ class MIfile():
         
         Parameters
         ----------
-        meta_data : dict or filename
+        meta_data : dict or filename. If dict, its keys should be directly the metadata parameters
+                    (ex: hdr_len, gap_bytes, shape, px_format, endian, ...)
         """
         if (type(meta_data) in [dict, collections.OrderedDict]):
             logging.debug('Now loading MIfile metadata (dict with ' + str(len(meta_data)) + ' keys)')
@@ -598,6 +602,7 @@ class MIfile():
         self.MaxBufferSize = self.MetaData.Get('settings', 'max_buffer_size', 100000000, int)
         if (self.FileName is None):
             self.FileName = self.MetaData.Get('MIfile', 'filename', None)
+            logging.info('MIfile.FileName updated to ' + str(self.FileName) + ' from metadata')
         self.hdrSize = self.MetaData.Get('MIfile', 'hdr_len', 0, int)
         self.gapBytes = self.MetaData.Get('MIfile', 'gap_bytes', 0, int)
         self.Shape = self.MetaData.Get('MIfile', 'shape', [0,0,0], int)
