@@ -596,7 +596,7 @@ def FindSubpixelPeak(Matrix, TopLeftCoord=(0,0)):
     
     return peak_avg[0] + TopLeftCoord[0], peak_avg[1] + TopLeftCoord[1], peak_avg[2]
     
-def FindCrosscorrPeak(Image, Reference, SearchRange, SearchROI=None, ValidateInput=True, debugMode=False):
+def FindCrosscorrPeak(Image, Reference, SearchRange, SearchROI=None, SubgridShape=None, ValidateInput=True, debugMode=False):
     '''
     Calculates the position and height of the crosscorrelation between two images with subpixel resolution
     Peak position is identified as the max of a paraboloid that goes through 6 points about the pixel-resolved peak
@@ -611,6 +611,10 @@ def FindCrosscorrPeak(Image, Reference, SearchRange, SearchROI=None, ValidateInp
                     if couple of integers [margin_x, margin_y] search range is [-margin_x, margin_x, -margin_y, margin_y]
     - SearchROI :   None, 4D vector with ROI definition, in the form [min_row, min_col, max_row, max_col], 
                     compatible with ROIproc.ROIboundingBoxes
+    - SubgridShape: None or couple of int (M,N). Eventually divide the validated SearchROI into a grid of MxN ROIs
+                    (M ROIs along x axis, N along y axis), and process drifts independently in each subROI, 
+                    to obtain statistics (average and standard deviation).
+                    None corresponds to (1,1)
 
     Returns
     -------
@@ -618,15 +622,48 @@ def FindCrosscorrPeak(Image, Reference, SearchRange, SearchROI=None, ValidateInp
     - peak_height:  height of the subpixel-resolved crosscorrelation peak
                     If the pixel-resolved max falls on the edge of the search area, no subpixel search is performed and 
                     the routines returns the pixel-resolved position of the (apparent) max. peak_height is then set to -1
+    - xperr, yperr, zperr: standard errors on above quantities, only provided if SubgridShape is defined
     '''
     assert(Image.shape == Reference.shape, 'Input images in FindCrosscorrPeak should have the same shape. Instead, here we have {0} and {1}'.format(Image.shape, Reference.shape))
     if (ValidateInput):
         SearchRange = ValidateShiftRange(SearchRange, Image.shape, SearchROI)
         SearchROI = ValidateShiftROI(SearchROI, SearchRange, Image.shape)
-    Xcorr = CalcCrosscorrMatrix(Image, Reference, SearchRange, SearchROI, ValidateInput=False, debugMode=debugMode)
-    return FindSubpixelPeak(Xcorr, TopLeftCoord=(SearchRange[0],SearchRange[2]))
+    if SubgridShape is None:
+        SubgridShape = (1,1)
+    if debugMode:
+        logging.debug('ROIproc.FindCrosscorrPeak started. Search range: {0}, SearchROI: {1}, SubgridShape: {2}'.format(SearchRange, SearchROI, SubgridShape))
+    if np.prod(SubgridShape) == 1:
+        Xcorr = CalcCrosscorrMatrix(Image, Reference, SearchRange, SearchROI, ValidateInput=False, debugMode=debugMode)
+        return FindSubpixelPeak(Xcorr, TopLeftCoord=(SearchRange[0],SearchRange[2]))
+    else:
+        grid_x = np.linspace(SearchROI[1], SearchROI[3], num=SubgridShape[0]+1, endpoint=True, dtype=int)
+        grid_y = np.linspace(SearchROI[0], SearchROI[2], num=SubgridShape[1]+1, endpoint=True, dtype=int)
+        if debugMode:
+            logging.debug('SubROI array generated: x={0}; y={1}'.format(grid_x, grid_y))
+        xp_all, yp_all, zp_all = [], [], []
+        count_bad = 0
+        for ix in range(SubgridShape[0]):
+            for iy in range(SubgridShape[1]):
+                cur_xp, cur_yp, cur_zp = FindCrosscorrPeak(Image=Image, Reference=Reference, SearchRange=SearchRange, 
+                                                           SearchROI=[grid_y[iy], grid_x[ix], grid_y[iy+1], grid_x[ix+1]], 
+                                                           SubgridShape=None, ValidateInput=False, debugMode=debugMode)
+                if cur_zp>0:
+                    xp_all.append(cur_xp)
+                    yp_all.append(cur_yp)
+                    zp_all.append(cur_zp)
+                else:
+                    if debugMode:
+                        logging.warn('SubROI [{0},{1}] with coordinates {2} returned analysis error - peak likely outside search range'.format(ix, iy, [grid_y[iy], grid_x[ix], grid_y[iy+1], grid_x[ix+1]]))
+                    count_bad += 1
+        if count_bad > 0:
+            logging.warn('Spatial crosscorrelation on ROI {0} divided in subroi grid of shape {1} '.format(SearchROI, SubgridShape) +\
+                         'returned analysis error for {0}/{1} ROIs (presumably peak outside search range)'.format(count_bad, np.prod(SubgridShape)))
+        if len(xp_all)>0:
+            return np.mean(xp_all), np.mean(yp_all), np.mean(zp_all), np.std(xp_all), np.std(yp_all), np.std(zp_all)
+        else:
+            return cur_xp, cur_yp, cur_zp, np.nan, np.nan, np.nan
 
-def LoadFromConfig(ConfigParams, runAnalysis=True, outSuffix=''):
+def LoadFromConfig(ConfigParams, runAnalysis=True):
     """Loads a ROIproc object from a config file like the one exported in ROIproc.ExportConfiguration
     
     Parameters
@@ -634,7 +671,6 @@ def LoadFromConfig(ConfigParams, runAnalysis=True, outSuffix=''):
     ConfigParams : full path of the config file to read or dict or Config object
     runAnalysis  : if the config file has an Analysis section, 
                    set runAnalysis=True to run the analysis after initializing the object
-    outSuffix    : if runAnalysis==True, eventually add a suffix to change the output folder
                 
     Returns
     -------
@@ -755,9 +791,10 @@ def LoadFromConfig(ConfigParams, runAnalysis=True, outSuffix=''):
             drift_corr = config.Get('Analysis', 'drift_corr', 0, int)
             save_transposed = config.Get('Analysis', 'save_transposed', False, bool)
             include_negative_lags = config.Get('Analysis', 'include_negative_lags', False, bool)
-            ROI_proc.doDLS(out_folder+outSuffix, lagtimes=lagtimes, reftimes=reftimes, drift_corr=drift_corr, no_buffer=no_buffer, 
+            new_out_folder = os.path.join(out_folder, 'reproc')
+            ROI_proc.doDLS(new_out_folder, lagtimes=lagtimes, reftimes=reftimes, drift_corr=drift_corr, no_buffer=no_buffer, 
                            force_SLS=force_SLS, save_transposed=save_transposed, include_negative_lags=include_negative_lags)
-            logging.info('DLS analysis run and saved to folder {0}'.format(out_folder+outSuffix))
+            logging.info('DLS analysis run and saved to folder {0}'.format(new_out_folder))
         else:
             logging.info('ROIproc.LoadFromConfig ERROR: unknown analysis type {0}'.format(an_type))
             
@@ -1212,23 +1249,14 @@ class ROIproc():
                     - if False, classic cI output: one line per reference time, one column per time delay
                     - if True, transposed output: one line per time delay, one column per reference time
                       NOTE: transposed output is incompatible with drift correction
-        include_negative_lags: if False (default), only process prositive lagtimes. 
+        include_negative_lags: Used if lagtimes=='all'. if False (default), only process prositive lagtimes. 
                     If reftimes=='all', negative lagtimes are redundant and include_negative_lags will be set to False.
-                    If sparse reftimes are processed, set include_negative_lags==True to include negative lagtimes
+                    If sparse reftimes and all lagtimes are processed, set include_negative_lags==True to include negative lagtimes
         export_configparams: None or dict with additional configuration parameters to be exported to the output configuration file
         """
         
+        sf.CheckCreateFolder(saveFolder)
         fout = open(os.path.join(saveFolder, 'analysis_log.txt'), 'w')
-
-        if lagtimes=='all':
-            DLS_lags = np.arange(self.NumTimes())
-        else:
-            DLS_lags = np.asarray(lagtimes)
-        if DLS_lags[0] != 0:
-            sf.LogWrite('ROIproc.doDLS(): 0 lagtime prepended to DLS_lags', 
-                        fLog=fout, logLevel=logging.WARNING, add_prefix='\n'+sf.TimeStr()+' | WARNING: ')
-            DLS_lags = np.insert(DLS_lags, 0, 0)
-        DLS_lagnum = len(DLS_lags)
             
         if reftimes=='all':
             DLS_reftimes = np.arange(self.NumTimes())
@@ -1238,14 +1266,34 @@ class ROIproc():
                 include_negative_lags = False
         else:
             DLS_reftimes = np.asarray(reftimes)
+
+        if lagtimes=='all':
+            if include_negative_lags:
+                DLS_lags = np.arange(-self.NumTimes()+1, self.NumTimes())
+            else:
+                DLS_lags = np.arange(self.NumTimes())
+        else:
+            DLS_lags = np.asarray(lagtimes)
+        if DLS_lags[0] != 0:
+            sf.LogWrite('ROIproc.doDLS(): 0 lagtime prepended to DLS_lags', 
+                        fLog=fout, logLevel=logging.WARNING, add_prefix='\n'+sf.TimeStr()+' | WARNING: ')
+            DLS_lags = np.insert(DLS_lags, 0, 0)
+        DLS_lagnum = len(DLS_lags)
+        if self.DebugMode:
+            sf.LogWrite('Complete list of lagtimes: ' + str(DLS_lags), 
+                        fLog=fout, logLevel=logging.DEBUG, add_prefix='\n'+sf.TimeStr()+' | DEBUG: ')
             
         if drift_corr>0:
+            if self.ROI_masks_crop is not None:
+                sf.LogWrite('ROIproc.doDLS(): using drift correction with non-rectangular ROIs or with a pixel mask excluding some pixels. ' +\
+                            'WARNING: drift correction will take into account all pixels in ROI bounding boxes, disregarding masks', 
+                            fLog=fout, logLevel=logging.WARNING, add_prefix='\n'+sf.TimeStr()+' | WARNING: ')
             ValidROI = np.ones((len(self.ROIboundingBoxes)), dtype=bool)
             search_range = ValidateShiftRange(drift_corr, self.GetCroppedShape())
             search_ROIs = []
             count_ROImodif = 0
             for ridx in range(len(self.ROIboundingBoxes)):
-                cur_valid_ROI = ValidateShiftROI(self.ROIboundingBoxes[ridx], search_range, self.GetCroppedShape())
+                cur_valid_ROI = ValidateShiftROI(self.ROIboundingBoxes[ridx], search_range, self.GetCroppedShape(), debugMode=self.DebugMode)
                 if cur_valid_ROI is None:
                     ValidROI[ridx] = False
                     sf.LogWrite('ROIproc.doDLS() error: ROI {0} (bounding box: {1}) incompatible with search range {2} '.format(ridx, self.ROIboundingBoxes[ridx], search_range) +\
@@ -1259,10 +1307,6 @@ class ROIproc():
                                      'in image of cropped shape {0} (Original shape: {1}, bounding box margin: {2})'.format(self.GetCroppedShape(), self.MIinput.ImageShape(), self.BoundingBoxMargin), 
                                     fLog=fout, logLevel=logging.WARNING, add_prefix='\n'+sf.TimeStr()+' | WARNING: ')
                     search_ROIs.append(cur_valid_ROI)
-            if save_transposed:
-                sf.LogWrite('ROIproc.doDLS(): save_transposed option is incompatible with drift correction and has been disabled', 
-                            fLog=fout, logLevel=logging.WARNING, add_prefix='\n'+sf.TimeStr()+' | WARNING: ')
-                save_transposed = False
             sf.LogWrite('ROIproc.doDLS() configured spatial crosscorrelation analysis on {0} ROIs ({1} valid, {2} modified)'.format(len(self.ROIboundingBoxes), np.sum(ValidROI), count_ROImodif), 
                         fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
         
@@ -1357,22 +1401,14 @@ class ROIproc():
 
                 for ref_tidx in range(len(DLS_reftimes)):
 
-                    if lagtimes=='all':
-                        if include_negative_lags:
-                            temp_lagtimes = np.arange(self.NumTimes())-DLS_reftimes[ref_tidx]
-                        else:
-                            temp_lagtimes = np.arange(self.NumTimes()-DLS_reftimes[ref_tidx])
-                    else:
-                        temp_lagtimes = DLS_lags
-                    if self.DebugMode:
-                        sf.LogWrite('temp_lagtimes to be filtered: ' + str(temp_lagtimes), fLog=fout, logLevel=logging.DEBUG, add_prefix='\n'+sf.TimeStr()+' | DEBUG: ')
-
                     cur_stack2 = []
                     cur_lagtimes = []
-                    for curlag in temp_lagtimes:
-                        if curlag+DLS_reftimes[ref_tidx] >= 0 and curlag+DLS_reftimes[ref_tidx] < len(idx_list):
-                            cur_stack2.append(curlag+DLS_reftimes[ref_tidx])
-                            cur_lagtimes.append(curlag)
+                    cur_lagidx = []
+                    for lidx in range(len(DLS_lags)):
+                        if DLS_lags[lidx]+DLS_reftimes[ref_tidx] >= 0 and DLS_lags[lidx]+DLS_reftimes[ref_tidx] < len(idx_list):
+                            cur_stack2.append(DLS_lags[lidx]+DLS_reftimes[ref_tidx])
+                            cur_lagtimes.append(DLS_lags[lidx])
+                            cur_lagidx.append(lidx)
                     if self.DebugMode:
                         strLog = 'Images to correlate with reference time #{0} (t={1}): '.format(ref_tidx, DLS_reftimes[ref_tidx]) +\
                                 str([str(cur_stack2[i]) + ' (d' + str(cur_lagtimes[i]) + ')' for i in range(min(10, len(cur_lagtimes)))])
@@ -1400,10 +1436,11 @@ class ROIproc():
                             if cur_tidx2>=0 and cur_tidx2 < ISQavg.shape[0]:
 
                                 if self.DebugMode:
-                                    sf.LogWrite('Correlating reftime {0} (t={1}) and lagtime {2} (d={3}, t={4})'.format(ref_tidx, DLS_reftimes[ref_tidx], lidx, cur_lagtimes[lidx], cur_stack2[lidx]), 
+                                    sf.LogWrite('Correlating reftime {0} (t={1}) and lagtime {2} (d={3}, t={4})'.format(ref_tidx, DLS_reftimes[ref_tidx], 
+                                                                                                    cur_lagidx[lidx], cur_lagtimes[lidx], cur_stack2[lidx]), 
                                                 fLog=fout, logLevel=logging.DEBUG, add_prefix='\n'+sf.TimeStr()+' | DEBUG: ')
                                 if cur_lagtimes[lidx]==0:
-                                    cI[:,ref_tidx,lidx] = all_d0[:,ref_tidx]
+                                    cI[:,ref_tidx,cur_lagidx[lidx]] = all_d0[:,ref_tidx]
                                 else:
                                     # 'classic' cI formula
                                     if self.DebugMode:
@@ -1411,11 +1448,12 @@ class ROIproc():
                                                     fLog=fout, logLevel=logging.DEBUG, add_prefix='\n'+sf.TimeStr()+' | DEBUG: ')
                                         sf.LogWrite('ROIavgs_allExp test: ' + str(ROIavgs_allExp[DLS_reftimes[ref_tidx],e,0]), 
                                                     fLog=fout, logLevel=logging.DEBUG, add_prefix='\n'+sf.TimeStr()+' | DEBUG: ')
-                                    cI[:,ref_tidx,lidx] = np.subtract(np.divide(IXavg[lidx,:], 
+                                    cI[:,ref_tidx,cur_lagidx[lidx]] = np.subtract(np.divide(IXavg[lidx,:], 
                                                                                 np.multiply(ROIavgs_allExp[DLS_reftimes[ref_tidx],e,:],
                                                                                             ROIavgs_allExp[cur_tidx2,e,:])), 1)
                                 # d0 normalization
-                                cI[:,ref_tidx,lidx] = np.divide(cI[:,ref_tidx,lidx], 0.5 * np.add(all_d0[:,DLS_reftimes[ref_tidx]], all_d0[:,cur_tidx2]))
+                                if cur_lagidx[lidx]>0:
+                                    cI[:,ref_tidx,cur_lagidx[lidx]] = np.divide(cI[:,ref_tidx,cur_lagidx[lidx]], 0.5 * np.add(all_d0[:,DLS_reftimes[ref_tidx]], all_d0[:,cur_tidx2]))
                                 
                                 if drift_corr>0:
                                     find_img = self.GetImage(cur_stack2[lidx], buffer=buf_images)
@@ -1426,8 +1464,8 @@ class ROIproc():
                                         if ValidROI[ridx]:
                                             xp, yp, corr_peak = FindCrosscorrPeak(find_img, ref_img, SearchRange=search_range, SearchROI=search_ROIs[ridx], 
                                                                                   ValidateInput=False, debugMode=self.DebugMode)
-                                            cIcr[ridx,ref_tidx,lidx] = corr_peak * 2. / (all_d0[ridx, DLS_reftimes[ref_tidx]] + all_d0[ridx, cur_tidx2])
-                                            dxdy[ridx,ref_tidx,lidx] = (xp, yp)
+                                            cIcr[ridx,ref_tidx,cur_lagidx[lidx]] = corr_peak * 2. / (all_d0[ridx, DLS_reftimes[ref_tidx]] + all_d0[ridx, cur_tidx2])
+                                            dxdy[ridx,ref_tidx,cur_lagidx[lidx]] = (xp, yp)
                                         
                         sf.LogWrite('Reference time {0}/{1} (tref={2}) completed'.format(ref_tidx, len(DLS_reftimes), DLS_reftimes[ref_tidx]), 
                                     fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
@@ -1442,14 +1480,20 @@ class ROIproc():
             # Save data to file
             for ridx in range(cI.shape[0]):
                 sf.LogWrite('Now saving ROI {0} to file'.format(ridx), fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
-                fpath = os.path.join(saveFolder, 'cI_ROI' + str(ridx).zfill(3) + '_e' + str(e).zfill(2) + '.dat')
                 if save_transposed:
-                    np.savetxt(fpath, np.append(DLS_lags[1:].reshape((-1, 1)), cI[ridx,:,1:].T, axis=1), 
-                               header='t+tau'+self.txt_delim + str(self.txt_delim).join(['t{0}'.format(l) for l in DLS_reftimes]), **self.savetxt_kwargs)    
+                    np.savetxt(os.path.join(saveFolder, 'cI_ROI' + str(ridx).zfill(3) + '_e' + str(e).zfill(2) + '.dat'), np.append(DLS_lags[1:].reshape((-1, 1)), cI[ridx,:,1:].T, axis=1), 
+                               header='tau'+self.txt_delim + str(self.txt_delim).join(['t{0}'.format(l) for l in DLS_reftimes]), **self.savetxt_kwargs)    
+                    if drift_corr>0 and ValidROI[ridx]:
+                        np.savetxt(os.path.join(saveFolder, 'cIcr_ROI' + str(ridx).zfill(3) + '_e' + str(e).zfill(2) + '.dat'), np.append(DLS_lags[1:].reshape((-1, 1)), cIcr[ridx,:,1:].T, axis=1), 
+                                   header='tau'+self.txt_delim + str(self.txt_delim).join(['t{0}_cr'.format(l) for l in DLS_reftimes]), **self.savetxt_kwargs)                  
+                        np.savetxt(os.path.join(saveFolder, 'dx_ROI' + str(ridx).zfill(3) + '_e' + str(e).zfill(2) + '.dat'), np.append(DLS_lags[1:].reshape((-1, 1)), dxdy[ridx,:,1:,0].T, axis=1), 
+                                   header='tau'+self.txt_delim + str(self.txt_delim).join(['t{0}_dx'.format(l) for l in DLS_reftimes]), **self.savetxt_kwargs)                  
+                        np.savetxt(os.path.join(saveFolder, 'dy_ROI' + str(ridx).zfill(3) + '_e' + str(e).zfill(2) + '.dat'), np.append(DLS_lags[1:].reshape((-1, 1)), dxdy[ridx,:,1:,1].T, axis=1), 
+                                   header='tau'+self.txt_delim + str(self.txt_delim).join(['t{0}_dy'.format(l) for l in DLS_reftimes]), **self.savetxt_kwargs)                  
                 else:
                     first_cols = np.append(idx_list[DLS_reftimes].reshape((-1, 1)), self.imgTimes[idx_list[DLS_reftimes]].reshape((-1, 1)), axis=1)
-                    np.savetxt(fpath, np.append(first_cols, cI[ridx], axis=1), 
-                               header='idx'+self.txt_delim+'t'+self.txt_delim + str(self.txt_delim).join(['d{0}'.format(l) for l in DLS_lags]), **self.savetxt_kwargs)
+                    np.savetxt(os.path.join(saveFolder, 'cI_ROI' + str(ridx).zfill(3) + '_e' + str(e).zfill(2) + '.dat'), np.append(first_cols, cI[ridx], axis=1), 
+                               header='idx'+self.txt_delim+'t'+self.txt_delim+'d0_raw'+self.txt_delim + str(self.txt_delim).join(['d{0}'.format(l) for l in DLS_lags[1:]]), **self.savetxt_kwargs)
                     if drift_corr>0 and ValidROI[ridx]:
                         np.savetxt(os.path.join(saveFolder, 'cIcr_ROI' + str(ridx).zfill(3) + '_e' + str(e).zfill(2) + '.dat'), np.append(first_cols, cIcr[ridx], axis=1), 
                                    header='idx'+self.txt_delim+'t'+self.txt_delim + str(self.txt_delim).join(['d{0}_cr'.format(l) for l in DLS_lags]), **self.savetxt_kwargs)                  
