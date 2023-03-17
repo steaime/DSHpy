@@ -366,7 +366,10 @@ class MIfile():
                         res.append(self._read_pixels(px_num=cropROI[2], seek_pos=self._get_offset(img_idx=img_idx, row_idx=row_idx, col_idx=cropROI[0])))
                     return np.asarray(res)
             else:
-                return buffer[idx_in_buffer][cropROI[1]:cropROI[1]+cropROI[3],cropROI[0]:cropROI[0]+cropROI[2]]
+                if (buffer_crop):
+                    return buffer[idx_in_buffer][cropROI[1]:cropROI[1]+cropROI[3],cropROI[0]:cropROI[0]+cropROI[2]]
+                else:
+                    return buffer[idx_in_buffer]
     
     def GetStack(self, start_idx=0, imgs_num=-1):
         """Read contiguous image stack from MIfile
