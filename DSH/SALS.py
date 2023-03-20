@@ -3,7 +3,10 @@ import bisect
 import math
 import numpy as np
 import logging
+
 import DSH
+from DSH import Config as cf
+from DSH import MIfile as MI
 from DSH import ROIproc as RP
 from DSH import SharedFunctions as sf
 
@@ -13,9 +16,9 @@ def ValidatePolarSlices(ROI_specs, imgShape=None):
     rSlices, aSlices = ROI_specs
     if rSlices is None:
         if imgShape is None:
-            raise ValueError('Image shape must be specified to retermine the range of radii')
+            raise ValueError('Image shape must be specified to determine the range of radii')
         else:
-            rSlices = [0, np.hypot(imgShape[0], imgShape[1])]
+            rSlices = [1, np.hypot(imgShape[0], imgShape[1])]
     if aSlices is None:
         aSlices = [-3.15, 3.15]
     return rSlices, aSlices
@@ -204,11 +207,14 @@ class SALS(RP.ROIproc):
         """
         
         # Initialize ROIproc
+        RP.ROIproc.__init__(self, MIin, None, imgTimes=imgTimes, expTimes=expTimes)
+
+        # Set ROIs
         self.ROIslices = ValidatePolarSlices(ROIslices, MIin.ImageShape())
         self.centerPos = centerPos
         self.px_mask = maskRaw
         ROImasks, ROIcoords = GenerateROIs(self.ROIslices, imgShape=MIin.ImageShape(), centerPos=self.centerPos, maskRaw=self.px_mask)
-        RP.ROIproc.__init__(self, MIin, ROImasks, ROIcoords=ROIcoords, imgTimes=imgTimes, expTimes=expTimes)
+        self.SetROIs(ROImasks, ROIcoords)
         
         # SALS-specific initialization
         self._loadBkg(BkgCorr)
@@ -240,23 +246,30 @@ class SALS(RP.ROIproc):
             BkgCorr = [None, None, None]
         self.DarkBkg, self.OptBkg, self.PDdata = BkgCorr
         
-    def SetROImasks(self, ROImasks, ROIcoords=None):
+    def SetROIs(self, ROImasks, ROIcoords=None):
+        if ROIcoords is not None:
+            ROIcoords = [list(v) for v in ROIcoords]
         ROImetadata = {'coords' : ROIcoords, 'coord_names' : ['r[px]', 'theta[rad]'], 'box_margin' : 0}
-        return RP.ROIproc.SetROImasks(self, ROImasks, ROImetadata=ROImetadata)
+        return RP.ROIproc.SetROIs(self, ROImasks, ROImetadata=ROImetadata)
     
     def GenerateROIs(self, ROI_specs, maskRaw=None):
         ROImasks, ROIcoords = GenerateROIs(ROI_specs, imgShape=self.MIinput.ImageShape(), centerPos=self.centerPos, maskRaw=maskRaw)
-        return self.SetROImasks(ROImasks, ROIcoords=ROIcoords)
+        return self.SetROIs(ROImasks, ROIcoords=ROIcoords)
     
     def GetSALSparams(self):
         res = {'ctrPos' : list(self.centerPos), 'rSlices' : list(self.ROIslices[0]), 'aSlices' : list(self.ROIslices[1])}
         return res
     
     def doDLS(self, saveFolder, lagtimes, reftimes='all', no_buffer=False, force_SLS=True, save_transposed=False, export_configparams=None):
-        additional_params = {'SALS' : self.GetSALSparams()}
+        sf.CheckCreateFolder(saveFolder)
         # save raw mask, get filename
-        additional_params['SALS']['raw_mask'] = raw_mask_filename
-        additional_params['General']['generated_by'] = 'SALS.doDLS'
+        raw_mask_filename = os.path.join(saveFolder, 'px_mask.raw')
+        MI.WriteBinary(raw_mask_filename, self.px_mask, 'b')
+        
+        additional_params = {'SALS'    : self.GetSALSparams(), 
+                             'General' : {'generated_by': 'SALS.doDLS'}}
+        additional_params['SALS']['raw_mask'] = os.path.abspath(raw_mask_filename)
+
         
         if export_configparams is not None:
             additional_params = sf.UpdateDict(additional_params, export_configparams)

@@ -1089,7 +1089,7 @@ class ROIproc():
         AvgRes : 2D array. Element [i,j] is the average of i-th image (or the product of i-th images in the two stacks) on j-th ROI
         """
         if stack1 is None:
-            stack1 = np.arange(self.NumTimes())
+            stack1 = np.arange(self.ImageNumber())
         num_ROI = self.CountROIs()
         if no_boundingbox:
             use_bb = None
