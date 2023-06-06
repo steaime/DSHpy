@@ -6,7 +6,7 @@ def readme():
         return f.read()
 
 setup(name='DSH',
-      version='0.7',
+      version='0.8',
       description='Analyze speckle fields, compute correlations, derive motion maps',
       long_description=readme(),
       url='https://github.com/steaime/DSHpy',

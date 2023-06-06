@@ -14,6 +14,18 @@ def Duplicate(other_config):
     return new_config
 
 def ExportDict(dict_to_export, out_filename, section_name=None):
+    """Exports dictionary to text file
+
+    Parameters
+    ----------
+    dict_to_export : dictionary to be exported
+    out_filename : full path of output file
+    section_name : section name (string). Section to be used in Config.Import()
+                   keys in dict_to_export will become options of section section_name
+                   if None, keys in dict_config will be interpreted as section names
+                            entries in dict_config must be dictionaries
+                            (WARNING: section_name==None assumes nested dictionnary)
+    """
     conf = Config()
     conf.Import(dict_to_export, section_name=section_name)
     conf.Export(out_filename)

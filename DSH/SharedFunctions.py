@@ -195,12 +195,16 @@ def IsIterable(var):
     return isinstance(var, collections.abc.Iterable)
     
 def UpdateDict(dict_orig, dict_update):
-    for k, v in dict_update.items():
-        if isinstance(v, collections.abc.Mapping):
-            dict_orig[k] = UpdateDict(dict_orig.get(k, {}), v)
-        else:
-            dict_orig[k] = v
-    return dict_orig
+    if dict_orig is None:
+        return dict_update
+    else:
+        if dict_update is not None:
+            for k, v in dict_update.items():
+                if isinstance(v, collections.abc.Mapping):
+                    dict_orig[k] = UpdateDict(dict_orig.get(k, {}), v)
+                else:
+                    dict_orig[k] = v
+        return dict_orig
 
 def CheckIterableVariable(var, n_dim, force_length=True, cast_type=None):
     """ Checks if a variable is an iterable with given dimensions (n_dim). 

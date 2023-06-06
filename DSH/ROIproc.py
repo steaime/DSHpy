@@ -772,31 +772,8 @@ def LoadFromConfig(ConfigParams, runAnalysis=True):
     ROI_proc = ROIproc(MIin, ROImasks, ROImetadata=ROImetadata, imgTimes=img_times, expTimes=exp_times)
     logging.info('ROIproc object loaded!')
         
-    if runAnalysis and config.HasSection('Analysis'):
-        an_type = config.Get('Analysis', 'type','UNKNOWN', str)
-        logging.info('ROIproc.LoadFromConfig running {0} analysis'.format(an_type))
-        
-        if an_type=='DLS':
-            out_folder = sf.GetAbsolutePath(config.Get('Analysis', 'out_folder', '', str), root_path=folder_root)
-            if config.Get('Analysis', 'lagtimes', 'all', str)=='all':
-                lagtimes = 'all'
-            else:
-                config.Get('Analysis', 'lagtimes', [0], int)
-            if config.Get('Analysis', 'reftimes', 'all', str)=='all':
-                reftimes = 'all'
-            else:
-                reftimes = config.Get('Analysis', 'reftimes', [0], int)
-            no_buffer = config.Get('Analysis', 'no_buffer', False, bool)
-            force_SLS = config.Get('Analysis', 'force_SLS', True, bool)
-            drift_corr = config.Get('Analysis', 'drift_corr', 0, int)
-            save_transposed = config.Get('Analysis', 'save_transposed', False, bool)
-            include_negative_lags = config.Get('Analysis', 'include_negative_lags', False, bool)
-            new_out_folder = os.path.join(out_folder, 'reproc')
-            ROI_proc.doDLS(new_out_folder, lagtimes=lagtimes, reftimes=reftimes, drift_corr=drift_corr, no_buffer=no_buffer, 
-                           force_SLS=force_SLS, save_transposed=save_transposed, include_negative_lags=include_negative_lags)
-            logging.info('DLS analysis run and saved to folder {0}'.format(new_out_folder))
-        else:
-            logging.info('ROIproc.LoadFromConfig ERROR: unknown analysis type {0}'.format(an_type))
+    if runAnalysis:
+        ROI_proc.RunFromConfig(config, AnalysisSection='Analysis', OutputSubfolder='reproc')
             
     return ROI_proc
 
@@ -1328,7 +1305,11 @@ class ROIproc():
         analysis_params['General']['generated_by'] = 'ROIproc.doDLS'
         if export_configparams is not None:
             analysis_params = sf.UpdateDict(analysis_params, export_configparams)
-        self.ExportConfiguration(saveFolder, other_params=analysis_params)
+            if 'SALS' in analysis_params['General']['generated_by']:
+                config_fname = 'SALSconfig.ini'
+            else:
+                config_fname = 'ROIprocConfig.ini'
+        self.ExportConfiguration(saveFolder, other_params=analysis_params, out_fname=config_fname)
         
         sf.LogWrite('ROIproc.doDLS Analysis started! Input data is {0} images ({1} times, {2} exposure times)'.format(self.ImageNumber(), self.NumTimes(), self.NumExpTimes()), 
                     fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
@@ -1534,11 +1515,13 @@ class ROIproc():
                                self.ROIboundingBoxes, axis=1), header=ROIhdr_str, **self.savetxt_kwargs)
         MI.WriteBinary(os.path.join(outFolder, 'ROI_mask.raw'), self.ROIs, 'i')
                 
-    def ExportConfiguration(self, outFolder, other_params=None):
+    def ExportConfiguration(self, outFolder, other_params=None, out_fname=None):
 
+        if out_fname is None:
+            out_fname = 'ROIprocConfig.ini'
         sf.CheckCreateFolder(outFolder)
         self.ExportROIs(outFolder)
-        ini_fpath = os.path.join(outFolder, 'ROIprocConfig.ini')
+        ini_fpath = os.path.join(outFolder, out_fname)
         np.savetxt(os.path.join(outFolder, 'imgTimes.dat'), self.imgTimes)
         
         my_params = {'General': {'version' : '2.0',
@@ -1575,4 +1558,66 @@ class ROIproc():
         else:
             my_params['MIfile']['is_stack'] = False
         my_params['MIfile']['filename'] = self.MIinput.GetFilename(absPath=True)
-        cf.ExportDict(my_params, ini_fpath)   
+        cf.ExportDict(my_params, ini_fpath)
+    
+    def RunFromConfig(self, ConfigParams, AnalysisSection='Analysis', OutputSubfolder='reproc', export_configparams=None):
+        """Runs an analysis using parameters from a configuration file or a Config object
+        
+        Parameters
+        ----------
+        ConfigParams     : full path of the config file to read or dict or Config object
+        AnalysisSection  : str, label of the section with analysis parameters
+                           keys required:
+                           - 'type': type of analysis to perform (supported types: {'DLS'})
+                           keys for DLS analysis
+                           - 'out_folder': output folder
+                           - 'lagtimes': ('all' or list of int. Default: 'all')
+                           - 'reftimes': ('all' or list of int. Default: 'all')
+                           - 'no_buffer' (bool, default: False)
+                           - 'force_SLS' (bool, default: True)
+                           - 'drift_corr' (int, default: 0)
+                           - 'save_transposed' (bool, default: False)
+                           - 'include_negative_lags' (bool, default: False)
+        OutputSubfolder  : str, subfolder to use as analysis output. 
+                           If None, the out-folder parameter will be used as output folder
+                           otherwise, data will be saved in a subfolder of the specified output folder
+        export_configparams : None or dict with additional configuration parameters to be exported to the output configuration file
+                           
+        """
+        config = cf.LoadConfig(ConfigParams)
+        folder_root = config.Get('General', 'folder', None, str)
+        
+        if config.HasSection(AnalysisSection):
+
+            an_type = config.Get(AnalysisSection, 'type','UNKNOWN', str)
+            logging.info('ROIproc.RunFromConfig running {0} analysis'.format(an_type))
+
+            if an_type=='DLS':
+                out_folder = sf.GetAbsolutePath(config.Get(AnalysisSection, 'out_folder', '', str), root_path=folder_root)
+                if config.Get(AnalysisSection, 'lagtimes', 'all', str)=='all':
+                    lagtimes = 'all'
+                else:
+                    lagtimes = config.Get(AnalysisSection, 'lagtimes', [0], int)
+                if config.Get(AnalysisSection, 'reftimes', 'all', str)=='all':
+                    reftimes = 'all'
+                else:
+                    reftimes = config.Get(AnalysisSection, 'reftimes', [0], int)
+                no_buffer = config.Get(AnalysisSection, 'no_buffer', False, bool)
+                force_SLS = config.Get(AnalysisSection, 'force_SLS', True, bool)
+                drift_corr = config.Get(AnalysisSection, 'drift_corr', 0, int)
+                save_transposed = config.Get(AnalysisSection, 'save_transposed', False, bool)
+                include_negative_lags = config.Get(AnalysisSection, 'include_negative_lags', False, bool)
+                if OutputSubfolder is None:
+                    new_out_folder = out_folder
+                else:
+                    new_out_folder = os.path.join(out_folder, OutputSubfolder)
+                export_configparams = sf.UpdateDict(export_configparams, {'Analysis': {'out_folder' : new_out_folder}})
+                if 'General' not in export_configparams:
+                    export_configparams['General'] = {'generated_by' : 'ROIproc.RunFromConfig(DLS)'}
+                self.doDLS(new_out_folder, lagtimes=lagtimes, reftimes=reftimes, drift_corr=drift_corr, no_buffer=no_buffer, 
+                               force_SLS=force_SLS, save_transposed=save_transposed, include_negative_lags=include_negative_lags, export_configparams=export_configparams)
+                logging.info('DLS analysis run and saved to folder {0}'.format(new_out_folder))
+            else:
+                logging.warn('ROIproc.RunFromConfig ERROR: unknown analysis type {0}'.format(an_type))
+        else:
+            logging.warn('ROIproc.RunFromConfig ERROR: analysis section {0} not found'.format(AnalysisSection))

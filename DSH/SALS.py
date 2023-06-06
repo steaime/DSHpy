@@ -70,97 +70,40 @@ def GenerateROIs(ROI_specs, imgShape, centerPos, maskRaw=None):
         rSlices, aSlices = [[r_min[i], r_max[i]] for i in range(len(r_min))], [[a_min[i], a_max[i]] for i in range(len(a_min))]
         return GenerateROIs([rSlices, aSlices], imgShape, centerPos, maskRaw=maskRaw)
     
-def LoadFromConfig(ConfigFile, input_sect='input', outFolder=None):
-    """Loads a SALS object from a config file like the one exported with VelMaps.ExportConfig()
+def LoadFromConfig(ConfigParams, runAnalysis=True):
+    """Loads a SALS object from a config file like the one exported in SALS.ExportConfiguration
     
     Parameters
     ----------
-    ConfigFile : full path of the config file to read
-    outFolder : folder containing velocity and correlation maps. 
-                if None, the value from the config file will be used
-                if not None, the value from the config file will be discarded
+    ConfigParams : full path of the config file to read or dict or Config object
+    runAnalysis  : if the config file has an Analysis section, 
+                   set runAnalysis=True to run the analysis after initializing the object
                 
     Returns
     -------
-    a SALS object, eventually with an "empty" image MIfile (containing metadata but no actual image data)
+    a SALS object
     """
-    
-    
-    ###################
-    ### TODO: CHANGE THIS
-    ###################
-    
-    
-    
-    
-    
-    config = cf.Config(ConfigFile)
-    froot = config.Get('global', 'root', '', str)
-    miin_fname = config.Get(input_sect, 'mi_file', None, str)
-    miin_meta_fname = config.Get(input_sect, 'meta_file', None, str)
-    input_stack = False
-    if (miin_fname is not None):
-        # if miin_fname is a string, let's use a single MIfile as input.
-        # otherwise, it can be a list: in that case, let's use a MIstack as input
-        if (isinstance(miin_fname, str)):
-            miin_fname = os.path.join(froot, miin_fname)
-            input_stack = False
+    config = cf.LoadConfig(ConfigParams)
+    ROI_proc = RP.LoadFromConfig(config, runAnalysis=False)
+    if config.HasSection('SALS'):
+        exp_config = {'SALS':config.ToDict(section='SALS')}
+        ctr_pos = config.Get('SALS', 'ctrpos', [0,0], int)
+        r_slices = config.Get('SALS', 'rslices', None, float)
+        a_slices = config.Get('SALS', 'aslices', None, float)
+        roi_maskfile = config.Get('SALS', 'raw_mask', None, str)
+        if roi_maskfile is None:
+            mask_raw = None
         else:
-            input_stack = True
-            for i in range(len(miin_fname)):
-                miin_fname[i] = os.path.join(froot, miin_fname[i])
-    if (miin_meta_fname is not None):
-        miin_meta_fname = os.path.join(froot, miin_meta_fname)
-    elif input_stack:
-        logging.error('SALS.LoadFromConfig ERROR: medatada filename must be specified when loading a MIstack')
-        return None
+            mask_raw = MI.ReadBinary(roi_maskfile, ROI_proc.MIinput.ImageShape(), 'B')
+        SALSres = SALS(ROI_proc.MIinput, ctr_pos, [r_slices, a_slices], mask_raw, ROI_proc.imgTimes, ROI_proc.expTimes, BkgCorr=None)
     else:
-        miin_meta_fname = os.path.splitext(miin_fname)[0] + '_metadata.ini'
-    if input_stack:
-        mifile_info = 'MIstack ' + str(miin_fname)
-        MIin = MIs.MIstack(miin_fname, miin_meta_fname, Load=True, StackType='t')
-    else:
-        mifile_info = 'MIfile ' + str(miin_fname)
-        MIin = MI.MIfile(miin_fname, miin_meta_fname)
-    logging.debug('SALS.LoadFromConfig loading ' + str(mifile_info) + ' (metadata filename: ' + str(miin_meta_fname) + ')')
-    ctrPos = config.Get('SALS_parameters', 'center_pos', None, float)
-    if (ctrPos is None):
-        logging.error('SALS.LoadFromConfig ERROR: no SALS_parameters.center_pos parameter found in config file ' + str(ConfigFile))
-        return None
-    else:
-        r_max = ppf.MaxRadius(MIin.ImageShape(), ctrPos)
-        radRange = sf.ValidateRange(config.Get('SALS_parameters', 'r_range', None, float), r_max, MinVal=1, replaceNone=True)
-        angRange = config.Get('SALS_parameters', 'a_range', None, float)
-        rSlices = np.geomspace(radRange[0], radRange[1], int(radRange[2])+1, endpoint=True)
-        aSlices = np.linspace(angRange[0], angRange[1], int(angRange[2])+1, endpoint=True)
-        logging.debug(' > radial slices specs: ' + str(radRange) + ' (original input: ' + str(config.Get('SALS_parameters', 'r_range', None, float)) + '). ' + str(len(rSlices)) + ' slices generated: ' + str(rSlices))
-        logging.debug(' > angular slices specs: ' + str(angRange) + ' (original input: ' + str(config.Get('SALS_parameters', 'a_range', None, float)) + '). ' + str(len(aSlices)) + ' slices generated: ' + str(aSlices))
-        if (outFolder is None):
-            outFolder = config.Get(input_sect, 'out_folder', None, str)
-            if (outFolder is not None):
-                outFolder = os.path.join(config.Get('global', 'root', '', str), outFolder)
-        mask = config.Get('SALS_parameters', 'px_mask', None, str)
-        logging.debug(' > pixel mask: ' + str(mask))
-        mask = MI.ReadBinary(sf.PathJoinOrNone(froot, config.Get(input_sect, 'px_mask', mask, str)),
-                             MIin.ImageShape(), MIin.DataFormat(), 0)
-        dark = MI.ReadBinary(sf.PathJoinOrNone(froot, config.Get(input_sect, 'dark_bkg', None, str)), 
-                             MIin.ImageShape(), MIin.DataFormat(), 0)
-        opt = MI.ReadBinary(sf.PathJoinOrNone(froot, config.Get(input_sect, 'opt_bkg', None, str)), 
-                            MIin.ImageShape(), MIin.DataFormat(), 0)
-        PD_data = sf.PathJoinOrNone(froot, config.Get(input_sect, 'pd_file', None, str))
-        if (PD_data is not None):
-            PD_data = np.loadtxt(PD_data, dtype=float)
-
-        img_times = LoadImageTimes(config.Get(input_sect, 'img_times', None, str), root_folder=froot, 
-                                   usecols=config.Get('format', 'img_times_colidx', 0, int), skiprows=1)
-        exp_times = LoadImageTimes(config.Get(input_sect, 'exp_times', None, str), root_folder=froot, 
-                                   usecols=config.Get('format', 'exp_times_colidx', 0, int), skiprows=0, default_value=[1])
-
-        dlsLags = config.Get('SALS_parameters', 'dls_lags', None, int)
-        tavgT = config.Get('SALS_parameters', 'timeavg_T', None, int)
-        logging.debug('SALS.LoadFromConfig() returns SALS object with MIfile ' + str(mifile_info) + ', output folder ' + str(outFolder) + 
-                    ', center position ' + str(ctrPos) + ', ' + str(len(rSlices)) + ' radial and ' + str(len(aSlices)) + ' angular slices')
-        return SALS(MIin, outFolder, ctrPos, [rSlices, aSlices], mask, [dark, opt, PD_data], exp_times, dlsLags, img_times, tavgT)
+        logging.warn('SALS.LoadFromConfig ERROR: no SALS section in configuration parameters. ROIproc object returned')
+        exp_config = None
+        SALSres = ROI_proc
+        
+    if runAnalysis:
+        SALSres.RunFromConfig(config, AnalysisSection='Analysis', OutputSubfolder='reproc', export_configparams=exp_config)
+    return SALSres
 
 
 class SALS(RP.ROIproc):
@@ -177,7 +120,7 @@ class SALS(RP.ROIproc):
         centerPos : [float, float]. Position of transmitted beam [posX, posY], in pixels.
                     The center of top left pixel is [0,0], 
                     posX increases leftwards, posY increases downwards
-        ROIcoords : None, or couple [rSlices, aSlices].
+        ROIslices : None, or couple [rSlices, aSlices].
                     None would correspond to [None, None]
                     rSlices :   2D float array of shape (N, 2), or 1D float array of length N+1, or None. 
                                 If 2D: i-th element will be (rmin_i, rmax_i), where rmin_i and rmax_i 
@@ -260,7 +203,7 @@ class SALS(RP.ROIproc):
         res = {'ctrPos' : list(self.centerPos), 'rSlices' : list(self.ROIslices[0]), 'aSlices' : list(self.ROIslices[1])}
         return res
     
-    def doDLS(self, saveFolder, lagtimes, reftimes='all', no_buffer=False, force_SLS=True, save_transposed=False, export_configparams=None):
+    def doDLS(self, saveFolder, lagtimes, export_configparams=None, **kwargs):
         sf.CheckCreateFolder(saveFolder)
         # save raw mask, get filename
         raw_mask_filename = os.path.join(saveFolder, 'px_mask.raw')
@@ -273,5 +216,4 @@ class SALS(RP.ROIproc):
         
         if export_configparams is not None:
             additional_params = sf.UpdateDict(additional_params, export_configparams)
-        return RP.ROIproc.doDLS(self, saveFolder, lagtimes=lagtimes, reftimes=reftimes, no_buffer=no_buffer, 
-                                force_SLS=force_SLS, save_transposed=save_transposed, export_configparams=additional_params)
+        return RP.ROIproc.doDLS(self, saveFolder, lagtimes=lagtimes, export_configparams=additional_params, **kwargs)
