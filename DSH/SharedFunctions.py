@@ -390,13 +390,20 @@ def CountFileLines(fname):
             pass
     return i + 1
 
-def CountFileColumns(fpath, delimiter=None, firstlineonly=True):
-    if firstlineonly:
-        with open(fpath, 'rb') as f:
-            source = [f.readline()]
+def CountFileColumns(fpath, delimiter=None, singlerow=True, row_index=0):
+    if singlerow:
+        with open(fpath, 'r') as f:
+            for i, line in enumerate(f):
+                if i==row_index:
+                    break
+        num_cols = len(line.split(delimiter))
+        if i != row_index and row_index > 0:
+            logging.warn('DSH.SharedFunctions.CountFileColumns WARNING: row index {0} not found in file {1} ({2} lines). Counting {3} columns in last line.'.format(row_index, fpath, i+1, num_cols))
+        return num_cols
     else:
-        source = fpath
-    return np.loadtxt(source, delimiter=delimiter, ndmin=2).shape[1]
+        return np.loadtxt(fpath, delimiter=delimiter, ndmin=2).shape[1]
+
+    
 
 
 def FindLags(series, lags_index, subset_len=None, tolerance=1e-2, tolerance_isrelative=True):

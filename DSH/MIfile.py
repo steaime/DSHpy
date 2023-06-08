@@ -216,6 +216,7 @@ def ReadBinary(fname, shape, px_format, offset=0, endian=''):
                                            fraw.read(num_read_vals*_data_depth[px_format]))).reshape(shape)
             return res
     else:
+        logging.warn('DSH.MIfile.ReadBinary WARNING: binary file {0} not found. None returned'.format(fname))
         return None
 
 def WriteBinary(fname, data, data_format, hdr_list=None):

@@ -5,12 +5,36 @@ import numpy as np
 
 from DSH import SharedFunctions as sf
 
-def LoadResFile(fname, readHeader=True, isolateFirst=0, delimiter=',', comments='#'):
+def LoadResFile(fname, readHeader=True, isolateFirst=0, delimiter=',', comments='#', missing_values=None):
+    """Reads a 2D ASCII file
+    
+    Parameters
+    ----------
+    fname :         full path of the CI file to read
+                    a CI file may have:
+                    - (time_colidx+1) initial columns. The following ones are data columns
+                    - a one-line header, starting with comments character
+                    - 
+    readHeader :    If True, read separately the first line and return it as a header (list of str)
+    isolateFirst :  If N>0, separate the first N columns and return them as either a 1D array (if N==1) or a 2D array
+    delimiter :     Column separator
+    comments :      Character introducing a comment (or header) line
+    missing_values :None or string: if not none, matrix cells with value equal to emptycell will result in np.nan
+                
+    Returns
+    -------
+    res_arr :      2D float array.
+    hdr_list :     list of str with header entries. Only returned if readHeader==True
+    isolateFirst : 1D or 2D array containing first N columns. Only returned if isolateFirst>0
+    """
     if (readHeader):
         f = open(fname)
         header = f.readline()[len(comments):]
         hdr_list = header.strip().split(delimiter)
-    res_arr = np.loadtxt(fname, comments=comments, delimiter=delimiter)
+    if missing_values is None:
+        res_arr = np.loadtxt(fname, comments=comments, delimiter=delimiter)
+    else:
+        res_arr = np.genfromtxt(fname, comments=comments, delimiter=delimiter, skip_header=1, missing_values=missing_values, filling_values=np.nan)
     if (isolateFirst>0):
         firstcol = np.squeeze(res_arr[:,:isolateFirst])
         res_arr = np.squeeze(res_arr[:,isolateFirst:])
@@ -98,6 +122,7 @@ def OpenG2M1s(froot, expt_idx=None, roi_idx=None, fname_prefix='g2m1_', time_col
         res.append(res_g2m1[:,1::2].T)
         lagtimes.append(res_g2m1[:,::2].T)
         imgtimes.append(np.asarray([sf.FirstFloatInStr(res_hdr[j]) for j in range(1, len(res_hdr), 2)]))
+    logging.debug('DSH.IOfunctions.OpenG2M1s: {0} g2-1 functions loaded from {1} ROIs found in folder {2}'.format(len(res), len(fnames_list), froot))
     return res, lagtimes, imgtimes, ROI_list, exptime_list
 
 def LoadImageTimes(img_times_source, usecols=0, skiprows=1, root_folder=None, return_unique=False):
@@ -126,7 +151,7 @@ def LoadImageTimes(img_times_source, usecols=0, skiprows=1, root_folder=None, re
                 fpath = img_times_source
             else:
                 fpath = os.path.join(root_folder, img_times_source)
-            if sf.CountFileColumns(fpath, firstlineonly=False) > max_col:
+            if sf.CountFileColumns(fpath, singlerow=True, row_index=skiprows) > max_col:
                 res = np.loadtxt(fpath, dtype=float, usecols=usecols, skiprows=skiprows, ndmin=2)
             else:
                 res = None
@@ -138,7 +163,7 @@ def LoadImageTimes(img_times_source, usecols=0, skiprows=1, root_folder=None, re
                     fpath = cur_f
                 else:
                     fpath = os.path.join(root_folder, cur_f)
-                if sf.CountFileColumns(fpath, firstlineonly=False) > max_col:
+                if sf.CountFileColumns(fpath, singlerow=True, row_index=skiprows) > max_col:
                     res = np.append(res, np.loadtxt(fpath, dtype=float, usecols=usecols, skiprows=skiprows, ndmin=2))
                 else:
                     logging.warning('DSH.SALS.LoadImageTimes(): file ' + str(fpath) + ' incompatible with usecols ' + str(usecols) + '. Skipping file from list')

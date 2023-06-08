@@ -934,7 +934,15 @@ class ROIproc():
             self.ROI_masks_crop = None
 
     def SetExptimes(self, expTimes):
-        if len(expTimes) > 0:
+        if not hasattr(expTimes, "__len__"):
+            try:
+                float_expt = float(expTimes)
+                expTimes = [float_expt]  # if expTimes is a scalar, turn it into a 1-element list
+            except:
+                logging.error('ROIproc.SetExptimes() called with non-numeric argument: ' + str(expTimes))
+                expTimes = []
+        expTimes = np.asarray(expTimes)
+        if expTimes.size > 0:
             _exps = np.unique(expTimes)
             # check that expTimes is sorted:
             #assert np.all(np.diff(expTimes) >= 0), 'Exposure times ' + str(expTimes) + ' must be sorted!'
@@ -1205,31 +1213,35 @@ class ROIproc():
         return ROIavgs_allExp, ROIavgs_best, BestExptime_Idx, buf_images
 
     def doDLS(self, saveFolder, lagtimes, reftimes='all', no_buffer=False, drift_corr=0, 
-              force_SLS=True, save_transposed=False, export_configparams=None, include_negative_lags=False):
+              force_SLS=True, save_transposed=False, export_configparams=None, include_negative_lags=False,
+              g2m1_averageN=None):
         """ Run SLS/DLS analysis
 
         Parameters
         ----------
-        lagtimes : 'all' or list of int. 
-                    - If 'all', all available lagtimes will be processed
-                    - Otherwise, only specified lagtimes will be processed
-        reftimes : 'all' or list of int. 
-                    - If 'all', all reference times will be used
-                    - Otherwise, specialize the analysis to a subset of reference times
-        drift_corr: int. if > 0, track peak of spatial crosscorrelations to find and correct for speckle drift
-                    up to a maximum drift of drift_corr pixels. If 0, do not perform this extra step
-                    NOTE: this analysis uses rectangular ROIs without masks.
-                    ROI coordinates are set by ROIproc.ROIboundingBoxes
-        no_buffer : bool. If True, avoid reading full MIfile to RAM
-        force_SLS : bool. If False, program will load previously computed SLS results if available.
-        save_transposed: bool. Format of correlation timetrace output
-                    - if False, classic cI output: one line per reference time, one column per time delay
-                    - if True, transposed output: one line per time delay, one column per reference time
-                      NOTE: transposed output is incompatible with drift correction
-        include_negative_lags: Used if lagtimes=='all'. if False (default), only process prositive lagtimes. 
-                    If reftimes=='all', negative lagtimes are redundant and include_negative_lags will be set to False.
-                    If sparse reftimes and all lagtimes are processed, set include_negative_lags==True to include negative lagtimes
-        export_configparams: None or dict with additional configuration parameters to be exported to the output configuration file
+        lagtimes :              'all' or list of int. 
+                                - If 'all', all available lagtimes will be processed
+                                - Otherwise, only specified lagtimes will be processed
+        reftimes :              'all' or list of int. 
+                                - If 'all', all reference times will be used
+                                - Otherwise, specialize the analysis to a subset of reference times
+        drift_corr:             int. if > 0, track peak of spatial crosscorrelations to find and correct for speckle drift
+                                up to a maximum drift of drift_corr pixels. If 0, do not perform this extra step
+                                NOTE: this analysis uses rectangular ROIs without masks.
+                                ROI coordinates are set by ROIproc.ROIboundingBoxes
+        no_buffer :             bool. If True, avoid reading full MIfile to RAM
+        force_SLS :             bool. If False, program will load previously computed SLS results if available.
+        save_transposed:        bool. Format of correlation timetrace output
+                                - if False, classic cI output: one line per reference time, one column per time delay
+                                - if True, transposed output: one line per time delay, one column per reference time
+                                  NOTE: transposed output is incompatible with drift correction
+        include_negative_lags:  Used if lagtimes=='all'. if False (default), only process prositive lagtimes. 
+                                If reftimes=='all', negative lagtimes are redundant and include_negative_lags will be set to False.
+                                If sparse reftimes and all lagtimes are processed, set include_negative_lags==True to include negative lagtimes
+        export_configparams:    None or dict with additional configuration parameters to be exported to the output configuration file
+        g2m1_averageN :         int or None. If None, average correlation timetraces on the whole time window to obtain one g2-1 curve per ROI
+                                if N>0, average correlation timetraces on windows of N datapoints, 
+                                to obtain (self.NumTimes() / N) g2-1 curves per ROI
         """
         
         sf.CheckCreateFolder(saveFolder)
@@ -1489,7 +1501,7 @@ class ROIproc():
         else:
             sf.LogWrite('DLS analysis completed. Now averaging correlation functions g2-1', 
                         fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
-            self.AverageG2M1(saveFolder)
+            self.AverageG2M1(saveFolder, average_N=g2m1_averageN)
         fout.close()
             
     def AverageG2M1(self, folder_path, average_N=None, search_prefix=['cI_','cIcr_','dx_','dy_'], save_prefix=['g2m1','g2m1cr','avgdx','avgdy']):
