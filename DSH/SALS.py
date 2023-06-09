@@ -70,7 +70,7 @@ def GenerateROIs(ROI_specs, imgShape, centerPos, maskRaw=None):
         rSlices, aSlices = [[r_min[i], r_max[i]] for i in range(len(r_min))], [[a_min[i], a_max[i]] for i in range(len(a_min))]
         return GenerateROIs([rSlices, aSlices], imgShape, centerPos, maskRaw=maskRaw)
     
-def LoadFromConfig(ConfigParams, runAnalysis=True):
+def LoadFromConfig(ConfigParams, runAnalysis=True, outputSubfolder='reproc'):
     """Loads a SALS object from a config file like the one exported in SALS.ExportConfiguration
     
     Parameters
@@ -78,19 +78,23 @@ def LoadFromConfig(ConfigParams, runAnalysis=True):
     ConfigParams : full path of the config file to read or dict or Config object
     runAnalysis  : if the config file has an Analysis section, 
                    set runAnalysis=True to run the analysis after initializing the object
+    outputSubfolder : save analysis output in a subfolder of Analysis.out_folder from configuration
+                    if None, directly save output in Analysis.out_folder
                 
     Returns
     -------
     a SALS object
     """
     config = cf.LoadConfig(ConfigParams)
+    folder_root = config.Get('General', 'folder', None, str)
+
     ROI_proc = RP.LoadFromConfig(config, runAnalysis=False)
     if config.HasSection('SALS'):
         exp_config = {'SALS':config.ToDict(section='SALS')}
         ctr_pos = config.Get('SALS', 'ctrpos', [0,0], int)
         r_slices = config.Get('SALS', 'rslices', None, float)
         a_slices = config.Get('SALS', 'aslices', None, float)
-        roi_maskfile = config.Get('SALS', 'raw_mask', None, str)
+        roi_maskfile = sf.GetAbsolutePath(config.Get('SALS', 'raw_mask', None, str), root_path=folder_root)
         if roi_maskfile is None:
             mask_raw = None
         else:
@@ -102,7 +106,7 @@ def LoadFromConfig(ConfigParams, runAnalysis=True):
         SALSres = ROI_proc
         
     if runAnalysis:
-        SALSres.RunFromConfig(config, AnalysisSection='Analysis', OutputSubfolder='reproc', export_configparams=exp_config)
+        SALSres.RunFromConfig(config, AnalysisSection='Analysis', OutputSubfolder=outputSubfolder, export_configparams=exp_config)
     return SALSres
 
 

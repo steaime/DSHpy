@@ -666,7 +666,7 @@ def FindCrosscorrPeak(Image, Reference, SearchRange, SearchROI=None, SubgridShap
         else:
             return cur_xp, cur_yp, cur_zp, np.nan, np.nan, np.nan
 
-def LoadFromConfig(ConfigParams, runAnalysis=True):
+def LoadFromConfig(ConfigParams, runAnalysis=True, outputSubfolder='reproc'):
     """Loads a ROIproc object from a config file like the one exported in ROIproc.ExportConfiguration
     
     Parameters
@@ -674,6 +674,8 @@ def LoadFromConfig(ConfigParams, runAnalysis=True):
     ConfigParams : full path of the config file to read or dict or Config object
     runAnalysis  : if the config file has an Analysis section, 
                    set runAnalysis=True to run the analysis after initializing the object
+    outputSubfolder : save analysis output in a subfolder of Analysis.out_folder from configuration
+                    if None, directly save output in Analysis.out_folder
                 
     Returns
     -------
@@ -784,7 +786,7 @@ def LoadFromConfig(ConfigParams, runAnalysis=True):
     logging.info('ROIproc object loaded!')
         
     if runAnalysis:
-        ROI_proc.RunFromConfig(config, AnalysisSection='Analysis', OutputSubfolder='reproc')
+        ROI_proc.RunFromConfig(config, AnalysisSection='Analysis', OutputSubfolder=outputSubfolder)
             
     return ROI_proc
 
@@ -1256,6 +1258,7 @@ class ROIproc():
         """
         
         sf.CheckCreateFolder(saveFolder)
+        self.LastSaveFolder = saveFolder
         fout = open(os.path.join(saveFolder, 'analysis_log.txt'), 'w')
             
         if reftimes=='all':
