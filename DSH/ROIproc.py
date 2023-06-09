@@ -402,7 +402,7 @@ def AverageCorrTimetrace(CorrData, ImageTimes, Lagtimes_idxlist, average_T=None)
     - ImageTimes: 1D array, float. i-th element is the physical time at which i-th image was taken
     - Lagtimes_idxlist: 1D array, int. i-th element is the lagtime, in image units
     - average_T: int or None. When averaging over time, resolve the average on chunks of average_T images each
-                 if None, result will be average on the whole stack
+                 if None or <=0, result will be average on the whole stack
     
     Returns
     -------
@@ -411,6 +411,9 @@ def AverageCorrTimetrace(CorrData, ImageTimes, Lagtimes_idxlist, average_T=None)
     '''
     
     if average_T is None:
+        tavg_num = 1
+        average_T = CorrData.shape[0] 
+    elif average_T<=0:
         tavg_num = 1
         average_T = CorrData.shape[0] 
     else:
@@ -1314,16 +1317,17 @@ class ROIproc():
 
         analysis_params = {'General' : {},
                            'Analysis': {
-                            'type' : 'DLS',
-                            'out_folder' : os.path.abspath(saveFolder),
-                            'lagtimes' : lagtimes,
-                            'reftimes' : reftimes,
-                            'no_buffer' : no_buffer,
-                            'force_SLS' : force_SLS,
-                            'save_transposed' : save_transposed,
-                            'include_negative_lags' : include_negative_lags,
-                            'drift_corr' : drift_corr,
-                        },}
+                                        'type' : 'DLS',
+                                        'out_folder' : os.path.abspath(saveFolder),
+                                        'lagtimes' : lagtimes,
+                                        'reftimes' : reftimes,
+                                        'no_buffer' : no_buffer,
+                                        'force_SLS' : force_SLS,
+                                        'save_transposed' : save_transposed,
+                                        'include_negative_lags' : include_negative_lags,
+                                        'drift_corr' : drift_corr,
+                                        'g2m1_averageN' : g2m1_averageN,
+                            },}
         if drift_corr>0:
             analysis_params['Analysis']['drift_search_range'] = search_range
         analysis_params['General']['generated_by'] = 'ROIproc.doDLS'
@@ -1603,7 +1607,7 @@ class ROIproc():
                            - 'save_transposed' (bool, default: False)
                            - 'include_negative_lags' (bool, default: False)
         OutputSubfolder  : str, subfolder to use as analysis output. 
-                           If None, the out-folder parameter will be used as output folder
+                           If None, the out_folder parameter will be used as output folder
                            otherwise, data will be saved in a subfolder of the specified output folder
         export_configparams : None or dict with additional configuration parameters to be exported to the output configuration file
                            
@@ -1629,6 +1633,7 @@ class ROIproc():
                 no_buffer = config.Get(AnalysisSection, 'no_buffer', False, bool)
                 force_SLS = config.Get(AnalysisSection, 'force_SLS', True, bool)
                 drift_corr = config.Get(AnalysisSection, 'drift_corr', 0, int)
+                g2m1_averageN = config.Get(AnalysisSection, 'g2m1_averageN', 0, int)
                 save_transposed = config.Get(AnalysisSection, 'save_transposed', False, bool)
                 include_negative_lags = config.Get(AnalysisSection, 'include_negative_lags', False, bool)
                 if OutputSubfolder is None:
@@ -1639,7 +1644,8 @@ class ROIproc():
                 if 'General' not in export_configparams:
                     export_configparams['General'] = {'generated_by' : 'ROIproc.RunFromConfig(DLS)'}
                 self.doDLS(new_out_folder, lagtimes=lagtimes, reftimes=reftimes, drift_corr=drift_corr, no_buffer=no_buffer, 
-                               force_SLS=force_SLS, save_transposed=save_transposed, include_negative_lags=include_negative_lags, export_configparams=export_configparams)
+                               force_SLS=force_SLS, save_transposed=save_transposed, include_negative_lags=include_negative_lags, 
+                               export_configparams=export_configparams, g2m1_averageN=g2m1_averageN)
                 logging.info('DLS analysis run and saved to folder {0}'.format(new_out_folder))
             else:
                 logging.warn('ROIproc.RunFromConfig ERROR: unknown analysis type {0}'.format(an_type))
