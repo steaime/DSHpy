@@ -724,28 +724,36 @@ def LoadFromConfig(ConfigParams, runAnalysis=True):
     logging.debug('ROIproc.LoadFromConfig loading ' + str(mifile_info) + ' (metadata: ' + str(miin_metadata) + ')')
 
     # ROIs
-    roi_num = config.Get('ROIs', 'number', None, int)
-    if roi_num is not None:
-        logging.debug('ROIproc.LoadFromConfig loading {0} ROIs'.format(roi_num))
-    roi_maskfile = sf.GetAbsolutePath(config.Get('ROIs', 'mask_file', None, str), root_path=folder_root)
-    logging.debug('ROIproc.LoadFromConfig reading integer mask {0} (shape {1} expected)'.format(roi_maskfile, MIin.ImageShape()))
-    roi_int_mask = MI.ReadBinary(roi_maskfile, MIin.ImageShape(), 'i')
-    if roi_int_mask is None:
+    if config.HasSection('ROIs'):
+        roi_num = config.Get('ROIs', 'number', None, int)
+        if roi_num is not None:
+            logging.debug('ROIproc.LoadFromConfig loading {0} ROIs'.format(roi_num))
+        roi_maskfile = sf.GetAbsolutePath(config.Get('ROIs', 'mask_file', None, str), root_path=folder_root)
+        logging.debug('ROIproc.LoadFromConfig reading integer mask {0} (shape {1} expected)'.format(roi_maskfile, MIin.ImageShape()))
+        roi_int_mask = MI.ReadBinary(roi_maskfile, MIin.ImageShape(), 'i')
+        if roi_int_mask is None:
+            ROImasks = None
+            logging.warn('ROIproc.LoadFromConfig error reading binary ROI masks from integer mask {0}'.format(roi_maskfile))
+        else:
+            ROImasks = [roi_int_mask==b for b in range(np.max(roi_int_mask)+1)]
+            logging.debug('ROIproc.LoadFromConfig: {0} binary ROI masks loaded from integer mask {1} of shape {2}'.format(len(ROImasks), roi_maskfile, roi_int_mask.shape))
+        ROImetadata = config.ToDict(section='ROIs')
+        if config.HasOption('ROIs', 'coord_file'):
+            roi_coord_file = sf.GetAbsolutePath(config.Get('ROIs', 'coord_file', '', str), root_path=folder_root)
+            ROIcoords, ROInames, NormFact, ROIbb = iof.LoadROIcoords(roi_coord_file)
+            ROImetadata['coords'] = np.array2string(ROIcoords, separator=',')
+            ROImetadata['coord_names'] = ROInames
+            logging.debug('ROIproc.LoadFromConfig: ROI coordinates has shape {0} (coordinate names: {1})'.format(ROIcoords.shape, ROInames))
+        else:
+            ROIcoords, ROInames, NormFact, ROIbb = None, None, None, None
+            logging.info('ROIproc.LoadFromConfig: No ROIcoord file: ROI coordinates will be automatically generated')
+    else:
         ROImasks = None
-        logging.warn('ROIproc.LoadFromConfig error reading binary ROI masks from integer mask {0}'.format(roi_maskfile))
-    else:
-        ROImasks = [roi_int_mask==b for b in range(np.max(roi_int_mask)+1)]
-        logging.debug('ROIproc.LoadFromConfig: {0} binary ROI masks loaded from integer mask {1} of shape {2}'.format(len(ROImasks), roi_maskfile, roi_int_mask.shape))
-    ROImetadata = config.ToDict(section='ROIs')
-    if config.HasOption('ROIs', 'coord_file'):
-        roi_coord_file = sf.GetAbsolutePath(config.Get('ROIs', 'coord_file', '', str), root_path=folder_root)
-        ROIcoords, ROInames, NormFact, ROIbb = iof.LoadROIcoords(roi_coord_file)
-        ROImetadata['coords'] = np.array2string(ROIcoords, separator=',')
-        ROImetadata['coord_names'] = ROInames
-        logging.debug('ROIproc.LoadFromConfig: ROI coordinates has shape {0} (coordinate names: {1})'.format(ROIcoords.shape, ROInames))
-    else:
-        ROIcoords, ROInames, NormFact, ROIbb = None, None, None, None
-        logging.info('ROIproc.LoadFromConfig: No ROIcoord file: ROI coordinates will be automatically generated')
+        ROImetadata = None
+        if config.HasSection('SALS'):
+            logging.info('ROIproc.LoadFromConfig: No ROIs section in configuration file. SALS section has been detected: ROIs will probably be inherited')
+        else:
+            logging.warn('ROIproc.LoadFromConfig: No ROIs section in configuration file. ROIproc will be initialized with default ROI')
     
     # Times
     if config.HasOption('ImgTimes', 'values'):
@@ -1263,6 +1271,10 @@ class ROIproc():
                 DLS_lags = np.arange(self.NumTimes())
         else:
             DLS_lags = np.asarray(lagtimes)
+            if np.min(DLS_lags) < 0 and not include_negative_lags:
+                DLS_lags = DLS_lags[DLS_lags>=0]
+                sf.LogWrite('ROIproc.doDLS(): Negative lagtimes specified with include_negative_lags==False. Negative lag times will be removed from the list', 
+                            fLog=fout, logLevel=logging.WARNING, add_prefix='\n'+sf.TimeStr()+' | WARNING: ')
         if DLS_lags[0] != 0:
             sf.LogWrite('ROIproc.doDLS(): 0 lagtime prepended to DLS_lags', 
                         fLog=fout, logLevel=logging.WARNING, add_prefix='\n'+sf.TimeStr()+' | WARNING: ')
