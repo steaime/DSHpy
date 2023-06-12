@@ -376,15 +376,22 @@ def LoadImageTimes(img_times_source, usecols=0, skiprows=1, root_folder=None, de
     return iof.LoadImageTimes(img_times_source, usecols=usecols, skiprows=skiprows, root_folder=root_folder, return_unique=return_unique)
 
     
-def AverageG2M1(cI_file, average_T=None, save_fname=None, save_prefix='g2m1', cut_prefix_len=2, delimiter='\t', comment='#'):
+def AverageG2M1(cI_file, average_T=None, save_fname=None, save_prefix='g2m1', cut_prefix_len=2, delimiter='\t', comment='#', save_stderr=False):
     cur_cI, cur_times, cur_lagidx_list = iof.ReadCIfile(cI_file)
     
-    g2m1, g2m1_lags = AverageCorrTimetrace(cur_cI, cur_times, cur_lagidx_list, average_T)
-    
-    str_hdr_g = str(delimiter).join(['dt'+delimiter+'t{0:.2f}'.format(cur_times[tavgidx*average_T]) for tavgidx in range(g2m1.shape[0])])
-    g2m1_out = np.empty((g2m1.shape[1], 2*g2m1.shape[0]), dtype=float)
-    g2m1_out[:,0::2] = g2m1_lags.T
-    g2m1_out[:,1::2] = g2m1.T
+    if save_stderr:
+        g2m1, g2m1_lags, g2m1_err = AverageCorrTimetrace(cur_cI, cur_times, cur_lagidx_list, average_T, return_stderr=True)
+        str_hdr_g = str(delimiter).join(['dt'+delimiter+'avg_t{0:.2f}'.format(cur_times[tavgidx*average_T])+delimiter+'err_t{0:.2f}'.format(cur_times[tavgidx*average_T]) for tavgidx in range(g2m1.shape[0])])
+        g2m1_out = np.empty((g2m1.shape[1], 3*g2m1.shape[0]), dtype=float)
+        g2m1_out[:,0::3] = g2m1_lags.T
+        g2m1_out[:,1::3] = g2m1.T
+        g2m1_out[:,2::3] = g2m1_err.T
+    else:
+        g2m1, g2m1_lags = AverageCorrTimetrace(cur_cI, cur_times, cur_lagidx_list, average_T, return_stderr=False)
+        str_hdr_g = str(delimiter).join(['dt'+delimiter+'t{0:.2f}'.format(cur_times[tavgidx*average_T]) for tavgidx in range(g2m1.shape[0])])
+        g2m1_out = np.empty((g2m1.shape[1], 2*g2m1.shape[0]), dtype=float)
+        g2m1_out[:,0::2] = g2m1_lags.T
+        g2m1_out[:,1::2] = g2m1.T
     
     if save_fname is None:
         save_fname = save_prefix + sf.GetFilenameFromCompletePath(cI_file)[cut_prefix_len:]
@@ -413,16 +420,6 @@ def AverageCorrTimetrace(CorrData, ImageTimes, Lagtimes_idxlist, average_T=None,
                     Only returned if return_stderr==True
     '''
 
-
-
-
-
-# TODO: ADD THE OPTION TO COMPUTE UNCERTAINTY
-
-
-
-
-    
     if average_T is None:
         tavg_num = 1
         average_T = CorrData.shape[0] 
@@ -452,7 +449,19 @@ def AverageCorrTimetrace(CorrData, ImageTimes, Lagtimes_idxlist, average_T=None,
                     g2m1[cur_tavg_idx,cur_lagidx] += CorrData[tidx,lidx]
     g2m1 = np.divide(g2m1, g2m1_avgnum)
     
-    return g2m1, g2m1_lags
+    if return_stderr:
+        g2m1_err = np.zeros_like(g2m1)
+        for tidx in range(CorrData.shape[0]):
+            cur_tavg_idx = tidx // average_T
+            for lidx in range(CorrData.shape[1]):
+                if (tidx < len(g2m1_alllags[lidx])):
+                    cur_lagidx = np.argmin(np.abs(np.subtract(g2m1_laglist[cur_tavg_idx], g2m1_alllags[lidx][tidx])))
+                    if (~np.isnan(CorrData[tidx,lidx])):
+                        g2m1_err[cur_tavg_idx,cur_lagidx] += np.square(CorrData[tidx,lidx]-g2m1[cur_tavg_idx,cur_lagidx])
+        g2m1_err = np.sqrt(np.divide(g2m1_err, g2m1_avgnum))
+        return g2m1, g2m1_lags, g2m1_err
+    else:
+        return g2m1, g2m1_lags
 
 def ValidateShiftRange(ShiftRange, ImageShape=None, useROI=None):
     '''
@@ -1255,7 +1264,7 @@ class ROIproc():
 
     def doDLS(self, saveFolder, lagtimes, reftimes='all', no_buffer=False, drift_corr=0, 
               force_SLS=True, save_transposed=False, export_configparams=None, include_negative_lags=False,
-              g2m1_averageN=None):
+              g2m1_averageN=None, g2m1_reterr=False):
         """ Run SLS/DLS analysis
 
         Parameters
@@ -1358,6 +1367,7 @@ class ROIproc():
                                         'include_negative_lags' : include_negative_lags,
                                         'drift_corr' : drift_corr,
                                         'g2m1_averageN' : g2m1_averageN,
+                                        'g2m1_reterr' : g2m1_reterr,
                             },}
         if drift_corr>0:
             analysis_params['Analysis']['drift_search_range'] = search_range
@@ -1548,10 +1558,10 @@ class ROIproc():
         else:
             sf.LogWrite('DLS analysis completed. Now averaging correlation functions g2-1', 
                         fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
-            self.AverageG2M1(saveFolder, average_N=g2m1_averageN)
+            self.AverageG2M1(saveFolder, average_N=g2m1_averageN, save_stderr=g2m1_reterr)
         fout.close()
             
-    def AverageG2M1(self, folder_path, average_N=None, search_prefix=['cI_','cIcr_','dx_','dy_'], save_prefix=['g2m1','g2m1cr','avgdx','avgdy']):
+    def AverageG2M1(self, folder_path, average_N=None, search_prefix=['cI_','cIcr_','dx_','dy_'], save_prefix=['g2m1','g2m1cr','avgdx','avgdy'], save_stderr=False):
         if average_N is None:
             average_N = self.NumTimes()
         
@@ -1559,7 +1569,7 @@ class ROIproc():
             tres_fnames = sf.FindFileNames(folder_path, Prefix=search_prefix[i], Ext='.dat')
             for cur_f in tres_fnames:
                 AverageG2M1(os.path.join(folder_path, cur_f), average_T=average_N, save_prefix=save_prefix[i], 
-                            cut_prefix_len=len(search_prefix[i])-1, delimiter=self.txt_delim, comment=self.txt_comm)
+                            cut_prefix_len=len(search_prefix[i])-1, delimiter=self.txt_delim, comment=self.txt_comm, save_stderr=save_stderr)
             
     def ExportROIs(self, outFolder):
         """
@@ -1665,6 +1675,7 @@ class ROIproc():
                 force_SLS = config.Get(AnalysisSection, 'force_SLS', True, bool)
                 drift_corr = config.Get(AnalysisSection, 'drift_corr', 0, int)
                 g2m1_averageN = config.Get(AnalysisSection, 'g2m1_averageN', 0, int)
+                g2m1_reterr = config.Get(AnalysisSection, 'g2m1_reterr', False, bool)
                 save_transposed = config.Get(AnalysisSection, 'save_transposed', False, bool)
                 include_negative_lags = config.Get(AnalysisSection, 'include_negative_lags', False, bool)
                 if OutputSubfolder is None:
@@ -1676,7 +1687,7 @@ class ROIproc():
                     export_configparams['General'] = {'generated_by' : 'ROIproc.RunFromConfig(DLS)'}
                 self.doDLS(new_out_folder, lagtimes=lagtimes, reftimes=reftimes, drift_corr=drift_corr, no_buffer=no_buffer, 
                                force_SLS=force_SLS, save_transposed=save_transposed, include_negative_lags=include_negative_lags, 
-                               export_configparams=export_configparams, g2m1_averageN=g2m1_averageN)
+                               export_configparams=export_configparams, g2m1_averageN=g2m1_averageN, g2m1_reterr=g2m1_reterr)
                 logging.info('DLS analysis run and saved to folder {0}'.format(new_out_folder))
 
             if an_type=='SLS':
