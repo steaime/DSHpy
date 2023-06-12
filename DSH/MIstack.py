@@ -211,7 +211,7 @@ class MIstack():
     def ReadAll(self, zRange=None, cropROI=None):
         return [_MI.Read(zRange=zRange, cropROI=cropROI) for _MI in self.MIfiles]
     
-    def GetImage(self, img_idx, MI_idx=None, cropROI=None, buffer=None, buf_indexes=None):
+    def GetImage(self, img_idx, MI_idx=None, cropROI=None, buffer=None, buf_indexes=None, buffer_crop=True):
         """Read single image from MIfile
         
         Parameters
@@ -226,21 +226,28 @@ class MIstack():
         cropROI : if None, full image is returned
                   otherwise, [topleftx (0-based), toplefty (0-based), width, height]
                   width and/or height can be -1 to signify till the end of the image
+        buffer  : None or 3D array. Buffer of images already read
+        buf_indexes : None or list of indexes of images in buffer. 
+                      If None, buf_indexes = [0, 1, ..., buffer.shape[0]-1]
+        buffer_crop : if True, assume that images in buffer need to be cropped to specific ROI
+                      otherwise, assume that images in buffer are already cropped to specific ROI
         """
         if MI_idx is None:
             MI_idx = img_idx // self.ImgsPerMIfile
             img_in_mi = img_idx % self.ImgsPerMIfile
+            search_idx_in_buffer = img_idx
         else:
             img_in_mi = img_idx
-        idx_in_buffer = MI.ValidateBufferIndex(img_idx, buffer, buf_indexes)
+            search_idx_in_buffer = img_idx + MI_idx * self.ImgsPerMIfile
+        idx_in_buffer = MI.ValidateBufferIndex(search_idx_in_buffer, buffer, buf_indexes)
         if (idx_in_buffer is None):
             return self.MIfiles[MI_idx].GetImage(img_in_mi, cropROI=cropROI)
         else:
-            if (cropROI is None):
-                return buffer[idx_in_buffer]
-            else:
-                cropROI = self.ValidateROI(cropROI)
+            cropROI = self.ValidateROI(cropROI)
+            if (buffer_crop):
                 return buffer[idx_in_buffer][cropROI[1]:cropROI[1]+cropROI[3],cropROI[0]:cropROI[0]+cropROI[2]]
+            else:
+                return buffer[idx_in_buffer]
     
     def GetTimetrace(self, pxLocs, zRange=None, idx_list=None, excludeIdxs=[], returnCoords=False,\
                          squeezeResult=True, readConsecutive=1, lagFlip=False, zStep=1, mask_cropROI=None):

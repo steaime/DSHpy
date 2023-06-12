@@ -392,7 +392,7 @@ def AverageG2M1(cI_file, average_T=None, save_fname=None, save_prefix='g2m1', cu
     np.savetxt(os.path.join(os.path.dirname(cI_file), save_fname), 
            g2m1_out, header=str_hdr_g, delimiter=delimiter, comments=comment)
 
-def AverageCorrTimetrace(CorrData, ImageTimes, Lagtimes_idxlist, average_T=None):
+def AverageCorrTimetrace(CorrData, ImageTimes, Lagtimes_idxlist, average_T=None, return_stderr=False):
     '''
     Average correlation timetraces
     
@@ -403,12 +403,25 @@ def AverageCorrTimetrace(CorrData, ImageTimes, Lagtimes_idxlist, average_T=None)
     - Lagtimes_idxlist: 1D array, int. i-th element is the lagtime, in image units
     - average_T: int or None. When averaging over time, resolve the average on chunks of average_T images each
                  if None or <=0, result will be average on the whole stack
+    - return_stderr: bool. If True, return standard deviation of the correlation points averaged to obtain the g2-1
     
     Returns
     -------
     - g2m1: 2D array. Element [i,j] represents j-th lag time and i-th time-resolved chunk
     - g2m1_lags: 2D array. It contains the time delays, in physical units, of the respective correlation data
+    - g2m1_stderr: 2D array. Element [i,j] represents the standard deviation of the data averaged to obtain g2m1[i,j]
+                    Only returned if return_stderr==True
     '''
+
+
+
+
+
+# TODO: ADD THE OPTION TO COMPUTE UNCERTAINTY
+
+
+
+
     
     if average_T is None:
         tavg_num = 1
@@ -766,7 +779,11 @@ def LoadFromConfig(ConfigParams, runAnalysis=True, outputSubfolder='reproc'):
         logging.debug('ROIproc.LoadFromConfig: {0} image times loaded from config file: {1}'.format(len(img_times), img_times))
     else:
         num_times = config.Get('ImgTimes', 'number', 0, str)
-        imgtimes_fname = sf.GetAbsolutePath(config.Get('ImgTimes', 'file', None, str), root_path=folder_root)
+        imgtimes_fname = config.Get('ImgTimes', 'file', None, str)
+        if miin_isstack:
+            imgtimes_fname = [sf.GetAbsolutePath(fname, root_path=folder_root) for fname in imgtimes_fname]
+        else:
+            imgtimes_fname = sf.GetAbsolutePath(imgtimes_fname, root_path=folder_root)
         imgtimes_usecol = config.Get('ImgTimes', 'usecol', 0, int)
         imgtimes_skiprow = config.Get('ImgTimes', 'skiprow', 0, int)
         img_times = iof.LoadImageTimes(imgtimes_fname, usecols=imgtimes_usecol, skiprows=imgtimes_skiprow, root_folder=None, return_unique=False)
@@ -777,6 +794,10 @@ def LoadFromConfig(ConfigParams, runAnalysis=True, outputSubfolder='reproc'):
     else:
         num_exptimes = config.Get('ExpTimes', 'number', 0, str)
         exptimes_fname = sf.GetAbsolutePath(config.Get('ExpTimes', 'file', None, str), root_path=folder_root)
+        if miin_isstack:
+            exptimes_fname = [sf.GetAbsolutePath(fname, root_path=folder_root) for fname in exptimes_fname]
+        else:
+            exptimes_fname = sf.GetAbsolutePath(exptimes_fname, root_path=folder_root)
         exptimes_usecol = config.Get('ExpTimes', 'usecol', 0, int)
         exptimes_skiprow = config.Get('ExpTimes', 'skiprow', 0, int)
         exp_times = iof.LoadImageTimes(exptimes_fname, usecols=exptimes_usecol, skiprows=exptimes_skiprow, root_folder=None, return_unique=True)
@@ -1020,7 +1041,7 @@ class ROIproc():
         
         str_hdr_avg = ROIhdr_str + ''.join([self.txt_delim+'t{0:.3f}'.format(flat_times[i])
                                             for i in range(0, self.ImageNumber(), self.NumExpTimes())])
-        np.savetxt(os.path.join(SaveFolder, 'Iavg.dat'), np.append(self.ROIcoords, Iavg.T, axis=1), 
+        np.savetxt(os.path.join(SaveFolder, 'Iavg.dat'), np.append(self.ROIcoords[:,:2], Iavg.T, axis=1), 
                    header=str_hdr_avg, **self.savetxt_kwargs)
         
         if AllExpData is not None:
@@ -1043,7 +1064,11 @@ class ROIproc():
             else:
                 Iavg = None
                 logging.warn('Loading average intensity data from {0} failed (column number {1} not exceeding columns to be skipped, {2}): None returned'.format(Iavg_fpath, Iavg.shape[1], skipcols))
-        if Iavg is not None:
+        else:
+            Iavg = None
+        if Iavg is None:
+            Iav_allexp = None
+        else:
             Iavraw_fpath = os.path.join(outFolder, 'Iavg_raw.dat')
             if os.path.isfile(Iavraw_fpath):
                 Iav_allexp = np.loadtxt(Iavraw_fpath, **self.savetxt_kwargs)
@@ -1063,6 +1088,8 @@ class ROIproc():
             else:
                 best_exptimes = None
                 logging.warn('Loading best exposure times from {0} failed (column number {1} not exceeding columns to be skipped, {2}): None returned'.format(Iexp_fpath, best_exptimes.shape[1], skipcols))
+        else:
+            best_exptimes = None
                 
         return Iav_allexp, Iavg, best_exptimes
 
@@ -1184,10 +1211,11 @@ class ROIproc():
         
         if saveFolder is not None:
             sf.CheckCreateFolder(saveFolder)
+            self.LastSaveFolder = saveFolder
         
         ROIavgs_allExp, ROIavgs_best, BestExptime_Idx = None, None, None
         if not force_calc:
-             ROIavgs_allExp, ROIavgs_best, BestExptime_Idx = self.LoadIavg()
+             ROIavgs_allExp, ROIavgs_best, BestExptime_Idx = self.LoadIavg(saveFolder)
         
         if ROIavgs_allExp is None or ROIavgs_best is None or BestExptime_Idx is None:
 
@@ -1540,7 +1568,7 @@ class ROIproc():
         - ROI_mask.raw: integer mask with indices of the ROI every pixel belongs to. NOTE: no ROI overlap supported
         """
         sf.CheckCreateFolder(outFolder)
-        ROIhdr_str = self.txt_delim.join(self.ROIcoord_names+['norm', 'min_row[bb_base:' + str(self.BoundingBox[0]) + ']', 'min_col[bb_base:' + str(self.BoundingBox[1]) + ']', 'max_row', 'max_col'])
+        ROIhdr_str = self.txt_delim.join(self.ROIcoord_names+[name+'_err' for name in self.ROIcoord_names]+['norm', 'min_row[bb_base:' + str(self.BoundingBox[0]) + ']', 'min_col[bb_base:' + str(self.BoundingBox[1]) + ']', 'max_row', 'max_col'])
         roi_norms = np.expand_dims(self.ROI_maskSizes, axis=1)
         np.savetxt(os.path.join(outFolder, 'ROIcoords.dat'), np.append(np.append(self.ROIcoords, roi_norms, axis=1), 
                                self.ROIboundingBoxes, axis=1), header=ROIhdr_str, **self.savetxt_kwargs)
@@ -1650,6 +1678,19 @@ class ROIproc():
                                force_SLS=force_SLS, save_transposed=save_transposed, include_negative_lags=include_negative_lags, 
                                export_configparams=export_configparams, g2m1_averageN=g2m1_averageN)
                 logging.info('DLS analysis run and saved to folder {0}'.format(new_out_folder))
+
+            if an_type=='SLS':
+                out_folder = sf.GetAbsolutePath(config.Get(AnalysisSection, 'out_folder', '', str), root_path=folder_root)
+                no_buffer = config.Get(AnalysisSection, 'no_buffer', False, bool)
+                if OutputSubfolder is None:
+                    new_out_folder = out_folder
+                else:
+                    new_out_folder = os.path.join(out_folder, OutputSubfolder)
+                export_configparams = sf.UpdateDict(export_configparams, {'Analysis': {'out_folder' : new_out_folder}})
+                if 'General' not in export_configparams:
+                    export_configparams['General'] = {'generated_by' : 'ROIproc.RunFromConfig(SLS)'}
+                self.doSLS(new_out_folder, no_buffer=no_buffer, force_calc=True)
+                logging.info('SLS analysis run and saved to folder {0}'.format(new_out_folder))            
             else:
                 logging.warn('ROIproc.RunFromConfig ERROR: unknown analysis type {0}'.format(an_type))
         else:

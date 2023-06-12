@@ -263,6 +263,7 @@ class MIfile():
         self.FileName = FileName
         self.ReadFileHandle = None
         self.WriteFileHandle = None
+        self.debugMode = True
         logging.debug('MIfile object created with filename ' + str(FileName))
         if (MetaData is None and FileName is not None):
             MetaData = os.path.splitext(FileName)[0] + '_metadata.ini'
@@ -557,17 +558,19 @@ class MIfile():
         return int(self.ImgNumber)
     def ImageShape(self, indexing='ij'):
         if (indexing=='xy'):
-            return [int(self.ImgWidth), int(self.ImgHeight)]
+            return [self.ImgWidth, self.ImgHeight]
         else:
-            return [int(self.ImgHeight), int(self.ImgWidth)]
+            return [self.ImgHeight, self.ImgWidth]
     def ImageHeight(self):
-        return int(self.ImgHeight)
+        return self.ImgHeight
     def ImageWidth(self):
-        return int(self.ImgWidth)
+        return self.ImgWidth
+    def CountBytes(self):
+        return np.uint64(self.hdrSize + self.ImgNumber * self.PxPerImg * self.PixelDepth + (self.ImgNumber - 1) * self.gapBytes)
     def GetShape(self):
         return np.asarray(self.Shape.copy())
     def HeaderSize(self):
-        return int(self.hdrSize)
+        return self.hdrSize
     def GetFPS(self):
         return float(self.FPS)
     def GetPixelSize(self):
@@ -603,17 +606,17 @@ class MIfile():
             logging.warn('No MIfile section found in MIfile metadata (available sections: ' + str(self.MetaData.GetSections()) + ')')
         else:
             logging.debug('Now loading MIfile.MetaData from Config object. Available sections: ' + str(self.MetaData.GetSections()))
-        self.MaxBufferSize = self.MetaData.Get('settings', 'max_buffer_size', 100000000, int)
+        self.MaxBufferSize = self.MetaData.Get('settings', 'max_buffer_size', 100000000, np.uint64)
         if (self.FileName is None):
             self.FileName = self.MetaData.Get('MIfile', 'filename', None)
             logging.info('MIfile.FileName updated to ' + str(self.FileName) + ' from metadata')
-        self.hdrSize = self.MetaData.Get('MIfile', 'hdr_len', 0, int)
-        self.gapBytes = self.MetaData.Get('MIfile', 'gap_bytes', 0, int)
-        self.Shape = self.MetaData.Get('MIfile', 'shape', [0,0,0], int)
+        self.hdrSize = self.MetaData.Get('MIfile', 'hdr_len', 0, np.uint64)
+        self.gapBytes = self.MetaData.Get('MIfile', 'gap_bytes', 0, np.uint64)
+        self.Shape = self.MetaData.Get('MIfile', 'shape', [0,0,0], np.uint64)
         self.ImgNumber = self.Shape[0]
         self.ImgHeight = self.Shape[1]
         self.ImgWidth = self.Shape[2]
-        self.PxPerImg = self.ImgHeight * self.ImgWidth
+        self.PxPerImg = np.uint64(self.ImgHeight * self.ImgWidth)
         self.PixelFormat = self.MetaData.Get('MIfile', 'px_format', 'B', str)
         self.Endianness = self.MetaData.Get('MIfile', 'endian', '', str)
         if self.Endianness not in ['', '>', '<']:
@@ -623,6 +626,7 @@ class MIfile():
         self.PixelDataType = _data_types[self.PixelFormat]
         self.FPS = self.MetaData.Get('MIfile', 'fps', 1.0, float)
         self.PixelSize = self.MetaData.Get('MIfile', 'px_size', 1.0, float)
+            
 
     def _get_offset(self, img_idx=0, row_idx=0, col_idx=0):
         """Get byte offset for a given pixel in a given image
@@ -649,7 +653,13 @@ class MIfile():
         1D numpy array of pixel values
         """
         if (seek_pos is not None):
-            self.ReadFileHandle.seek(seek_pos)
+            if self.debugMode:
+                if (seek_pos >= 0 and seek_pos < self.CountBytes()):
+                    seek_res = self.ReadFileHandle.seek(np.uint64(seek_pos))
+                else:
+                    raise IOError('Invalid seek posision: {0}'.format(seek_pos))
+            else:
+                self.ReadFileHandle.seek(seek_pos)
         bytes_to_read = px_num * self.PixelDepth
         fileContent = self.ReadFileHandle.read(bytes_to_read)
         if len(fileContent) < bytes_to_read:

@@ -6,7 +6,13 @@ from DSH import SALS as LS
 
 logger = logging.getLogger()
 #fhandler = logging.FileHandler(filename='mylog.log', mode='a')
-fhandler = logging.FileHandler(filename='serial_SALS.log', mode='w')
+log_fname = 'serial_SALS.log'
+for i in range(10000):
+    if os.path.isfile(log_fname):
+        log_fname = 'serial_SALS_' + str(i).zfill(4) + '.log'
+    else:
+        break
+fhandler = logging.FileHandler(filename=log_fname, mode='w')
 formatter = logging.Formatter('%(asctime)s - %(name)s | %(levelname)s : %(message)s')
 fhandler.setFormatter(formatter)
 logger.addHandler(fhandler)
@@ -31,4 +37,4 @@ else:
     logging.error(strerr)
     print(strerr)
 
-shutil.copyfile('serial_SALS.log', os.path.join(SALS_analyzer.LastSaveFolder, 'SALS_analysis.log'))
+shutil.copyfile(log_fname, os.path.join(SALS_analyzer.LastSaveFolder, log_fname))

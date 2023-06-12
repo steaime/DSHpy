@@ -7,16 +7,7 @@ import math
 import numpy as np
 import collections
 import collections.abc
-
-import pkg_resources
-pkg_installed = {pkg.key for pkg in pkg_resources.working_set}
-if 'json' in pkg_installed:
-    import json
-    use_json = True
-else:
-    import ast
-    use_json = False
-    
+import ast
     
 
 def AllIntInStr(my_string):
@@ -122,10 +113,7 @@ def StrParse(my_string, cast_type=None):
     if str(res).strip().lower() in ['none', '']:
         return None
     elif (str(res)[0] in ['[','(', '{']):
-        if use_json:
-            res = json.loads(res)
-        else:
-            res = ast.literal_eval(res)
+        res = ast.literal_eval(str(res))
     if (type(res) in [list]):
         for i in range(len(res)):
             if (cast_type is not None):
