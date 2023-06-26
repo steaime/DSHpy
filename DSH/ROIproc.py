@@ -1154,14 +1154,28 @@ class ROIproc():
         else:
             if imgs is None:
                 imgs = self.ReadMI()
+            if self.DebugMode:
+                if len(stack1) < 100:
+                    logging.debug('ROIproc.ROIaverageProduct processing buffer with {0} images. First stack ({1} indexes): {2}'.format(len(imgs), len(stack1), stack1))
+                else:
+                    logging.debug('ROIproc.ROIaverageProduct processing buffer with {0} images. First stack ({1} indexes): [{2},{3},...,{4},{5}]'.format(len(imgs), 
+                                                                                                    len(stack1), stack1[0], stack1[1], stack1[-2], stack1[-1]))
             if stack2 is None:
+                if self.DebugMode:
+                    logging.debug('No second stack: averaging single images')
                 cur_stack = imgs[stack1]
             elif np.array_equal(stack1, stack2):
+                if self.DebugMode:
+                    logging.debug('Equal stacks provided: averaging squared single images')
                 cur_stack = np.square(imgs[stack1])
             else:
+                if self.DebugMode:
+                    if len(stack2) < 100:
+                        logging.debug('Second stack ({0} indexes): {1}'.format(len(stack2), stack2))
+                    else:
+                        logging.debug('Second stack ({0} indexes): [{1},{2},...,{3},{4}]'.format(len(stack2), stack2[0], stack2[1], stack2[-2], stack2[-1]))
                 cur_stack = np.multiply(imgs[stack1], imgs[stack2])
             if self.DebugMode:
-                logging.debug('ROIproc.ROIaverageProduct averaging stack1=' + str(stack1) + ' and stack2=' + str(stack2) + ' in debug mode...')
                 AvgRes, NormList = ROIAverage(cur_stack, self.ROI_masks_crop, boolMask=True, norm=self.ROI_maskSizes, BoundingBoxes=use_bb, debug=True)
             else:
                 AvgRes, NormList = ROIAverage(cur_stack, self.ROI_masks_crop, boolMask=True, norm=self.ROI_maskSizes, BoundingBoxes=use_bb)
@@ -1410,7 +1424,7 @@ class ROIproc():
         
         for e in range(self.NumExpTimes()):
             readrange = self.MIinput.Validate_zRange([e, -1, self.NumExpTimes()])
-            idx_list = np.arange(*readrange)
+            idx_list = np.arange(*readrange, dtype=int)
             sf.LogWrite('Now performing DLS on {0}-th exposure time. Using image range {1} ({2} images)'.format(e, readrange, len(idx_list)), 
                         fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
             ISQavg = self.ROIaverageProduct(stack1=idx_list, stack2=idx_list, no_buffer=no_buffer, imgs=buf_images)

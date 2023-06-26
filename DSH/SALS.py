@@ -70,7 +70,7 @@ def GenerateROIs(ROI_specs, imgShape, centerPos, maskRaw=None):
         rSlices, aSlices = [[r_min[i], r_max[i]] for i in range(len(r_min))], [[a_min[i], a_max[i]] for i in range(len(a_min))]
         return GenerateROIs([rSlices, aSlices], imgShape, centerPos, maskRaw=maskRaw)
     
-def LoadFromConfig(ConfigParams, runAnalysis=True, outputSubfolder='reproc'):
+def LoadFromConfig(ConfigParams, runAnalysis=True, outputSubfolder='reproc', debugMode=False):
     """Loads a SALS object from a config file like the one exported in SALS.ExportConfiguration
     
     Parameters
@@ -104,6 +104,9 @@ def LoadFromConfig(ConfigParams, runAnalysis=True, outputSubfolder='reproc'):
         logging.warn('SALS.LoadFromConfig ERROR: no SALS section in configuration parameters. ROIproc object returned')
         exp_config = None
         SALSres = ROI_proc
+    if debugMode:
+        logging.info('SALS.LoadFromConfig running in debug mode')
+        SALSres.DebugMode = debugMode
         
     if runAnalysis:
         SALSres.RunFromConfig(config, AnalysisSection='Analysis', OutputSubfolder=outputSubfolder, export_configparams=exp_config)

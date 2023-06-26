@@ -28,10 +28,16 @@ if (len(sys.argv) > 1):
         strerr = 'Configuration file read from command line (' + str(tmp_config) + ') not found'
 else:
     strerr = 'Configuration file needs to be specified in the command line'
+
+if "--debug" in sys.argv:
+    debugMode = True
+    logging.info('Debug mode activated from command line')
+else:
+    debugMode = False
         
 if ConfigFile is not None:
     logging.info('Loading analysis parameters from file ' + str(ConfigFile))
-    SALS_analyzer = LS.LoadFromConfig(ConfigFile, outputSubfolder=None)
+    SALS_analyzer = LS.LoadFromConfig(ConfigFile, outputSubfolder=None, debugMode=debugMode)
     logging.info('Analysis ended')
 else:
     logging.error(strerr)
