@@ -348,6 +348,7 @@ class MIfile():
         buffer_crop : if True, assume that images in buffer need to be cropped to specific ROI
                       otherwise, assume that images in buffer are already cropped to specific ROI
         """
+        img_idx = int(img_idx)
         if (img_idx<0):
             img_idx += self.ImgNumber
         idx_in_buffer = ValidateBufferIndex(img_idx, buffer, buf_indexes)
@@ -387,6 +388,8 @@ class MIfile():
         -------
         3D numpy array with shape [num_images , image_height (row number) , image_width (column number)]
         """
+        imgs_num = int(imgs_num)
+        start_idx = int(start_idx)
         if (imgs_num < 0):
             imgs_num = self.ImgNumber - start_idx
         res_arr = self._read_pixels(px_num=imgs_num * self.PxPerImg, seek_pos=self._get_offset(img_idx=start_idx))
@@ -601,7 +604,12 @@ class MIfile():
         else:
             logging.debug('Now loading MIfile metadata (from filename: ' + str(meta_data) + ')')
         default_settings = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'config', 'config_MIfile.ini')
-        self.MetaData = cf.LoadMetadata(meta_data, SectionName='MIfile', DefaultFiles=[default_settings])
+        if os.path.isfile(default_settings):
+            default_settings = [default_settings]
+        else:
+            logging.warn('MIfile._load_metadata() : Default settings configuration file ' + str(default_settings) + ' not found')
+            default_settings = []
+        self.MetaData = cf.LoadMetadata(meta_data, SectionName='MIfile', DefaultFiles=default_settings)
         if 'MIfile' not in self.MetaData.GetSections():
             logging.warn('No MIfile section found in MIfile metadata (available sections: ' + str(self.MetaData.GetSections()) + ')')
         else:
@@ -660,6 +668,7 @@ class MIfile():
                     raise IOError('Invalid seek posision: {0}'.format(seek_pos))
             else:
                 self.ReadFileHandle.seek(seek_pos)
+        px_num = int(px_num)
         bytes_to_read = px_num * self.PixelDepth
         fileContent = self.ReadFileHandle.read(bytes_to_read)
         if len(fileContent) < bytes_to_read:

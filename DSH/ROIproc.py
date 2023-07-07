@@ -1386,12 +1386,12 @@ class ROIproc():
         if drift_corr>0:
             analysis_params['Analysis']['drift_search_range'] = search_range
         analysis_params['General']['generated_by'] = 'ROIproc.doDLS'
+        config_fname = 'ROIprocConfig.ini'
         if export_configparams is not None:
             analysis_params = sf.UpdateDict(analysis_params, export_configparams)
             if 'SALS' in analysis_params['General']['generated_by']:
                 config_fname = 'SALSconfig.ini'
-            else:
-                config_fname = 'ROIprocConfig.ini'
+    
         self.ExportConfiguration(saveFolder, other_params=analysis_params, out_fname=config_fname)
         
         sf.LogWrite('ROIproc.doDLS Analysis started! Input data is {0} images ({1} times, {2} exposure times)'.format(self.ImageNumber(), self.NumTimes(), self.NumExpTimes()), 

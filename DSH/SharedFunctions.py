@@ -488,3 +488,31 @@ def PixelCoordGrid(shape, extent=None, center=[0, 0], angle=0, coords='cartesian
         return [_r, _theta]
     else:
         raise ValueError('Unknown coordinate system ' + str(coords))
+        
+def IntLogSpace(num_points, ppd='auto', first_point=1, autoppd_maxval=None):
+    assert num_points>0,         'Number of points in log-spacing series must be positive'
+    assert first_point!=0,       'First point in log-spacing series cannot be zero'
+    if ppd=='auto':
+        if autoppd_maxval is None:
+            raise ValueError('autoppd_maxval parameter must be set to optimize ppd')
+        else:
+            ppd = IntLogSpace_GetBestPPD(num_points, autoppd_maxval, first_point=first_point)
+    else:
+        if ppd <= 0:
+            raise ValueError('Number of points per decade in log-spacing series must be positive')
+
+    res = np.zeros(num_points, dtype=int)
+    res[0] = first_point
+    for i in range(1, num_points):
+        res[i] = max(res[i-1]+1, int(first_point * 10**(i * 1.0 / ppd)))
+    return res
+
+def IntLogSpace_GetBestPPD(num_points, max_value, first_point=1):
+    assert num_points>0,   'Number of points in log-spacing series must be positive'
+    assert first_point!=0, 'First point in log-spacing series cannot be zero'
+    assert max_value*first_point>0,    'First and last values in log-spacing series must have the same sign'
+    
+    guess_value = max(1, np.floor(num_points * 1.0 / (np.log10(max_value * 1.0 / first_point))))
+    while guess_value > 1 and IntLogSpace(num_points, guess_value, first_point)[-1] > max_value:
+        guess_value = guess_value - 1
+    return guess_value
