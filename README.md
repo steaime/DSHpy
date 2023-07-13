@@ -3,9 +3,6 @@
  
  The package takes videos of speckle patterns in the form of Multi-Image files (MIfiles) and computes correlation functions resolved in space and time. 
  In addition, it uses the correlation values to compute displacements and velocity maps.
-
-## Setup
- The package can be installed directly from this GitHub repository through pip (```pip install git+https://github.com/steaime/DSHpy```). To update the package use for instance ```pip install --upgrade -e git://github.com/steaime/DSHpy#egg=DSH```.
  
 ## Usage
  The package comes with tutorials that illustrate how to: (1) work with MIfiles; (2) compute correlation maps; (3) convert the correlation maps into displacements and velocity maps.
