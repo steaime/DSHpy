@@ -607,7 +607,7 @@ class MIfile():
         if os.path.isfile(default_settings):
             default_settings = [default_settings]
         else:
-            logging.warn('MIfile._load_metadata() : Default settings configuration file ' + str(default_settings) + ' not found')
+            logging.info('MIfile._load_metadata() : Default MI settings file ({0}) not found. Loading metadata with hard-coded defaults'.format(default_settings))
             default_settings = []
         self.MetaData = cf.LoadMetadata(meta_data, SectionName='MIfile', DefaultFiles=default_settings)
         if 'MIfile' not in self.MetaData.GetSections():

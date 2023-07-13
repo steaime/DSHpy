@@ -392,27 +392,76 @@ def CountFileColumns(fpath, delimiter=None, singlerow=True, row_index=0):
         return np.loadtxt(fpath, delimiter=delimiter, ndmin=2).shape[1]
 
     
+"""
+Function parameters:
+   - time_per_pair:    Time duration of an image pair, in microseconds
+   - delays_per_decade:Number of delays per decade
+   - minimum_delay:    Minimum lag, in microseconds
+   - cycle_duration:   Duration of an entire cycle, in microseconds.
+                       Set it to None to automatically calculate it:
+                       it will be num_delays*time_per_pair+start_time
+   - start_time:       Delay in microseconds between the beginning
+                       of the cycle and the first image
+   - verbose:          If True:  prints detailed output
+                       If False: only prints critical error notifications
+Generates a TimePulses file, formatted as follows:
+    - First line: number n_cycle of pulses per cycle
+    - 2-nd to (n_cycle+1)-th line: the n_cycle pulse starting time (usec), one per line
+    - (n_cycle+2)-th line: cycle duration (must be larger than the n_cycle-th pulse starting time
+    - Optional (only relevant if using the interlaced lin-log scheme):
+      add 5 lines with recap of the parameters used to generate this file:
+      time_per_pair,delays_per_decade,minimum_delay,exposure_time,use_shutter
+Returns: None
+"""
 
-
-def FindLags(series, lags_index, subset_len=None, tolerance=1e-2, tolerance_isrelative=True):
+def SmartTimeSamplingSeries(minimum_delay, pair_duration, cycle_duration, num_points=None):
     '''
-    Find lags given a list of time points and a list of lag indexes
+    Generates time series of acquisition for 'Smart time sampling' (STS) protocol
     
     Parameters
     ----------
-    series:          list of time points (float), not necessarily equally spaced
-    lags_index:           list of lag indexes (int, >=0)
-    subset_len:     int (>0) or None. Eventually divide the analysis in sections of subset_len datapoints each
-                    If None, it will be set to the total number of datapoints (it will analyze the whole section)
+    minimum_delay:    float, Minimum lag
+    pair_duration:    float, Constant lag between pairs of datapoints. Equals the largest log-spaced, intra-pair delay
+    cycle_duration:   int,   Number of log-spaced, intra-pair delays. 
+                      Equals the number of image pairs forming the periodically repeated unit in the acquisition scheme
+    num_points:       None or int. Total number of datapoints to generate. If None, it will be set to 2*cycle_duration
+                      
+    Returns
+    -------
+    time_series:      1D array, float. Time series of points spaced according to Smart Time Sampling algorithm
+    '''
+    
+    assert pair_duration > minimum_delay, 'Pair duration ({0}) should be larger than minimum delay ({1})'.format(pair_duration, minimum_delay)
+    delays = np.geomspace(minimum_delay, pair_duration, num=cycle_duration, endpoint=False)
+    if num_points is None or num_points <= 0:
+        num_points = 2*cycle_duration
+    time_series = np.zeros(num_points, dtype=float)
+    for i in range(num_points):
+        if i % 2 == 0:
+            time_series[i] = i * pair_duration / 2
+        else:
+            time_series[i] = time_series[i-1] + delays[((i-1) // 2) % len(delays)]
+    return time_series
+
+def FindLags(series, lags_index, subset_intervals=None, tolerance=1e-2, tolerance_isrelative=True):
+    '''
+    Find lags in physical units (e.g. seconds) given a list of time points (same physical units) and a list of lag indexes
+    
+    Parameters
+    ----------
+    series:           list of time points (float), not necessarily equally spaced
+    lags_index:       list of lag indexes (int, >=0). WARNING: not yet compatible with negative lag indexes
+    subset_intervals: None or list of intervals [min_idx, max_idx]. Eventually divide the analysis in intervals
+                      If None, it will be set to the entire section
                 
     Returns
     -------
-    allags:         2D list. allags[i][j] = series[j+lag[i]] - series[j]
-                    NOTE: len(allags[i]) depends on i (no element is added to the list if j+lag[i] >= len(series))
-    unique_laglist: 2D list. Element [i][j] is j-th lagtime of i-th analyzed subsection
+    alllags:          2D list (float if series is float). alllags[i][j] = series[j+lag[i]] - series[j]
+                      NOTE: len(alllags[i]) depends on i (no element is added to the list if j+lag[i] >= len(series))
+    unique_laglist:   2D list. Element [i][j] is j-th lagtime of i-th analyzed subsection
     '''
-    if subset_len is None:
-        subset_len = len(series)
+    if subset_intervals is None:
+        subset_intervals = [[0,len(series)]]
     alllags = []
     for lidx in range(len(lags_index)):
         if (lags_index[lidx]==0):
@@ -422,9 +471,9 @@ def FindLags(series, lags_index, subset_len=None, tolerance=1e-2, tolerance_isre
         else:
             alllags.append([])
     unique_laglist = []
-    for tavgidx in range(int(math.ceil(len(series)*1./subset_len))):
+    for tavgidx in range(len(subset_intervals)):
         cur_uniquelist = np.unique([alllags[i][j] for i in range(len(lags_index)) 
-                                    for j in range(tavgidx*subset_len, min((tavgidx+1)*subset_len, len(alllags[i])))])
+                                    for j in range(subset_intervals[tavgidx][0], min(subset_intervals[tavgidx][1], len(alllags[i])))])
         cur_coarsenedlist = [cur_uniquelist[0]]
         for lidx in range(1, len(cur_uniquelist)):
             if not IsWithinTolerance(cur_uniquelist[lidx], cur_coarsenedlist[-1],

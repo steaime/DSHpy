@@ -87,6 +87,8 @@ class Config():
                         only retain the specified section
         """
         self.config = configparser.ConfigParser(allow_no_value=True)
+        if defaultConfigFiles is None:
+            defaultConfigFiles = []
         for conf_f in defaultConfigFiles:
             if (os.path.isfile(conf_f)):
                 self.config.read(conf_f)

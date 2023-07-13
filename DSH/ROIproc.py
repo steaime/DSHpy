@@ -376,19 +376,19 @@ def LoadImageTimes(img_times_source, usecols=0, skiprows=1, root_folder=None, de
     return iof.LoadImageTimes(img_times_source, usecols=usecols, skiprows=skiprows, root_folder=root_folder, return_unique=return_unique)
 
     
-def AverageG2M1(cI_file, average_T=None, save_fname=None, save_prefix='g2m1', cut_prefix_len=2, delimiter='\t', comment='#', save_stderr=False):
+def AverageG2M1(cI_file, avg_interval=None, save_fname=None, save_prefix='g2m1', cut_prefix_len=2, delimiter='\t', comment='#', save_stderr=False):
     cur_cI, cur_times, cur_lagidx_list = iof.ReadCIfile(cI_file)
     
     if save_stderr:
-        g2m1, g2m1_lags, g2m1_err = AverageCorrTimetrace(cur_cI, cur_times, cur_lagidx_list, average_T, return_stderr=True)
-        str_hdr_g = str(delimiter).join(['dt'+delimiter+'avg_t{0:.2f}'.format(cur_times[tavgidx*average_T])+delimiter+'err_t{0:.2f}'.format(cur_times[tavgidx*average_T]) for tavgidx in range(g2m1.shape[0])])
+        g2m1, g2m1_lags, g2m1_err = AverageCorrTimetrace(cur_cI, cur_times, cur_lagidx_list, avg_interval, return_stderr=True)
+        str_hdr_g = str(delimiter).join(['dt'+delimiter+'avg_t{0:.2f}'.format(cur_times[tavgidx*avg_interval])+delimiter+'err_t{0:.2f}'.format(cur_times[tavgidx*avg_interval]) for tavgidx in range(g2m1.shape[0])])
         g2m1_out = np.empty((g2m1.shape[1], 3*g2m1.shape[0]), dtype=float)
         g2m1_out[:,0::3] = g2m1_lags.T
         g2m1_out[:,1::3] = g2m1.T
         g2m1_out[:,2::3] = g2m1_err.T
     else:
-        g2m1, g2m1_lags = AverageCorrTimetrace(cur_cI, cur_times, cur_lagidx_list, average_T, return_stderr=False)
-        str_hdr_g = str(delimiter).join(['dt'+delimiter+'t{0:.2f}'.format(cur_times[tavgidx*average_T]) for tavgidx in range(g2m1.shape[0])])
+        g2m1, g2m1_lags = AverageCorrTimetrace(cur_cI, cur_times, cur_lagidx_list, avg_interval, return_stderr=False)
+        str_hdr_g = str(delimiter).join(['dt'+delimiter+'t{0:.2f}'.format(cur_times[tavgidx*avg_interval]) for tavgidx in range(g2m1.shape[0])])
         g2m1_out = np.empty((g2m1.shape[1], 2*g2m1.shape[0]), dtype=float)
         g2m1_out[:,0::2] = g2m1_lags.T
         g2m1_out[:,1::2] = g2m1.T
@@ -399,7 +399,7 @@ def AverageG2M1(cI_file, average_T=None, save_fname=None, save_prefix='g2m1', cu
     np.savetxt(os.path.join(os.path.dirname(cI_file), save_fname), 
            g2m1_out, header=str_hdr_g, delimiter=delimiter, comments=comment)
 
-def AverageCorrTimetrace(CorrData, ImageTimes, Lagtimes_idxlist, average_T=None, return_stderr=False):
+def AverageCorrTimetrace(CorrData, ImageTimes, Lagtimes_idxlist, avg_interval=None, return_stderr=False, sharp_bound=None):
     '''
     Average correlation timetraces
     
@@ -408,9 +408,18 @@ def AverageCorrTimetrace(CorrData, ImageTimes, Lagtimes_idxlist, average_T=None,
     - CorrData: 2D array. Element [i,j] is correlation between t[i] and t[i]+tau[j]
     - ImageTimes: 1D array, float. i-th element is the physical time at which i-th image was taken
     - Lagtimes_idxlist: 1D array, int. i-th element is the lagtime, in image units
-    - average_T: int or None. When averaging over time, resolve the average on chunks of average_T images each
-                 if None or <=0, result will be average on the whole stack
+                 NOTE: they must be positive. Not yet compatible with negative time lags
+    - avg_interval: None, int, couple interval=[min_idx, max_idx] or list of couples [interval1, ..., intervalN]. 
+                 if None or int<=0, result will be averaged on the entire stack
+                 if int>0, resolve the average on consecutive chunks of avg_interval images each
+                 if interval=[min_idx, max_idx], average will be done in the specified interval
+                 if [interval1, ..., intervalN], a list of intervals will be computed as above
     - return_stderr: bool. If True, return standard deviation of the correlation points averaged to obtain the g2-1
+    - sharp_bound: None or bool. 
+                 if False, use interval bounds to associate any reference time to the corresponding interval, 
+                           but average on all time lags, including those for which ref_time + time_lag >= max_idx
+                 if True, for each reference time, restrict average such that both correlated timepoints are in the specified interval
+                 if None, decide automatically what to do: set it to False if avg_interval is None or int, otherwise set to True 
     
     Returns
     -------
@@ -420,44 +429,67 @@ def AverageCorrTimetrace(CorrData, ImageTimes, Lagtimes_idxlist, average_T=None,
                     Only returned if return_stderr==True
     '''
 
-    if average_T is None:
+    if avg_interval is None:
         tavg_num = 1
-        average_T = CorrData.shape[0] 
-    elif average_T<=0:
+        int_size = [CorrData.shape[0]]
+        int_bounds = [[0, CorrData.shape[0]]]
+        if sharp_bound is None:
+            sharp_bound = False
+    elif isinstance(avg_interval, collections.abc.Iterable):
+        if len(avg_interval) > 0:
+            if sharp_bound is None:
+                sharp_bound = True
+        else:
+            tavg_num = 1
+            int_size = [CorrData.shape[0]]
+            int_bounds = [[0, CorrData.shape[0]]]
+            if sharp_bound is None:
+                sharp_bound = False
+    elif avg_interval<=0:
         tavg_num = 1
-        average_T = CorrData.shape[0] 
+        int_size = [CorrData.shape[0]]
+        int_bounds = [[0, CorrData.shape[0]]]
+        if sharp_bound is None:
+            sharp_bound = False
     else:
-        tavg_num = int(math.ceil(CorrData.shape[0]*1.0/average_T))
+        tavg_num = int(math.ceil(CorrData.shape[0]*1.0/avg_interval))
+        int_size = [avg_interval] * tavg_num
+        int_bounds = []
+        for i in range(tavg_num):
+            int_bounds.append([i*tavg_num, (i+1)*tavg_num])
+        if sharp_bound is None:
+            sharp_bound = False
             
-    g2m1_alllags, g2m1_laglist = sf.FindLags(series=ImageTimes, lags_index=Lagtimes_idxlist, subset_len=average_T)
+    g2m1_alllags, g2m1_laglist = sf.FindLags(series=ImageTimes, lags_index=Lagtimes_idxlist, subset_intervals=int_bounds)
     g2m1 = np.zeros((tavg_num, np.max([len(l) for l in g2m1_laglist])), dtype=float)
     g2m1_lags = np.nan * np.ones_like(g2m1, dtype=float)
     g2m1_avgnum = np.zeros_like(g2m1, dtype=int)
-    logging.debug('AverageCorrTimetrace: cI time averages will be performed by dividing the {0} time points into {1} windows of {2} time points each'.format(CorrData.shape[0], tavg_num, average_T))
+    logging.debug('AverageCorrTimetrace: cI time averages will be performed by dividing the {0} time points into {1} windows of sizes {2}'.format(CorrData.shape[0], tavg_num, int_size))
+    logging.debug('Detailed interval bounds: {0}'.format(int_bounds))
     logging.debug('original cI has shape ' + str(CorrData.shape) + '. Averaged g2m1 has shape ' + str(g2m1.shape) + ' (check: ' + str(g2m1_avgnum.shape) + ')')
     
-    for tidx in range(CorrData.shape[0]):
-        cur_tavg_idx = tidx // average_T
-        if (cur_tavg_idx >= g2m1_lags.shape[0]):
-            logging.warn('AverageCorrTimetrace: {0}-th time point should go to {1}-th subsection, but result has only {2} subsections'.format(tidx, cur_tavg_idx, g2m1_lags.shape[0]))
-        g2m1_lags[cur_tavg_idx,:len(g2m1_laglist[cur_tavg_idx])] = g2m1_laglist[cur_tavg_idx]
-        for lidx in range(CorrData.shape[1]):
-            if (tidx < len(g2m1_alllags[lidx])):
-                cur_lagidx = np.argmin(np.abs(np.subtract(g2m1_laglist[cur_tavg_idx], g2m1_alllags[lidx][tidx])))
-                if (~np.isnan(CorrData[tidx,lidx])):
-                    g2m1_avgnum[cur_tavg_idx,cur_lagidx] += 1
-                    g2m1[cur_tavg_idx,cur_lagidx] += CorrData[tidx,lidx]
+    for cur_tavg_idx in range(tavg_num):
+        for tidx in range(*int_bounds[cur_tavg_idx]):
+            g2m1_lags[cur_tavg_idx,:len(g2m1_laglist[cur_tavg_idx])] = g2m1_laglist[cur_tavg_idx]
+            for lidx in range(CorrData.shape[1]):
+                if (sharp_bound == False) or (tidx + Lagtimes_idxlist >= int_bounds[cur_tavg_idx][0] and tidx + Lagtimes_idxlist < int_bounds[cur_tavg_idx][1]):
+                    if (tidx < len(g2m1_alllags[lidx])):
+                        cur_lagidx = np.argmin(np.abs(np.subtract(g2m1_laglist[cur_tavg_idx], g2m1_alllags[lidx][tidx])))
+                        if (~np.isnan(CorrData[tidx,lidx])):
+                            g2m1_avgnum[cur_tavg_idx,cur_lagidx] += 1
+                            g2m1[cur_tavg_idx,cur_lagidx] += CorrData[tidx,lidx]
     g2m1 = np.divide(g2m1, g2m1_avgnum)
     
     if return_stderr:
         g2m1_err = np.zeros_like(g2m1)
-        for tidx in range(CorrData.shape[0]):
-            cur_tavg_idx = tidx // average_T
-            for lidx in range(CorrData.shape[1]):
-                if (tidx < len(g2m1_alllags[lidx])):
-                    cur_lagidx = np.argmin(np.abs(np.subtract(g2m1_laglist[cur_tavg_idx], g2m1_alllags[lidx][tidx])))
-                    if (~np.isnan(CorrData[tidx,lidx])):
-                        g2m1_err[cur_tavg_idx,cur_lagidx] += np.square(CorrData[tidx,lidx]-g2m1[cur_tavg_idx,cur_lagidx])
+        for cur_tavg_idx in range(tavg_num):
+            for tidx in range(*int_bounds[cur_tavg_idx]):
+                for lidx in range(CorrData.shape[1]):
+                    if (sharp_bound == False) or (tidx + Lagtimes_idxlist >= int_bounds[cur_tavg_idx][0] and tidx + Lagtimes_idxlist < int_bounds[cur_tavg_idx][1]):
+                        if (tidx < len(g2m1_alllags[lidx])):
+                            cur_lagidx = np.argmin(np.abs(np.subtract(g2m1_laglist[cur_tavg_idx], g2m1_alllags[lidx][tidx])))
+                            if (~np.isnan(CorrData[tidx,lidx])):
+                                g2m1_err[cur_tavg_idx,cur_lagidx] += np.square(CorrData[tidx,lidx]-g2m1[cur_tavg_idx,cur_lagidx])
         g2m1_err = np.sqrt(np.divide(g2m1_err, g2m1_avgnum))
         return g2m1, g2m1_lags, g2m1_err
     else:
@@ -649,7 +681,7 @@ def FindCrosscorrPeak(Image, Reference, SearchRange, SearchROI=None, SubgridShap
                     the routines returns the pixel-resolved position of the (apparent) max. peak_height is then set to -1
     - xperr, yperr, zperr: standard errors on above quantities, only provided if SubgridShape is defined
     '''
-    assert(Image.shape == Reference.shape, 'Input images in FindCrosscorrPeak should have the same shape. Instead, here we have {0} and {1}'.format(Image.shape, Reference.shape))
+    assert Image.shape == Reference.shape, 'Input images in FindCrosscorrPeak should have the same shape. Instead, here we have {0} and {1}'.format(Image.shape, Reference.shape)
     if (ValidateInput):
         SearchRange = ValidateShiftRange(SearchRange, Image.shape, SearchROI)
         SearchROI = ValidateShiftROI(SearchROI, SearchRange, Image.shape)
@@ -1176,19 +1208,12 @@ class ROIproc():
                         logging.debug('Second stack ({0} indexes): [{1},{2},...,{3},{4}]'.format(len(stack2), stack2[0], stack2[1], stack2[-2], stack2[-1]))
                 cur_stack = np.multiply(imgs[stack1], imgs[stack2])
             if self.DebugMode:
+                logging.debug('ROIproc.ROIaverageProduct averaging stack1=' + str(stack1) + ' and stack2=' + str(stack2) + ' in debug mode...')
                 AvgRes, NormList = ROIAverage(cur_stack, self.ROI_masks_crop, boolMask=True, norm=self.ROI_maskSizes, BoundingBoxes=use_bb, debug=True)
             else:
                 AvgRes, NormList = ROIAverage(cur_stack, self.ROI_masks_crop, boolMask=True, norm=self.ROI_maskSizes, BoundingBoxes=use_bb)
             
         return AvgRes
-    
-    def AverageG2M1(self, outFolder, averageT=None, cI_prefix='cI_', save_prefix='g2m1_'):
-        if averageT is None:
-            averageT = self.NumTimes()
-        cI_fnames = sf.FindFileNames(outFolder, Prefix=cI_prefix, Ext='.dat')
-        
-        for cur_f in cI_fnames:
-            AverageG2M1(os.path.join(outFolder, cur_f), average_T=averageT, save_fname=save_prefix+cur_f[len(cI_prefix):])
             
     def FindBestExptimes(self, AverageIntensities):
         '''
@@ -1391,7 +1416,6 @@ class ROIproc():
             analysis_params = sf.UpdateDict(analysis_params, export_configparams)
             if 'SALS' in analysis_params['General']['generated_by']:
                 config_fname = 'SALSconfig.ini'
-    
         self.ExportConfiguration(saveFolder, other_params=analysis_params, out_fname=config_fname)
         
         sf.LogWrite('ROIproc.doDLS Analysis started! Input data is {0} images ({1} times, {2} exposure times)'.format(self.ImageNumber(), self.NumTimes(), self.NumExpTimes()), 
@@ -1582,7 +1606,7 @@ class ROIproc():
         for i in range(len(search_prefix)):
             tres_fnames = sf.FindFileNames(folder_path, Prefix=search_prefix[i], Ext='.dat')
             for cur_f in tres_fnames:
-                AverageG2M1(os.path.join(folder_path, cur_f), average_T=average_N, save_prefix=save_prefix[i], 
+                AverageG2M1(os.path.join(folder_path, cur_f), avg_interval=average_N, save_prefix=save_prefix[i], 
                             cut_prefix_len=len(search_prefix[i])-1, delimiter=self.txt_delim, comment=self.txt_comm, save_stderr=save_stderr)
             
     def ExportROIs(self, outFolder):
