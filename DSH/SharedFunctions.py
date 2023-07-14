@@ -443,7 +443,60 @@ def SmartTimeSamplingSeries(minimum_delay, pair_duration, cycle_duration, num_po
             time_series[i] = time_series[i-1] + delays[((i-1) // 2) % len(delays)]
     return time_series
 
-def FindLags(series, lags_index, subset_intervals=None, tolerance=1e-2, tolerance_isrelative=True):
+def ValidateAverageInterval(avg_interval, num_datapoints):
+    '''
+    Validates the averaged interval parameter used in AverageG2M1 and AverageCorrTimetrace functions
+    
+    Parameters
+    ----------
+    - avg_interval: None, int, couple interval=[min_idx, max_idx] or list of couples [interval1, ..., intervalN]. 
+                 if None or int<=0, result will be averaged on the entire stack
+                 if int>0, resolve the average on consecutive chunks of avg_interval images each
+                 if interval=[min_idx, max_idx], average will be done in the specified interval
+                 if [interval1, ..., intervalN], a list of intervals will be computed as above
+    - num_datapoints: int. Number of datapoints
+    - sharp_bound: None or bool. 
+                 if False, use interval bounds to associate any reference time to the corresponding interval, 
+                           but average on all time lags, including those for which ref_time + time_lag >= max_idx
+                 if True, for each reference time, restrict average such that both correlated timepoints are in the specified interval
+                 if None, decide automatically what to do: set it to False if avg_interval is None or int, otherwise set to True 
+    
+    Parameters
+    ----------
+    int_bounds: list of interval bounds [min_index, max_index]. In each interval, max_index > min_index
+    '''
+    if avg_interval is None:
+        int_bounds = [[0, num_datapoints]]
+    elif isinstance(avg_interval, collections.abc.Iterable):
+        if len(avg_interval) > 0:
+            if isinstance(avg_interval[0], collections.abc.Iterable):
+                int_bounds = avg_interval
+            else:
+                int_bounds = [avg_interval]
+            for i in range(len(int_bounds)):
+                if int_bounds[i][1] <= int_bounds[i][0]:
+                    logging.warn('ROIproc.ValidateAverageInterval(): bounds for interval must be strictly ascending. Empty interval generated.')
+                    int_bounds[i][1] = int_bounds[i][0]
+        else:
+            int_bounds = [[0, num_datapoints]]
+    elif avg_interval<=0:
+        int_bounds = [[0, num_datapoints]]
+    else:
+        int_bounds = []
+        for i in range(int(math.ceil(num_datapoints*1.0/avg_interval))):
+            if i*avg_interval>=num_datapoints:
+                logging.warn('SharedFunctions.ValidateAverageInterval inconsistency: interval {0}/{1} of size {2} exceeds series length {3}'.format(i, int(math.ceil(num_datapoints*1.0/avg_interval)), avg_interval, num_datapoints))
+            else:
+                int_bounds.append([i*avg_interval, min((i+1)*avg_interval, num_datapoints)])
+    
+    for i in range(len(int_bounds)):
+        int_bounds[i][0] = min(int_bounds[i][0], num_datapoints)
+        int_bounds[i][1] = min(int_bounds[i][1], num_datapoints)
+        if int_bounds[i][0] >= int_bounds[i][1]:
+            logging.warn('SharedFunctions.ValidateAverageInterval WARNING: inconsistent {0}-th interval {1} with {2} datapoints'.format(i, int_bounds[i], num_datapoints))
+    return int_bounds
+
+def FindLags(series, lags_index, subset_intervals=None, tolerance=1e-2, tolerance_isrelative=True, verbose=0):
     '''
     Find lags in physical units (e.g. seconds) given a list of time points (same physical units) and a list of lag indexes
     
@@ -456,12 +509,12 @@ def FindLags(series, lags_index, subset_intervals=None, tolerance=1e-2, toleranc
                 
     Returns
     -------
-    alllags:          2D list (float if series is float). alllags[i][j] = series[j+lag[i]] - series[j]
+    alllags:          2D list (float if series is float). One element per lagtime. Each element is the list of
+                      time delays in physical units associated to that integer lagtime: alllags[i][j] = series[j+lag[i]] - series[j]
                       NOTE: len(alllags[i]) depends on i (no element is added to the list if j+lag[i] >= len(series))
-    unique_laglist:   2D list. Element [i][j] is j-th lagtime of i-th analyzed subsection
+    unique_laglist:   2D list. One element per interval to be analyzed. Element [i][j] is j-th lagtime of i-th analyzed subsection
     '''
-    if subset_intervals is None:
-        subset_intervals = [[0,len(series)]]
+    subset_intervals = ValidateAverageInterval(subset_intervals, len(series))
     alllags = []
     for lidx in range(len(lags_index)):
         if (lags_index[lidx]==0):
@@ -471,6 +524,8 @@ def FindLags(series, lags_index, subset_intervals=None, tolerance=1e-2, toleranc
         else:
             alllags.append([])
     unique_laglist = []
+    if verbose:
+        logging.debug('SharedFunctions.FindLags(): processing lags in time series ({0} time points), specialized to {1} time windows: {2}'.format(len(series), len(subset_intervals), subset_intervals))
     for tavgidx in range(len(subset_intervals)):
         cur_uniquelist = np.unique([alllags[i][j] for i in range(len(lags_index)) 
                                     for j in range(subset_intervals[tavgidx][0], min(subset_intervals[tavgidx][1], len(alllags[i])))])
