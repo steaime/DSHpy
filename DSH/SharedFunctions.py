@@ -617,6 +617,6 @@ def IntLogSpace_GetBestPPD(num_points, max_value, first_point=1):
     assert max_value*first_point>0,    'First and last values in log-spacing series must have the same sign'
     
     guess_value = max(1, np.floor(num_points * 1.0 / (np.log10(max_value * 1.0 / first_point))))
-    while guess_value > 1 and IntLogSpace(num_points, guess_value, first_point)[-1] > max_value:
-        guess_value = guess_value - 1
+    while IntLogSpace(num_points, guess_value, first_point)[-1] > max_value:
+        guess_value = guess_value + 1
     return guess_value
