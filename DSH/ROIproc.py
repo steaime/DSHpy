@@ -375,20 +375,29 @@ def LoadImageTimes(img_times_source, usecols=0, skiprows=1, root_folder=None, de
     '''
     return iof.LoadImageTimes(img_times_source, usecols=usecols, skiprows=skiprows, root_folder=root_folder, return_unique=return_unique)
     
-def AverageG2M1(cI_file, avg_interval=None, save_fname=None, save_prefix='g2m1', cut_prefix_len=2, delimiter='\t', comment='#', save_stderr=False, sharp_bound=False):
+def AverageG2M1(cI_file, avg_interval=None, save_fname=None, save_prefix='g2m1', cut_prefix_len=2, delimiter='\t', comment='#', save_stderr=False, sharp_bound=False, lag_tolerance=1e-2, lag_tolerance_isrelative=True):
     cur_cI, cur_times, cur_lagidx_list = iof.ReadCIfile(cI_file)
     int_bounds = sf.ValidateAverageInterval(avg_interval, num_datapoints=cur_cI.shape[0])
     
+    g2m1_avg = AverageCorrTimetrace(cur_cI, cur_times, cur_lagidx_list, avg_interval, return_stderr=True, sharp_bound=sharp_bound, lag_tolerance=lag_tolerance, lag_tolerance_isrelative=lag_tolerance_isrelative)
+    g2m1, g2m1_lags = g2m1_avg[0], g2m1_avg[1]
+    
+    if sharp_bound:
+        int_suffix = '*'
+    else:
+        int_suffix = ''
+    
     if save_stderr:
-        g2m1, g2m1_lags, g2m1_err = AverageCorrTimetrace(cur_cI, cur_times, cur_lagidx_list, avg_interval, return_stderr=True, sharp_bound=sharp_bound)
-        str_hdr_g = str(delimiter).join(['dt'+delimiter+'avg_t{0:.2f}'.format(cur_times[int((int_bounds[tavgidx][0]+int_bounds[tavgidx][1])/2)])+delimiter+'err_t{0:.2f}'.format(cur_times[tavgidx*avg_interval]) for tavgidx in range(g2m1.shape[0])])
+        g2m1_err = g2m1_avg[2]
+        str_hdr_g = str(delimiter).join(['dt'+delimiter+'t{0:.2f}[{1}:{2}]'.format(cur_times[int((int_bounds[tavgidx][0]+int_bounds[tavgidx][1])/2)], int_bounds[tavgidx][0], int_bounds[tavgidx][1])+int_suffix+'_avg'+
+                                              delimiter+'t{0:.2f}[{1}:{2}]'.format(cur_times[int((int_bounds[tavgidx][0]+int_bounds[tavgidx][1])/2)], int_bounds[tavgidx][0], int_bounds[tavgidx][1])+int_suffix+'_err'
+                                         for tavgidx in range(g2m1.shape[0])])
         g2m1_out = np.empty((g2m1.shape[1], 3*g2m1.shape[0]), dtype=float)
         g2m1_out[:,0::3] = g2m1_lags.T
         g2m1_out[:,1::3] = g2m1.T
         g2m1_out[:,2::3] = g2m1_err.T
     else:
-        g2m1, g2m1_lags = AverageCorrTimetrace(cur_cI, cur_times, cur_lagidx_list, avg_interval, return_stderr=False, sharp_bound=sharp_bound)
-        str_hdr_g = str(delimiter).join(['dt'+delimiter+'t{0:.2f}'.format(cur_times[int((int_bounds[tavgidx][0]+int_bounds[tavgidx][1])/2)]) for tavgidx in range(g2m1.shape[0])])
+        str_hdr_g = str(delimiter).join(['dt'+delimiter+'t{0:.2f}[{1}:{2}]'.format(cur_times[int((int_bounds[tavgidx][0]+int_bounds[tavgidx][1])/2)], int_bounds[tavgidx][0], int_bounds[tavgidx][1])+int_suffix for tavgidx in range(g2m1.shape[0])])
         g2m1_out = np.empty((g2m1.shape[1], 2*g2m1.shape[0]), dtype=float)
         g2m1_out[:,0::2] = g2m1_lags.T
         g2m1_out[:,1::2] = g2m1.T
@@ -399,7 +408,7 @@ def AverageG2M1(cI_file, avg_interval=None, save_fname=None, save_prefix='g2m1',
     np.savetxt(os.path.join(os.path.dirname(cI_file), save_fname), 
            g2m1_out, header=str_hdr_g, delimiter=delimiter, comments=comment)
 
-def AverageCorrTimetrace(CorrData, ImageTimes, Lagtimes_idxlist, avg_interval=None, return_stderr=False, sharp_bound=False, verbose=0):
+def AverageCorrTimetrace(CorrData, ImageTimes, Lagtimes_idxlist, avg_interval=None, return_stderr=False, sharp_bound=False, lag_tolerance=1e-2, lag_tolerance_isrelative=True, verbose=0):
     '''
     Average correlation timetraces
     
@@ -419,6 +428,9 @@ def AverageCorrTimetrace(CorrData, ImageTimes, Lagtimes_idxlist, avg_interval=No
                  if False, use interval bounds to associate any reference time to the corresponding interval, 
                            but average on all time lags, including those for which ref_time + time_lag >= max_idx
                  if True, for each reference time, restrict average such that both correlated timepoints are in the specified interval
+    - lag_tolerance : average together time lags closer than lag_tolerance
+    - lag_tolerance_isrelative : if False, time lags lag[i] and lag[j] will be averaged together if |lag[i] - lag[j]| < lag_tolerance
+                                 if True, the criterion will be that |lag[i] - lag[j]| < lag_tolerance * |lag[i] + lag[j]| / 2
     
     Returns
     -------
@@ -429,7 +441,7 @@ def AverageCorrTimetrace(CorrData, ImageTimes, Lagtimes_idxlist, avg_interval=No
     '''
     int_bounds = sf.ValidateAverageInterval(avg_interval, num_datapoints=CorrData.shape[0])
             
-    g2m1_alllags, g2m1_laglist = sf.FindLags(series=ImageTimes, lags_index=Lagtimes_idxlist, subset_intervals=int_bounds, verbose=verbose)
+    g2m1_alllags, g2m1_laglist = sf.FindLags(series=ImageTimes, lags_index=Lagtimes_idxlist, subset_intervals=int_bounds, tolerance=lag_tolerance, tolerance_isrelative=lag_tolerance_isrelative, verbose=verbose)
     g2m1 = np.zeros((len(int_bounds), np.max([len(l) for l in g2m1_laglist])), dtype=float)
     g2m1_lags = np.nan * np.ones_like(g2m1, dtype=float)
     g2m1_avgnum = np.zeros_like(g2m1, dtype=int)
@@ -1576,12 +1588,12 @@ class ROIproc():
             self.AverageG2M1(saveFolder, avg_interval=g2m1_averageN, save_stderr=g2m1_reterr)
         fout.close()
             
-    def AverageG2M1(self, folder_path, avg_interval=None, search_prefix=['cI_','cIcr_','dx_','dy_'], save_prefix=['g2m1','g2m1cr','avgdx','avgdy'], save_stderr=False, sharp_bound=False):
+    def AverageG2M1(self, folder_path, avg_interval=None, search_prefix=['cI_','cIcr_','dx_','dy_'], save_prefix=['g2m1','g2m1cr','avgdx','avgdy'], save_stderr=False, sharp_bound=False, lag_tolerance=1e-2, lag_tolerance_isrelative=True):
         for i in range(len(search_prefix)):
             tres_fnames = sf.FindFileNames(folder_path, Prefix=search_prefix[i], Ext='.dat')
             for cur_f in tres_fnames:
                 AverageG2M1(os.path.join(folder_path, cur_f), avg_interval=avg_interval, save_prefix=save_prefix[i], 
-                            cut_prefix_len=len(search_prefix[i])-1, delimiter=self.txt_delim, comment=self.txt_comm, save_stderr=save_stderr, sharp_bound=sharp_bound)
+                            cut_prefix_len=len(search_prefix[i])-1, delimiter=self.txt_delim, comment=self.txt_comm, save_stderr=save_stderr, sharp_bound=sharp_bound, lag_tolerance=lag_tolerance, lag_tolerance_isrelative=lag_tolerance_isrelative)
             
     def ExportROIs(self, outFolder):
         """
