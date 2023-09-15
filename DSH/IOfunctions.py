@@ -32,9 +32,15 @@ def LoadResFile(fname, readHeader=True, isolateFirst=0, delimiter=',', comments=
         header = f.readline()[len(comments):]
         hdr_list = header.strip().split(delimiter)
     if missing_values is None:
-        res_arr = np.loadtxt(fname, comments=comments, delimiter=delimiter)
+        if (readHeader):
+            res_arr = np.loadtxt(fname, comments=comments, delimiter=delimiter, skiprows=1)
+        else:
+            res_arr = np.loadtxt(fname, comments=comments, delimiter=delimiter)
     else:
-        res_arr = np.genfromtxt(fname, comments=comments, delimiter=delimiter, skip_header=1, missing_values=missing_values, filling_values=np.nan)
+        if (readHeader):
+            res_arr = np.genfromtxt(fname, comments=comments, delimiter=delimiter, skip_header=1, missing_values=missing_values, filling_values=np.nan)
+        else:
+            res_arr = np.genfromtxt(fname, comments=comments, delimiter=delimiter, missing_values=missing_values, filling_values=np.nan)
     if (isolateFirst>0):
         firstcol = np.squeeze(res_arr[:,:isolateFirst])
         res_arr = np.squeeze(res_arr[:,isolateFirst:])
