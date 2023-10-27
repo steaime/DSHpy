@@ -1464,7 +1464,7 @@ class ROIproc():
                         # d0 normalization
                         cI[:,:-DLS_lags[lidx],lidx] = np.divide(cI[:,:-DLS_lags[lidx],lidx], 0.5 * np.add(cI[:,:-DLS_lags[lidx],0], cI[:,DLS_lags[lidx]:,0]))
                         
-                        if (lidx % log_period == 0 || lidx == DLS_lagnum-1):
+                        if (lidx % log_period == 0 or lidx == DLS_lagnum-1):
                             sf.LogWrite('Lagtime {0}/{1} (d{2}) completed'.format(lidx, DLS_lagnum-1, DLS_lags[lidx]), 
                                         fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
 
@@ -1558,7 +1558,7 @@ class ROIproc():
                                             cIcr[ridx,ref_tidx,cur_lagidx[lidx]] = corr_peak * 2. / (all_d0[ridx, DLS_reftimes[ref_tidx]] + all_d0[ridx, cur_tidx2])
                                             dxdy[ridx,ref_tidx,cur_lagidx[lidx]] = (xp, yp)
                                         
-                        if (ref_tidx % log_period == 0 || ref_tidx == len(DLS_reftimes)-1):
+                        if (ref_tidx % log_period == 0 or ref_tidx == len(DLS_reftimes)-1):
                             sf.LogWrite('Reference time {0}/{1} (tref={2}) completed'.format(ref_tidx+1, len(DLS_reftimes), DLS_reftimes[ref_tidx]), 
                                         fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
 
