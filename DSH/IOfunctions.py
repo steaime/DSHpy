@@ -10,21 +10,21 @@ def LoadResFile(fname, readHeader=True, isolateFirst=0, delimiter=',', comments=
     
     Parameters
     ----------
-    fname :         full path of the CI file to read
-                    a CI file may have:
-                    - (time_colidx+1) initial columns. The following ones are data columns
-                    - a one-line header, starting with comments character
-                    - 
+    fname :         full path of the ASCII file to read
+                    a file typically has:
+                    - (time_colidx+1) initial columns, that will be separated from data columns.
+                    - a one-line header, which can be read separately
     readHeader :    If True, read separately the first line and return it as a header (list of str)
+                    Note: no header will be returned for the first isolated columns. Header will have as many entries as data columns
     isolateFirst :  If N>0, separate the first N columns and return them as either a 1D array (if N==1) or a 2D array
     delimiter :     Column separator
     comments :      Character introducing a comment (or header) line
-    missing_values :None or string: if not none, matrix cells with value equal to emptycell will result in np.nan
+    missing_values :None or list of strings: if not none, matrix cells with value equal to one of  will result in np.nan
                 
     Returns
     -------
     res_arr :      2D float array.
-    hdr_list :     list of str with header entries. Only returned if readHeader==True
+    hdr_list :     list of str with header entries, one per data column. Only returned if readHeader==True
     isolateFirst : 1D or 2D array containing first N columns. Only returned if isolateFirst>0
     """
     if (readHeader):

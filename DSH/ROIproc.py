@@ -887,6 +887,7 @@ class ROIproc():
     def _initConstants(self):
         #Constants
         self.MaxSafeAvgIntensity = 40
+        self.LoopMaxInfoN = 100
         self.dt_tolerance = 1e-2
         self.dt_tolerance_isrelative = True
         self.DebugMode = False
@@ -1320,6 +1321,7 @@ class ROIproc():
         g2m1_averageN :         int or None. If None, average correlation timetraces on the whole time window to obtain one g2-1 curve per ROI
                                 if N>0, average correlation timetraces on windows of N datapoints, 
                                 to obtain (self.NumTimes() / N) g2-1 curves per ROI
+        g2m1_reterr :           bool. True to return standard deviation of correlation curves averaged to produce g2-1
         """
         
         sf.CheckCreateFolder(saveFolder)
@@ -1435,6 +1437,7 @@ class ROIproc():
         sf.LogWrite('SLS analysis completed. Now doing DLS ({0} exposure times, {1} time points, {2} lagtimes)'.format(self.NumExpTimes(), len(DLS_reftimes), DLS_lagnum), 
                     fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
         
+        log_period = 1
         for e in range(self.NumExpTimes()):
             readrange = self.MIinput.Validate_zRange([e, -1, self.NumExpTimes()])
             idx_list = np.arange(*readrange, dtype=int)
@@ -1446,6 +1449,10 @@ class ROIproc():
                 cI = np.nan * np.ones((ISQavg.shape[1], ISQavg.shape[0], DLS_lagnum), dtype=float)
                 cI[:,:,0] = np.subtract(np.divide(ISQavg, np.square(ROIavgs_allExp[:,e,:])), 1).T
                 sf.LogWrite('Contrast (d0) processed', fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
+                if (self.LoopMaxInfoN < DLS_lagnum):
+                    log_period = int(math.ceil(DLS_lagnum*1.0/self.LoopMaxInfoN))
+                    sf.LogWrite('Number of lagtimes ({0}) exceeding {1}: logging every {2}-th lagtime processed'.format(DLS_lagnum, self.LoopMaxInfoN, log_period), 
+                                fLog=fout, logLevel=logging.DEBUG, add_prefix='\n'+sf.TimeStr()+' | DEBUG: ')
                 for lidx in range(1, DLS_lagnum):
                     if (DLS_lags[lidx]<ISQavg.shape[0]):
 
@@ -1456,8 +1463,10 @@ class ROIproc():
                                                                                                    ROIavgs_allExp[DLS_lags[lidx]:,e,:])), 1).T
                         # d0 normalization
                         cI[:,:-DLS_lags[lidx],lidx] = np.divide(cI[:,:-DLS_lags[lidx],lidx], 0.5 * np.add(cI[:,:-DLS_lags[lidx],0], cI[:,DLS_lags[lidx]:,0]))
-                        sf.LogWrite('Lagtime {0}/{1} (d{2}) completed'.format(lidx, DLS_lagnum-1, DLS_lags[lidx]), 
-                                    fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
+                        
+                        if (lidx % log_period == 0 || lidx == DLS_lagnum-1):
+                            sf.LogWrite('Lagtime {0}/{1} (d{2}) completed'.format(lidx, DLS_lagnum-1, DLS_lags[lidx]), 
+                                        fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
 
 
             else:
@@ -1468,6 +1477,11 @@ class ROIproc():
                     dxdy = np.nan * np.ones((cI.shape[0], cI.shape[1], cI.shape[2], 2), dtype=float)
                 sf.LogWrite('Computing cI with custom-defined set of reference time and/or lag times: result has shape {0} ({1} ROIs, {2} reference times, {3} lag times)'.format(cI.shape, 
                                 self.CountROIs(), len(DLS_reftimes), DLS_lagnum), fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
+
+                if (self.LoopMaxInfoN < len(DLS_reftimes)):
+                    log_period = int(math.ceil(len(DLS_reftimes)*1.0/self.LoopMaxInfoN))
+                    sf.LogWrite('Number of reference times ({0}) exceeding {1}: logging every {2}-th reference time processed'.format(len(DLS_reftimes), self.LoopMaxInfoN, log_period), 
+                                fLog=fout, logLevel=logging.DEBUG, add_prefix='\n'+sf.TimeStr()+' | DEBUG: ')
 
                 # compute all d0s (even if it is not in the list of lagtimes)
                 all_d0 = np.subtract(np.divide(ISQavg, np.square(ROIavgs_allExp[:,e,:])), 1).T
@@ -1544,12 +1558,13 @@ class ROIproc():
                                             cIcr[ridx,ref_tidx,cur_lagidx[lidx]] = corr_peak * 2. / (all_d0[ridx, DLS_reftimes[ref_tidx]] + all_d0[ridx, cur_tidx2])
                                             dxdy[ridx,ref_tidx,cur_lagidx[lidx]] = (xp, yp)
                                         
-                        sf.LogWrite('Reference time {0}/{1} (tref={2}) completed'.format(ref_tidx, len(DLS_reftimes), DLS_reftimes[ref_tidx]), 
-                                    fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
+                        if (ref_tidx % log_period == 0 || ref_tidx == len(DLS_reftimes)-1):
+                            sf.LogWrite('Reference time {0}/{1} (tref={2}) completed'.format(ref_tidx+1, len(DLS_reftimes), DLS_reftimes[ref_tidx]), 
+                                        fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
 
                     else:
 
-                        sf.LogWrite('Reference time {0}/{1} (tref={2}) empty'.format(ref_tidx, len(DLS_reftimes), DLS_reftimes[ref_tidx]), 
+                        sf.LogWrite('Reference time {0}/{1} (tref={2}) empty'.format(ref_tidx+1, len(DLS_reftimes), DLS_reftimes[ref_tidx]), 
                                     fLog=fout, logLevel=logging.WARN, add_prefix='\n'+sf.TimeStr()+' | WARN: ')
 
 
