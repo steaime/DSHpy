@@ -1204,6 +1204,53 @@ class ROIproc():
                 AvgRes, NormList = ROIAverage(cur_stack, self.ROI_masks_crop, boolMask=True, norm=self.ROI_maskSizes, BoundingBoxes=use_bb)
             
         return AvgRes
+    
+    def CalcCorrelation(self, t1, t2, d0corr=True):
+        '''
+        Calculate sparse correlations between times t1 and t2
+        
+        Parameters
+        ----------
+        - t1, t2: int or list of int: image times to be correlated, in image units
+                  if t1 and t2 are int, output is 1D
+                  if one between t1 and t2 is int or 1-element list, it will be replicated to match the legth of the other list
+                  if both t1 and t2 are lists (they should be equal size, or either one should have just one element),
+                  correlation will be computed between each t1[i], t2[i] couple.
+        - d0corr: bool. True to apply d0 ('contrast') normalization
+                  If False, result will be <I1*I2>/(<I1><I2>)
+                  If True, result will be further normalized by the average contrast:
+                        [(<I1*I1>/(<I1><I1)) + (<I2*I2>/(<I2><I2))] / 2
+        
+        Returns
+        -------
+        - corr: 1D or 2D array. 
+                  If multiple times are given output is 2D: corr[i,j] is the correlation of i-th couple (t1[i], t2[i]) on j-th ROI
+                  If a single t1 and t2 is given, output is 1D: corr[i] is the correlation between the two times computed on i-th ROI
+        '''
+        if not isinstance(t1, collections.abc.Iterable):
+            t1 = [t1]
+        if not isinstance(t2, collections.abc.Iterable):
+            t2 = [t2]
+        if len(t1) != len(t2):
+            if len(t1)==1:
+                t1 = t1*len(t2)
+                logging.info('ROIproc.CalcCorrelation(): single first time ({0}) replicated {1} times to match length of second time ({2}).'.format(t1[0], len(t1), len(t2)))
+            elif len(t2)==1:
+                t2 = t2*len(t1)
+                logging.info('ROIproc.CalcCorrelation(): single second time ({0}) replicated {1} times to match length of second time ({2}).'.format(t2[0], len(t2), len(t1)))
+            else:
+                logging.warning('ROIproc.CalcCorrelation(): number of first times ({0}) must match that of second times ({1}). Longer list will be cropped'.format(len(t1), len(t2)))
+                common_len = min(len(t1), len(t2))
+                t1 = t1[:common_len]
+                t2 = t2[:common_len]
+        avg_t1 = self.ROIaverageIntensity(t1)
+        avg_t2 = self.ROIaverageIntensity(t2)
+        corr = np.divide(self.ROIaverageProduct(t1, t2), np.multiply(avg_t1, avg_t2)) - 1
+        if d0corr:
+            contrast_t1 = np.divide(self.ROIaverageProduct(t1, t1), np.square(avg_t1)) - 1
+            contrast_t2 = np.divide(self.ROIaverageProduct(t2, t2), np.square(avg_t2)) - 1
+            corr = 2 * corr / (contrast_t1 + contrast_t2)
+        return np.squeeze(corr)
             
     def FindBestExptimes(self, AverageIntensities):
         '''
@@ -1371,7 +1418,7 @@ class ROIproc():
                 if cur_valid_ROI is None:
                     ValidROI[ridx] = False
                     sf.LogWrite('ROIproc.doDLS() error: ROI {0} (bounding box: {1}) incompatible with search range {2} '.format(ridx, self.ROIboundingBoxes[ridx], search_range) +\
-                                'in image of cropped shape {0} (Original shape: {1}, bounding box margin: {2})'.format(self.GetCroppedShape(), self.MIinput.ImageShape(), self.BoundingBoxMargin), 
+                                'in image of cropped shape {0} (Original shape: {1}, bounding box margin: {2}). Did you forget to call ROIproc.UpdateBBmargin()?'.format(self.GetCroppedShape(), self.MIinput.ImageShape(), self.BoundingBoxMargin), 
                                 fLog=fout, logLevel=logging.ERROR, add_prefix='\n'+sf.TimeStr()+' | ERROR: ')
                     search_ROIs.append(self.ROIboundingBoxes[ridx])
                 else:
