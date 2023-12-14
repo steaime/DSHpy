@@ -181,6 +181,17 @@ def CheckCreateFolder(folderPath):
     
 def IsIterable(var):
     return isinstance(var, collections.abc.Iterable)
+
+def IterableShape(var):
+    if isinstance(var, np.ndarray):
+        return np.prod(var.shape)
+    else:
+        res = 1
+        cur_slice = var
+        while(IsIterable(cur_slice)):
+            res *= len(cur_slice)
+            cur_slice = cur_slice[0]
+        return res
     
 def UpdateDict(dict_orig, dict_update):
     if dict_orig is None:

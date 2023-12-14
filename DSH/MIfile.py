@@ -155,16 +155,16 @@ def ValidateROI(ROI, ImageShape, replaceNone=False):
     """
     if (ROI is None):
         if replaceNone:
-            return [0, 0, ImageShape[1], ImageShape[0]]            
+            return [0, 0, int(ImageShape[1]), int(ImageShape[0])]
         else:
             return None
     else:
         assert (ROI[0] >= 0 and ROI[0] < ImageShape[1]), 'Top left coordinate (' + str(ROI[0]) + ') must be in the range [0,' + str(ImageShape[1]-1) + ')'
         assert (ROI[1] >= 0 and ROI[1] < ImageShape[0]), 'Top left coordinate (' + str(ROI[1]) + ') must be in the range [0,' + str(ImageShape[0]-1) + ')'
         if (ROI[2] < 0):
-            ROI[2] = ImageShape[1] - ROI[0]
+            ROI[2] = int(ImageShape[1] - ROI[0])
         if (ROI[3] < 0):
-            ROI[3] = ImageShape[0] - ROI[1]
+            ROI[3] = int(ImageShape[0] - ROI[1])
         assert (ROI[2] + ROI[0] <= ImageShape[1]), 'ROI ' + str(ROI) + ' incompatible with image shape ' + str(ImageShape)
         assert (ROI[3] + ROI[1] <= ImageShape[0]), 'ROI ' + str(ROI) + ' incompatible with image shape ' + str(ImageShape)
         return ROI
@@ -388,12 +388,11 @@ class MIfile():
         -------
         3D numpy array with shape [num_images , image_height (row number) , image_width (column number)]
         """
-        imgs_num = int(imgs_num)
         start_idx = int(start_idx)
         if (imgs_num < 0):
             imgs_num = self.ImgNumber - start_idx
         res_arr = self._read_pixels(px_num=imgs_num * self.PxPerImg, seek_pos=self._get_offset(img_idx=start_idx))
-        return res_arr.reshape(imgs_num, self.ImgHeight, self.ImgWidth)
+        return res_arr.reshape(int(imgs_num), self.ImgHeight, self.ImgWidth)
     
     def zAverage(self, zRange=None, cropROI=None, memSave=False):
         """Calculate z average from MIfile stack
@@ -502,18 +501,14 @@ class MIfile():
     def WriteData(self, data_arr, closeAfter=True, appendMode=False):
         """Write data to file
         """
-        self.OpenForWriting(appendMode=appendMode)        
-        if (sys.getsizeof(data_arr) > self.MaxBufferSize):
-            if (sys.getsizeof(data_arr[0]) > self.MaxBufferSize):
-                raise IOError('MIfile.WriteData is trying to write a very large array. Enhanced memory control is still under development')
-            else:
-                n_elem_xsec = len(data_arr[0].flatten())
-                xsec_per_buffer = int(max(1, self.MaxBufferSize//n_elem_xsec))
-                logging.debug('MIfile.WriteData: writing large array ({0}x{1} elements of type {2}) in bunches of {3} "x-sections", limited by MaxBufferSize={4}'.format(len(data_arr), n_elem_xsec, type(data_arr[0].flatten()[0]), xsec_per_buffer, self.MaxBufferSize))
-                for i in range(0, len(data_arr), xsec_per_buffer):
-                    j = min(i+xsec_per_buffer, len(data_arr))
-                    self.WriteFileHandle.write(self._imgs_to_bytes(data_arr[i:j], self.PixelFormat, do_flatten=True))
-                    logging.debug('MIfile.WriteData: x-sections {0}-{1} out of {2} written to file'.format(i, j, len(data_arr)))
+        self.OpenForWriting(appendMode=appendMode)
+        nelems = sf.IterableShape(data_arr)
+        if (nelems > self.MaxBufferSize):
+            logging.info('MIfile.WriteData: writing large array ({0} elements) in bunches of {1}'.format(nelems, self.MaxBufferSize))
+            for i in range(0, nelems, np.uint64(self.MaxBufferSize)):
+                j = np.uint64(min(i+self.MaxBufferSize, nelems))
+                self.WriteFileHandle.write(self._imgs_to_bytes(data_arr.flat[i:j], self.PixelFormat, do_flatten=True))
+                logging.debug('MIfile.WriteData: x-sections {0}-{1} out of {2} written to file'.format(i, j, nelems))
         else:
             self.WriteFileHandle.write(self._imgs_to_bytes(data_arr, self.PixelFormat, do_flatten=True))
         if isinstance(data_arr, np.ndarray):
@@ -521,17 +516,19 @@ class MIfile():
         else:
             logging.debug('non-ndarray of size ' + str(sys.getsizeof(data_arr)) + ' successfully written to MIfile ' + str(self.FileName))
         if (closeAfter):
-            self.Close()
+            self.Close(write=True, read=False)
             logging.debug('MIfile ' + str(self.FileName) + ' closing after writing')
         else:
             self.WriteFileHandle.flush()
             logging.debug('MIfile ' + str(self.FileName) + ' flushing without closing after writing')
 
     def Close(self, read=True, write=True):
-        if (read and self.WriteFileHandle is not None):
+        if (write and self.WriteFileHandle is not None):
+            logging.debug('MIfile closed writing file handle')
             self.WriteFileHandle.close()
             self.WriteFileHandle = None
-        if (write and self.ReadFileHandle is not None):
+        if (read and self.ReadFileHandle is not None):
+            logging.debug('MIfile closed reading file handle')
             self.ReadFileHandle.close()
             self.ReadFileHandle = None
     
