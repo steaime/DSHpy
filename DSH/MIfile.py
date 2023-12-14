@@ -505,12 +505,15 @@ class MIfile():
         self.OpenForWriting(appendMode=appendMode)        
         if (sys.getsizeof(data_arr) > self.MaxBufferSize):
             if (sys.getsizeof(data_arr[0]) > self.MaxBufferSize):
-                raise IOError('WriteMIfile is trying to write a very large array. Enhanced memory control is still under development')
+                raise IOError('MIfile.WriteData is trying to write a very large array. Enhanced memory control is still under development')
             else:
                 n_elem_xsec = len(data_arr[0].flatten())
-                xsec_per_buffer = max(1, self.MaxBufferSize//n_elem_xsec)
+                xsec_per_buffer = int(max(1, self.MaxBufferSize//n_elem_xsec))
+                logging.debug('MIfile.WriteData: writing large array ({0}x{1} elements of type {2}) in bunches of {3} "x-sections", limited by MaxBufferSize={4}'.format(len(data_arr), n_elem_xsec, type(data_arr[0].flatten()[0]), xsec_per_buffer, self.MaxBufferSize))
                 for i in range(0, len(data_arr), xsec_per_buffer):
-                    self.WriteFileHandle.write(self._imgs_to_bytes(data_arr[i:min(i+xsec_per_buffer, len(data_arr))], self.PixelFormat, do_flatten=True))
+                    j = min(i+xsec_per_buffer, len(data_arr))
+                    self.WriteFileHandle.write(self._imgs_to_bytes(data_arr[i:j], self.PixelFormat, do_flatten=True))
+                    logging.debug('MIfile.WriteData: x-sections {0}-{1} out of {2} written to file'.format(i, j, len(data_arr)))
         else:
             self.WriteFileHandle.write(self._imgs_to_bytes(data_arr, self.PixelFormat, do_flatten=True))
         if isinstance(data_arr, np.ndarray):
