@@ -39,8 +39,8 @@ if ConfigFile is not None:
     logging.info('Loading analysis parameters from file ' + str(ConfigFile))
     SALS_analyzer = LS.LoadFromConfig(ConfigFile, outputSubfolder=None, debugMode=debugMode)
     logging.info('Analysis ended')
+    shutil.copyfile(log_fname, os.path.join(SALS_analyzer.LastSaveFolder, log_fname))
 else:
     logging.error(strerr)
     print(strerr)
 
-shutil.copyfile(log_fname, os.path.join(SALS_analyzer.LastSaveFolder, log_fname))

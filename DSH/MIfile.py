@@ -240,6 +240,9 @@ def WriteBinary(fname, data, data_format, hdr_list=None):
     data = data.flatten().astype(_data_types[data_format])
     fwrite.write(struct.pack(('%s' + data_format) % len(data), *data))
     fwrite.close()
+
+def GetMetadataKeys():
+    return ['filename', 'hdr_len', 'gap_bytes', 'shape', 'px_format', 'endian', 'fps', 'px_size']
     
 class MIfile():
     """ Class to read/write multi image file (MIfile) """
@@ -634,7 +637,6 @@ class MIfile():
         self.PixelDataType = _data_types[self.PixelFormat]
         self.FPS = self.MetaData.Get('MIfile', 'fps', 1.0, float)
         self.PixelSize = self.MetaData.Get('MIfile', 'px_size', 1.0, float)
-            
 
     def _get_offset(self, img_idx=0, row_idx=0, col_idx=0):
         """Get byte offset for a given pixel in a given image
