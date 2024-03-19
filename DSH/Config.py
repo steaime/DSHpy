@@ -224,8 +224,19 @@ class Config():
     def CountSections(self):
         return len(self.config.sections())
     
+    def GetSections(self):
+        return self.config.sections()
+    
     def CountKeys(self):
         return np.sum([len(self.config._sections[s].keys()) for s in self.config.sections()])
+    
+    def GetKeys(self, Section=None):
+        if Section is None:
+            return [self.config._sections[s].keys() for s in self.config.sections()]
+        elif self.HasSection(Section):
+            return self.config._sections[Section].keys()
+        else:
+            return []
 
     def RenameSection(self, SectionTo, SectionFrom=None):
         if SectionFrom is not None:

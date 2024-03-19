@@ -8,6 +8,7 @@ from DSH import MIfile as MI
 from DSH import MIstack as MIs
 from DSH import SharedFunctions as sf
 
+
 def LoadFromConfig(ConfigFile, outFolder=None):
     """Loads a CorrMaps object from a config file like the one exported with CorrMaps.ExportConfiguration()
     
@@ -149,7 +150,7 @@ class CorrMaps():
                                                },
                         'kernel' : self.Kernel.ToDict(),
                        }, os.path.join(self.outFolder, 'CorrMapsConfig.ini'))
-
+        
     def Compute(self, silent=True, return_maps=False):
         """Computes correlation maps
         

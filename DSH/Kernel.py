@@ -1,4 +1,5 @@
 import numpy as np
+from scipy import signal
 from DSH import SharedFunctions as sf
 
 class Kernel():
@@ -85,9 +86,10 @@ class Kernel():
 
         Parameters
         ----------
-        shape       : tuple of integers, shape of the output kernel matrix.
+        shape       : integer or tuple of integers, shape of the output kernel matrix.
                       entries must be odd integers
-                      number of entries must match dimensions (n_dim)
+                      if tuple, number of entries must match dimensions (n_dim)
+                      if single integer, a tuple of size n_dim with repeated value will be generated
         kernel_type : string, type of kernel. Supported types: ['Gauss', 'flat']
         params      : dict with type-dependent parameters 
         n_dim       : dimensions. Currently only n_dim=2 is supported
@@ -158,5 +160,20 @@ class Kernel():
         # Whatever kernel we are using, let's normalize so that weights has unitary integral
         kerND = np.true_divide(kerND, np.sum(kerND))
         return kerND
-
+            
+    def ConvolveImage(self, imgInput):
+        """Convolves an image with the kernel
         
+        Parameters
+        ----------
+        imgInput : 2D array to be convolved
+
+        Returns
+        -------
+        a 2D array with the convolution result
+        """
+
+        imgRes = signal.convolve2d(imgInput, self.ToMatrix(), mode=self.convolveMode, **self.convolve_kwargs)
+        if (self.convolveMode=='same'):
+            imgRes = np.true_divide(imgRes, signal.convolve2d(np.ones_like(imgInput), self.ToMatrix(), mode=self.convolveMode, **self.convolve_kwargs))
+        return imgRes

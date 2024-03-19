@@ -758,11 +758,15 @@ def LoadFromConfig(ConfigParams, runAnalysis=True, outputSubfolder='reproc'):
     if config.HasOption('MIfile', 'metadata_file'):
         miin_metadata = sf.GetAbsolutePath(config.Get('MIfile', 'metadata_file', None, str), root_path=folder_root)
     else:
+        MIfile_keys = config.GetKeys('MIfile')
+        logging.info('ROIproc.LoadFromConfig no "metadata_file" key found in section [MIfile] of config file: loading metadata directly from config file section (keys: {0}, expected keys: {1})'.format(MIfile_keys, MI.GetMetadataKeys()))
+        if 'shape' not in MIfile_keys:
+            logging.warn('ROIproc.LoadFromConfig no "shape" key in [MIfile] section of config file: resulting MIfile object will likely be corrupted')
         miin_metadata = config.ToDict(section='MIfile')
     miin_fname = config.Get('MIfile', 'filename', None, str)
     if config.HasOption('MIfile', 'is_stack'):
         miin_isstack = config.Get('MIfile', 'is_stack', False, bool)
-        if miin_isstack != (type(miin_fname) in [str]):
+        if miin_isstack and (type(miin_fname) in [str]):
             logging.warn('ROIproc.LoadFromConfig MIfile.is_stack={0} potentially inconsistent with MIfile.filename {1} of type {2}'.format(miin_isstack, miin_fname, type(miin_fname)))
     else:
         miin_isstack = (type(miin_fname) not in [str])
