@@ -449,10 +449,10 @@ def ValidateAverageInterval(avg_interval, num_datapoints):
     
     Parameters
     ----------
-    - avg_interval: None, int, couple interval=[min_idx, max_idx] or list of couples [interval1, ..., intervalN]. 
+    - avg_interval: None, int, single interval=[min_idx, max_idx, [step_idx=1]] or list of intervals [interval1, ..., intervalN]. 
                  if None or int<=0, result will be averaged on the entire stack
                  if int>0, resolve the average on consecutive chunks of avg_interval images each
-                 if interval=[min_idx, max_idx], average will be done in the specified interval
+                 if interval=[min_idx, max_idx, [step_idx=1]], average will be done in the specified interval
                  if [interval1, ..., intervalN], a list of intervals will be computed as above
     - num_datapoints: int. Number of datapoints
     - sharp_bound: None or bool. 
@@ -494,6 +494,8 @@ def ValidateAverageInterval(avg_interval, num_datapoints):
         int_bounds[i][1] = min(int_bounds[i][1], num_datapoints)
         if int_bounds[i][0] >= int_bounds[i][1]:
             logging.warn('SharedFunctions.ValidateAverageInterval WARNING: inconsistent {0}-th interval {1} with {2} datapoints'.format(i, int_bounds[i], num_datapoints))
+        if len(int_bounds[i]) < 3:
+            int_bounds[i].append(1)
     return int_bounds
 
 def FindLags(series, lags_index, subset_intervals=None, tolerance=1e-2, tolerance_isrelative=True, verbose=0):
@@ -504,7 +506,7 @@ def FindLags(series, lags_index, subset_intervals=None, tolerance=1e-2, toleranc
     ----------
     series:           list of time points (float), not necessarily equally spaced
     lags_index:       list of lag indexes (int, >=0). WARNING: not yet compatible with negative lag indexes
-    subset_intervals: None or list of intervals [min_idx, max_idx]. Eventually divide the analysis in intervals
+    subset_intervals: None or list of intervals [min_idx, max_idx, [step_idx=1]]. Eventually divide the analysis in intervals
                       If None, it will be set to the entire section
                 
     Returns
@@ -528,7 +530,7 @@ def FindLags(series, lags_index, subset_intervals=None, tolerance=1e-2, toleranc
         logging.debug('SharedFunctions.FindLags(): processing lags in time series ({0} time points), specialized to {1} time windows: {2}'.format(len(series), len(subset_intervals), subset_intervals))
     for tavgidx in range(len(subset_intervals)):
         cur_uniquelist = np.unique([alllags[i][j] for i in range(len(lags_index)) 
-                                    for j in range(subset_intervals[tavgidx][0], min(subset_intervals[tavgidx][1], len(alllags[i])))])
+                                    for j in range(subset_intervals[tavgidx][0], min(subset_intervals[tavgidx][1], len(alllags[i])), subset_intervals[tavgidx][2])])
         cur_coarsenedlist = [cur_uniquelist[0]]
         for lidx in range(1, len(cur_uniquelist)):
             if not IsWithinTolerance(cur_uniquelist[lidx], cur_coarsenedlist[-1],

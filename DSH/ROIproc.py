@@ -376,6 +376,10 @@ def LoadImageTimes(img_times_source, usecols=0, skiprows=1, root_folder=None, de
     return iof.LoadImageTimes(img_times_source, usecols=usecols, skiprows=skiprows, root_folder=root_folder, return_unique=return_unique)
     
 def AverageG2M1(cI_file, avg_interval=None, save_fname=None, save_prefix='g2m1', cut_prefix_len=2, delimiter='\t', comment='#', save_stderr=False, sharp_bound=False, lag_tolerance=1e-2, lag_tolerance_isrelative=True):
+    '''
+    Load cI-like file and average g2m1. 
+    '''
+    
     cur_cI, cur_times, cur_lagidx_list = iof.ReadCIfile(cI_file)
     int_bounds = sf.ValidateAverageInterval(avg_interval, num_datapoints=cur_cI.shape[0])
     
@@ -418,10 +422,10 @@ def AverageCorrTimetrace(CorrData, ImageTimes, Lagtimes_idxlist, avg_interval=No
     - ImageTimes: 1D array, float. i-th element is the physical time at which i-th image was taken
     - Lagtimes_idxlist: 1D array, int. i-th element is the lagtime, in image units
                  NOTE: they must be positive. Not yet compatible with negative time lags
-    - avg_interval: None, int, couple interval=[min_idx, max_idx] or list of couples [interval1, ..., intervalN]. 
+    - avg_interval: None, int, single interval=[min_idx, max_idx, [step_idx=1]] or list of intervals [interval1, ..., intervalN]. 
                  if None or int<=0, result will be averaged on the entire stack
                  if int>0, resolve the average on consecutive chunks of avg_interval images each
-                 if interval=[min_idx, max_idx], average will be done in the specified interval
+                 if interval=[min_idx, max_idx, [step_idx=1]], average will be done in the specified interval
                  if [interval1, ..., intervalN], a list of intervals will be computed as above
     - return_stderr: bool. If True, return standard deviation of the correlation points averaged to obtain the g2-1
     - sharp_bound: bool. 
@@ -442,6 +446,7 @@ def AverageCorrTimetrace(CorrData, ImageTimes, Lagtimes_idxlist, avg_interval=No
     int_bounds = sf.ValidateAverageInterval(avg_interval, num_datapoints=CorrData.shape[0])
             
     g2m1_alllags, g2m1_laglist = sf.FindLags(series=ImageTimes, lags_index=Lagtimes_idxlist, subset_intervals=int_bounds, tolerance=lag_tolerance, tolerance_isrelative=lag_tolerance_isrelative, verbose=verbose)
+    
     g2m1 = np.zeros((len(int_bounds), np.max([len(l) for l in g2m1_laglist])), dtype=float)
     g2m1_lags = np.nan * np.ones_like(g2m1, dtype=float)
     g2m1_avgnum = np.zeros_like(g2m1, dtype=int)
@@ -1651,7 +1656,13 @@ class ROIproc():
         fout.close()
             
     def AverageG2M1(self, folder_path, avg_interval=None, search_prefix=['cI_','cIcr_','dx_','dy_'], save_prefix=['g2m1','g2m1cr','avgdx','avgdy'], save_stderr=False, sharp_bound=False, lag_tolerance=1e-2, lag_tolerance_isrelative=True):
+        """
+        Loads cI-like files from folder and average correlations with equal time delays to obtain g2-1 curves
+        """
+        
         for i in range(len(search_prefix)):
+            if i>len(save_prefix):
+                raise ValueError('The size of save_prefix (' + str(len(save_prefix)) + ') must match that of search_prefix (' + str(len(search_prefix)) + ')')
             tres_fnames = sf.FindFileNames(folder_path, Prefix=search_prefix[i], Ext='.dat')
             for cur_f in tres_fnames:
                 AverageG2M1(os.path.join(folder_path, cur_f), avg_interval=avg_interval, save_prefix=save_prefix[i], 
