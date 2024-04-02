@@ -55,14 +55,7 @@ class CorrMaps():
         self.outFolder = outFolder
         self.lagList = lagList
         self.numLags = len(self.lagList)
-        if (imgRange is None):
-            self.imgRange = [0, -1, 1]
-        else:
-            self.imgRange = imgRange
-        if (self.imgRange[1] < 0):
-            self.imgRange[1] = self.MIinput.ImageNumber()
-        if (len(self.imgRange) < 2):
-            self.imgRange.append(1)
+        self.imgRange = sf.ValidateRange(imgRange, MaxVal=self.MIinput.ImageNumber(), MinVal=0, replaceNone=True)
         self.imgNumber = len(list(range(*self.imgRange)))
         self.CalcImageIndexes()
         self.cropROI = self.MIinput.ValidateROI(cropROI)
@@ -140,8 +133,8 @@ class CorrMaps():
                 else:
                     self.imgIdx[tidx, lidx, 1] = -1
     
-    def ExportConfiguration(self):
-        cf.ExportDict({'imgs_metadata' : self.MIinput.GetMetadata(section='MIfile'),
+    def ExportConfiguration(self, cmapcalc_params=None):
+        dict_to_exp = {'imgs_metadata' : self.MIinput.GetMetadata(section='MIfile'),
                        'corrmap_metadata' : self.outMetaData,
                        'corrmap_parameters' : {'out_folder' : self.outFolder,
                                                'lags' : self.lagList,
@@ -149,17 +142,33 @@ class CorrMaps():
                                                'crop_roi' : self.cropROI
                                                },
                         'kernel' : self.Kernel.ToDict(),
-                       }, os.path.join(self.outFolder, 'CorrMapsConfig.ini'))
+                       }
+        if cmapcalc_params is not None:
+            dict_to_exp['cmapcalc_parameters'] = cmapcalc_params
+        cf.ExportDict(dict_to_exp, os.path.join(self.outFolder, 'CorrMapsConfig.ini'))
         
-    def Compute(self, silent=True, return_maps=False):
+    def Compute(self, silent=True, return_maps=False, save_tRange=None, save_autocorr=True, trim_endNaNs=False):
         """Computes correlation maps
         
         Parameters
         ----------
-        silent : bool. If set to False, procedure will print to output every time steps it goes through. 
-                otherwise, it will run silently
+        silent      : bool. If set to False, procedure will print to output every time steps it goes through. 
+                      otherwise, it will run silently
         return_maps : bool. If set to True, procedure will return the array with correlation maps.
-                Warning: no memory check is done when this happens, so be aware of memory consumption
+                      Warning: no memory check is done when this happens, so be aware of memory consumption
+        save_tRange : range of time indexes to be saved [start_idx, end_idx, step_idx], relative to self.imgRange
+                      if specified: averaged intensity and autocorrelation will be computed for all images in self.imgRange
+                      however, only reference times in save_tRange will be used to compute correlation maps
+                      if None, self.imgRange will be used
+                      Using save_tRange instead of self.imgRange allows computing correlation maps on 'valid' image pairs,
+                      without restricting both time points to be withing the specified range
+        save_autocorr: if True, save autocorrelation (d0) map
+        trim_endNaNs: if False, all correlation maps will have the same shape, set by save_tRange (if specified) or self.imgRange
+                      and reported in the output *.ini file
+                      if True, only valid correlation points will be saved: NaN maps resulting from 
+                      missing one of the two correlated images will not be saved. In this case, the shape reported in the *.ini
+                      file will overestimate that of the saved correlation maps, which will depend on the time delay
+                      (set this to True to optimize disk space)
                 
         Returns
         -------
@@ -169,9 +178,11 @@ class CorrMaps():
         if not silent:
             start_time = time.time()
             print('Computing correlation maps:')
+        save_tRange = sf.ValidateRange(save_tRange, MaxVal=self.imgNumber, MinVal=0, replaceNone=True)
+        cmap_shape = [len(list(range(*save_tRange))), self.outputShape[1], self.outputShape[2]]
         sf.CheckCreateFolder(self.outFolder)
-        self.ExportConfiguration()
-        
+        self.ExportConfiguration(cmapcalc_params={'save_tRange': save_tRange, 'save_autocorr': save_autocorr, 'trim_endNaNs': trim_endNaNs, 'corrmap_shape': cmap_shape})
+
         if not silent:
             print('  STEP 1: Loading images and computing average intensity...')
         # This will contain image data, eventually zero-padded
@@ -201,28 +212,33 @@ class CorrMaps():
             if (self.Kernel.Padding):
                 AutoCorr[tidx] = np.true_divide(AutoCorr[tidx], ConvNorm)
             AutoCorr[tidx] = np.subtract(np.true_divide(AutoCorr[tidx], np.square(AvgIntensity[tidx])),1)
-        MI.MIfile(os.path.join(self.outFolder, 'CorrMap_d0.dat'), self.outMetaData).WriteData(AutoCorr)
+        if save_autocorr:
+            MI.MIfile(os.path.join(self.outFolder, 'CorrMap_d0.dat'), self.outMetaData).WriteData(AutoCorr)
         
         if not silent:
             print('  STEP 3: Computing correlations...')
         if return_maps:
             res_4D = [np.asarray(AutoCorr, dtype=np.float32)]
         for lidx in range(self.numLags):
+            cur_numtimes = cmap_shape[0]
+            if trim_endNaNs:
+                cur_numtimes = min(cur_numtimes, self.imgNumber-self.lagList[lidx]-save_tRange[0])
+            CorrMap = np.empty([cur_numtimes, cmap_shape[1], cmap_shape[2]])
             if not silent:
-                print('     ...lag ' + str(self.lagList[lidx]))
-            CorrMap = np.empty_like(AutoCorr)
-            for tidx in range(self.imgNumber-self.lagList[lidx]):
-                CorrMap[tidx] = signal.convolve2d(np.multiply(Intensity[self.imgIdx[tidx,lidx,0]], Intensity[self.imgIdx[tidx,lidx,1]]),\
-                                                  ker2D, mode=self.Kernel.convolveMode, **self.Kernel.convolve_kwargs)
-                if (self.Kernel.Padding):
-                    CorrMap[tidx] = np.true_divide(CorrMap[tidx], ConvNorm)
-                CorrMap[tidx] = np.true_divide(np.subtract(np.true_divide(CorrMap[tidx],\
-                                                                           np.multiply(AvgIntensity[self.imgIdx[tidx,lidx,0]],\
-                                                                                       AvgIntensity[self.imgIdx[tidx,lidx,1]])),\
-                                                            1),\
-                                                AutoCorr[tidx])
-                                                # NOTE: in principle a better normalization for CorrMap is with
-                                                #       0.5 * (AutoCorr[t] + AutoCorr[t+tau])
+                print('     ...lag ' + str(self.lagList[lidx]) + ' will have shape ' + str(CorrMap.shape))
+            for tidx in range(*save_tRange):
+                if tidx < CorrMap.shape[0]:
+                    CorrMap[tidx] = signal.convolve2d(np.multiply(Intensity[self.imgIdx[tidx,lidx,0]], Intensity[self.imgIdx[tidx,lidx,1]]),\
+                                                      ker2D, mode=self.Kernel.convolveMode, **self.Kernel.convolve_kwargs)
+                    if (self.Kernel.Padding):
+                        CorrMap[tidx] = np.true_divide(CorrMap[tidx], ConvNorm)
+                    CorrMap[tidx] = np.true_divide(np.subtract(np.true_divide(CorrMap[tidx],\
+                                                                               np.multiply(AvgIntensity[self.imgIdx[tidx,lidx,0]],\
+                                                                                           AvgIntensity[self.imgIdx[tidx,lidx,1]])),\
+                                                                1),\
+                                                    AutoCorr[tidx])
+                                                    # NOTE: in principle a better normalization for CorrMap is with
+                                                    #       0.5 * (AutoCorr[t] + AutoCorr[t+tau])
             MI.MIfile(os.path.join(self.outFolder, 'CorrMap_d' + str(self.lagList[lidx]).zfill(4) + '.dat'), self.outMetaData).WriteData(CorrMap)
             if return_maps:
                 res_4D.append(np.asarray(CorrMap, dtype=np.float32))

@@ -42,6 +42,10 @@ class Kernel():
         str_res = '<Kernel [' + str(self.Dimensions) + 'D ' + str(self.Type) + ']'
         if self.Shape is not None:
             str_res += ', ' + 'x'.join(map(str, self.Shape))
+        if self.Padding:
+            str_res += ', pad'
+        else:
+            str_res += ', no pad'
         str_res += '>'
         return str_res
     
@@ -51,6 +55,10 @@ class Kernel():
             str_res += ', ' + 'x'.join(map(str, self.Shape))
             if self.Type=='Gauss':
                 str_res += ', s=(' + ';'.join(map(str, self.KernelParams.sigma)) + ')'
+        if self.Padding:
+            str_res += ', pad'
+        else:
+            str_res += ', no pad'
         str_res += '>'
         return str_res
     
@@ -177,3 +185,6 @@ class Kernel():
         if (self.convolveMode=='same'):
             imgRes = np.true_divide(imgRes, signal.convolve2d(np.ones_like(imgInput), self.ToMatrix(), mode=self.convolveMode, **self.convolve_kwargs))
         return imgRes
+    
+    def Copy(self):
+        return Kernel(kernel_specs=self.ToDict())

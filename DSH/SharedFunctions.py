@@ -53,7 +53,22 @@ def LastFloatInStr(my_string):
         return None
     
 def ValidateRange(Range, MaxVal, MinVal=None, replaceNone=True):
-    """ Validates a range of positive quantities (Note: must be positive!)
+    """ Validates a range of positive, integer quantities (Note: MaxVal must be positive!)
+    
+    Parameters
+    ----------
+    Range : input range. Can be one of the following:
+            - None. In this case, it will be set to [MinVal, MaxVal, 1] unless replaceNone is False. In that case, it will remain None
+            - A two-element list [test_min, test_max]
+            - A three-element list [test_min, test_max, step]
+    Function will:
+    - set Range[0]=MinVal if MinVal is specified and test_min<MinVal
+    - set Range[1]=MaxVal if test_max<0
+    - set Range[2]=1 if missing
+
+    Returns
+    -------
+    valid range, in the form [min, max, step]
     """
     if Range is None:
         if replaceNone:
@@ -81,7 +96,7 @@ def ReportCyclic(var, start_val=-np.pi, period=2*np.pi):
 
     Parameters
     ----------
-    var : float, array-like. Variable to be reportedd
+    var : float, array-like. Variable to be reported
     start_val : float, array-like. Minimum value the variable can take
     period : float, array-like. Winding period
 
