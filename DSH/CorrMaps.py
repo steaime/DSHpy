@@ -175,13 +175,20 @@ class CorrMaps():
         res_4D : list of correlation maps (np.float32), if return_maps==True
         """
         
-        if not silent:
-            start_time = time.time()
-            print('Computing correlation maps:')
+        strMsg = 'Computing correlation maps '
+        if save_tRange is None:
+            strMsg += 'on whole input range:'
+        else:
+            strMsg += 'on subset of input range:'
         save_tRange = sf.ValidateRange(save_tRange, MaxVal=self.imgNumber, MinVal=0, replaceNone=True)
-        cmap_shape = [len(list(range(*save_tRange))), self.outputShape[1], self.outputShape[2]]
+        save_tList = list(range(*save_tRange))
+        cmap_shape = [len(save_tList), self.outputShape[1], self.outputShape[2]]
+        strMsg += ': ' + str(save_tRange) + '. Result will have shape ' + str(cmap_shape)
         sf.CheckCreateFolder(self.outFolder)
         self.ExportConfiguration(cmapcalc_params={'save_tRange': save_tRange, 'save_autocorr': save_autocorr, 'trim_endNaNs': trim_endNaNs, 'corrmap_shape': cmap_shape})
+        if not silent:
+            start_time = time.time()
+            print(strMsg + '\nOutput folder: ' + self.outFolder)
 
         if not silent:
             print('  STEP 1: Loading images and computing average intensity...')
@@ -226,17 +233,17 @@ class CorrMaps():
             CorrMap = np.empty([cur_numtimes, cmap_shape[1], cmap_shape[2]])
             if not silent:
                 print('     ...lag ' + str(self.lagList[lidx]) + ' will have shape ' + str(CorrMap.shape))
-            for tidx in range(*save_tRange):
+            for tidx in range(cmap_shape[0]):
                 if tidx < CorrMap.shape[0]:
-                    CorrMap[tidx] = signal.convolve2d(np.multiply(Intensity[self.imgIdx[tidx,lidx,0]], Intensity[self.imgIdx[tidx,lidx,1]]),\
+                    CorrMap[tidx] = signal.convolve2d(np.multiply(Intensity[self.imgIdx[save_tList[tidx],lidx,0]], Intensity[self.imgIdx[save_tList[tidx],lidx,1]]),\
                                                       ker2D, mode=self.Kernel.convolveMode, **self.Kernel.convolve_kwargs)
                     if (self.Kernel.Padding):
                         CorrMap[tidx] = np.true_divide(CorrMap[tidx], ConvNorm)
                     CorrMap[tidx] = np.true_divide(np.subtract(np.true_divide(CorrMap[tidx],\
-                                                                               np.multiply(AvgIntensity[self.imgIdx[tidx,lidx,0]],\
-                                                                                           AvgIntensity[self.imgIdx[tidx,lidx,1]])),\
+                                                                               np.multiply(AvgIntensity[self.imgIdx[save_tList[tidx],lidx,0]],\
+                                                                                           AvgIntensity[self.imgIdx[save_tList[tidx],lidx,1]])),\
                                                                 1),\
-                                                    AutoCorr[tidx])
+                                                    AutoCorr[save_tList[tidx]])
                                                     # NOTE: in principle a better normalization for CorrMap is with
                                                     #       0.5 * (AutoCorr[t] + AutoCorr[t+tau])
             MI.MIfile(os.path.join(self.outFolder, 'CorrMap_d' + str(self.lagList[lidx]).zfill(4) + '.dat'), self.outMetaData).WriteData(CorrMap)
