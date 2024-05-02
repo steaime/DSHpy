@@ -1393,6 +1393,8 @@ class ROIproc():
         else:
             DLS_reftimes = np.asarray(reftimes)
 
+        if type(lagtimes) in [np.ndarray, np.array]:
+            lagtimes = list(lagtimes)
         if lagtimes=='all':
             if include_negative_lags:
                 DLS_lags = np.arange(-self.NumTimes()+1, self.NumTimes())
