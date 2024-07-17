@@ -85,7 +85,7 @@ def ReadCIfile(fpath, time_colidx=1, delimiter='\t', comments='#'):
     times :        array of image times in physical units (float)
     lagidx_list :  list of lagtimes, in image units (int)
     """
-    data = np.loadtxt(fpath, delimiter=delimiter, comments=comments, skiprows=1)
+    data = np.loadtxt(fpath, delimiter=delimiter, comments=comments, skiprows=1, ndmin=2)
     times = data[:,time_colidx]
     cI_data = data[:,time_colidx+1:]
     with open(fpath, "r") as file:
