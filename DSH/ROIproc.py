@@ -375,21 +375,28 @@ def LoadImageTimes(img_times_source, usecols=0, skiprows=1, root_folder=None, de
     '''
     return iof.LoadImageTimes(img_times_source, usecols=usecols, skiprows=skiprows, root_folder=root_folder, return_unique=return_unique)
     
-def AverageG2M1(cI_file, avg_interval=None, save_fname=None, save_prefix='g2m1', cut_prefix_len=2, delimiter='\t', comment='#', save_stderr=False, sharp_bound=False, lag_tolerance=1e-2, lag_tolerance_isrelative=True):
+def AverageG2M1(cI_file, avg_interval=None, save_fname=None, save_prefix='g2m1', cut_prefix_len=2, delimiter='\t', comment='#', save_stderr=False, sharp_bound=False, lag_tolerance=1e-2, lag_tolerance_isrelative=True, imgTimes=None):
     '''
     Load cI-like file and average g2m1. 
     '''
     
     cur_cI, cur_times, cur_lagidx_list = iof.ReadCIfile(cI_file)
-    int_bounds = sf.ValidateAverageInterval(avg_interval, num_datapoints=cur_cI.shape[0])
+    if imgTimes is None:
+        imgTimes = cur_times
+        ref_indexes = None
+    else:
+        if type(imgTimes) in [str]:
+            imgTimes = np.loadtxt(imgTimes)
+        ref_indexes = np.asarray([np.argmin(np.abs(imgTimes-curt)) for curt in cur_times])
     
-    g2m1_avg = AverageCorrTimetrace(cur_cI, cur_times, cur_lagidx_list, avg_interval, return_stderr=True, sharp_bound=sharp_bound, lag_tolerance=lag_tolerance, lag_tolerance_isrelative=lag_tolerance_isrelative)
+    g2m1_avg = AverageCorrTimetrace(cur_cI, imgTimes, cur_lagidx_list, avg_interval=avg_interval, img_indexes=ref_indexes, return_stderr=True, sharp_bound=sharp_bound, lag_tolerance=lag_tolerance, lag_tolerance_isrelative=lag_tolerance_isrelative)
     g2m1, g2m1_lags = g2m1_avg[0], g2m1_avg[1]
     
     if sharp_bound:
         int_suffix = '*'
     else:
         int_suffix = ''
+    int_bounds = sf.ValidateAverageInterval(avg_interval, num_datapoints=cur_cI.shape[0])
     
     if save_stderr:
         g2m1_err = g2m1_avg[2]
@@ -412,14 +419,14 @@ def AverageG2M1(cI_file, avg_interval=None, save_fname=None, save_prefix='g2m1',
     np.savetxt(os.path.join(os.path.dirname(cI_file), save_fname), 
            g2m1_out, header=str_hdr_g, delimiter=delimiter, comments=comment)
 
-def AverageCorrTimetrace(CorrData, ImageTimes, Lagtimes_idxlist, avg_interval=None, return_stderr=False, sharp_bound=False, lag_tolerance=1e-2, lag_tolerance_isrelative=True, verbose=0):
+def AverageCorrTimetrace(CorrData, ImageTimes, Lagtimes_idxlist, avg_interval=None, img_indexes=None, return_stderr=False, sharp_bound=False, lag_tolerance=1e-2, lag_tolerance_isrelative=True, verbose=0):
     '''
     Average correlation timetraces
     
     Parameters
     ----------
-    - CorrData: 2D array. Element [i,j] is correlation between t[i] and t[i]+tau[j]
-    - ImageTimes: 1D array, float. i-th element is the physical time at which i-th image was taken
+    - CorrData: 2D array. Element [i,j] is correlation between t[img_indexes[i]] and t[img_indexes[i]]+tau[j]
+    - ImageTimes: 1D array, float. i-th element is the physical time at which img_indexes[i]-th image was taken
     - Lagtimes_idxlist: 1D array, int. i-th element is the lagtime, in image units
                  NOTE: they must be positive. Not yet compatible with negative time lags
     - avg_interval: None, int, single interval=[min_idx, max_idx, [step_idx=1]] or list of intervals [interval1, ..., intervalN]. 
@@ -427,6 +434,11 @@ def AverageCorrTimetrace(CorrData, ImageTimes, Lagtimes_idxlist, avg_interval=No
                  if int>0, resolve the average on consecutive chunks of avg_interval images each
                  if interval=[min_idx, max_idx, [step_idx=1]], average will be done in the specified interval
                  if [interval1, ..., intervalN], a list of intervals will be computed as above
+                 WARNING: avg_interval is based on CorrData rows. If CorrData was computed using a subset of reference times,
+                 this may lead to non-uniform averaging intervals
+    - img_indexes: None or 1D array, int. Index of reference image relative to i-th row of CorrData array.
+                 if None (default), img_indexes=[0,1,...,CorrData.shape[0]-1]
+                 Specify it when CorrData was computed using a subset of reference times
     - return_stderr: bool. If True, return standard deviation of the correlation points averaged to obtain the g2-1
     - sharp_bound: bool. 
                  if False, use interval bounds to associate any reference time to the corresponding interval, 
@@ -443,9 +455,12 @@ def AverageCorrTimetrace(CorrData, ImageTimes, Lagtimes_idxlist, avg_interval=No
     - g2m1_stderr: 2D array. Element [i,j] represents the standard deviation of the data averaged to obtain g2m1[i,j]
                     Only returned if return_stderr==True
     '''
+    if (img_indexes is None):
+        img_indexes = np.arange(CorrData.shape[0], dtype=int)
+        
     int_bounds = sf.ValidateAverageInterval(avg_interval, num_datapoints=CorrData.shape[0])
             
-    g2m1_alllags, g2m1_laglist = sf.FindLags(series=ImageTimes, lags_index=Lagtimes_idxlist, subset_intervals=int_bounds, tolerance=lag_tolerance, tolerance_isrelative=lag_tolerance_isrelative, verbose=verbose)
+    g2m1_alllags, g2m1_laglist = sf.FindLags(series=ImageTimes, lags_index=Lagtimes_idxlist, refs_index=img_indexes, subset_intervals=int_bounds, tolerance=lag_tolerance, tolerance_isrelative=lag_tolerance_isrelative, verbose=verbose)
     
     g2m1 = np.zeros((len(int_bounds), np.max([len(l) for l in g2m1_laglist])), dtype=float)
     g2m1_lags = np.nan * np.ones_like(g2m1, dtype=float)
@@ -903,6 +918,9 @@ class ROIproc():
         self.txt_delim = '\t'
         self.txt_comm = '#'
         self.savetxt_kwargs = {'delimiter': self.txt_delim, 'comments': self.txt_comm}
+        self.out_names = {'imgTimes' : 'imgTimes.dat',
+                          'ROIcoords': 'ROIcoords.dat',
+                          'ROI_mask' : 'ROI_mask.raw'}
         
     def __repr__(self):
         if (self.MIinput.IsStack()):
@@ -1070,8 +1088,8 @@ class ROIproc():
         - Iavg.dat :     file with normalized average intensity computed using best exposure times
         - exptimes.dat:  file with index of best exposure times chosen (only if AllExpData is not None)
         - Iavg_raw.dat:  file with all average intensities for all exposure times (only if AllExpData is not None)
-        - ROIcoords.dat: file with ROI coordinates and normalization factors
-        - ROI_mask.raw:  raw file with pixel mask
+        - ROIcoords:     file with ROI coordinates and normalization factors
+        - ROI_mask:      raw file with pixel mask
         """
         
         sf.CheckCreateFolder(SaveFolder)
@@ -1670,22 +1688,27 @@ class ROIproc():
             if i>len(save_prefix):
                 raise ValueError('The size of save_prefix (' + str(len(save_prefix)) + ') must match that of search_prefix (' + str(len(search_prefix)) + ')')
             tres_fnames = sf.FindFileNames(folder_path, Prefix=search_prefix[i], Ext='.dat')
+            imtimes_fname = os.path.join(folder_path, self.out_names['imgTimes'])
+            if os.path.isfile(imtimes_fname):
+                img_times = np.loadtxt(imtimes_fname)
+            else:
+                img_times = None
             for cur_f in tres_fnames:
-                AverageG2M1(os.path.join(folder_path, cur_f), avg_interval=avg_interval, save_prefix=save_prefix[i], 
+                AverageG2M1(os.path.join(folder_path, cur_f), avg_interval=avg_interval, imgTimes=img_times, save_prefix=save_prefix[i], 
                             cut_prefix_len=len(search_prefix[i])-1, delimiter=self.txt_delim, comment=self.txt_comm, save_stderr=save_stderr, sharp_bound=sharp_bound, lag_tolerance=lag_tolerance, lag_tolerance_isrelative=lag_tolerance_isrelative)
             
     def ExportROIs(self, outFolder):
         """
         Exports ROIs:
-        - ROIcoords.dat: text file with ROI coordinates and areas
-        - ROI_mask.raw: integer mask with indices of the ROI every pixel belongs to. NOTE: no ROI overlap supported
+        - self.out_names['ROIcoords']: text file with ROI coordinates and areas
+        - self.out_names['ROI_mask']: integer mask with indices of the ROI every pixel belongs to. NOTE: no ROI overlap supported
         """
         sf.CheckCreateFolder(outFolder)
         ROIhdr_str = self.txt_delim.join(self.ROIcoord_names+[name+'_err' for name in self.ROIcoord_names]+['norm', 'min_row[bb_base:' + str(self.BoundingBox[0]) + ']', 'min_col[bb_base:' + str(self.BoundingBox[1]) + ']', 'max_row', 'max_col'])
         roi_norms = np.expand_dims(self.ROI_maskSizes, axis=1)
-        np.savetxt(os.path.join(outFolder, 'ROIcoords.dat'), np.append(np.append(self.ROIcoords, roi_norms, axis=1), 
+        np.savetxt(os.path.join(outFolder, self.out_names['ROIcoords']), np.append(np.append(self.ROIcoords, roi_norms, axis=1), 
                                self.ROIboundingBoxes, axis=1), header=ROIhdr_str, **self.savetxt_kwargs)
-        MI.WriteBinary(os.path.join(outFolder, 'ROI_mask.raw'), self.ROIs, 'i')
+        MI.WriteBinary(os.path.join(outFolder, self.out_names['ROI_mask']), self.ROIs, 'i')
                 
     def ExportConfiguration(self, outFolder, other_params=None, out_fname=None):
 
@@ -1694,7 +1717,7 @@ class ROIproc():
         sf.CheckCreateFolder(outFolder)
         self.ExportROIs(outFolder)
         ini_fpath = os.path.join(outFolder, out_fname)
-        np.savetxt(os.path.join(outFolder, 'imgTimes.dat'), self.imgTimes)
+        np.savetxt(os.path.join(outFolder, self.out_names['imgTimes']), self.imgTimes)
         
         my_params = {'General': {'version' : '2.0',
                                  'generated_by' : 'ROIproc.ExportConfiguration',
@@ -1705,11 +1728,11 @@ class ROIproc():
                        'ROIs' : {'number' : self.CountROIs(),
                                  'box' : list(self.BoundingBox),
                                  'box_margin' : self.BoundingBoxMargin,
-                                 'coord_file' : 'ROIcoords.dat',
-                                 'mask_file' : 'ROI_mask.raw',
+                                 'coord_file' : self.out_names['ROIcoords'],
+                                 'mask_file' : self.out_names['ROI_mask'],
                                 },
                        'ImgTimes' : {'number' : len(self.imgTimes),
-                                   'file' : 'imgTimes.dat',
+                                   'file' : self.out_names['imgTimes'],
                                    'usecol' : 0,
                                    'skiprow' : 0,
                                 },

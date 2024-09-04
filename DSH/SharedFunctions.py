@@ -524,7 +524,7 @@ def ValidateAverageInterval(avg_interval, num_datapoints):
             int_bounds[i].append(1)
     return int_bounds
 
-def FindLags(series, lags_index, subset_intervals=None, tolerance=1e-2, tolerance_isrelative=True, verbose=0):
+def FindLags(series, lags_index, refs_index=None, subset_intervals=None, tolerance=1e-2, tolerance_isrelative=True, verbose=0):
     '''
     Find lags in physical units (e.g. seconds) given a list of time points (same physical units) and a list of lag indexes
     
@@ -532,6 +532,9 @@ def FindLags(series, lags_index, subset_intervals=None, tolerance=1e-2, toleranc
     ----------
     series:           list of time points (float), not necessarily equally spaced
     lags_index:       list of lag indexes (int, >=0). WARNING: not yet compatible with negative lag indexes
+    refs_index:       list of reference time indexes (int, >=0). If None (default), it will be set to [0,1,...,len(series)-1]
+                      WARNING: refs_index needs to be in ascending order, needs to have no duplicated elements 
+                               and all elements need to be in the [0,len(series)] interval
     subset_intervals: None or list of intervals [min_idx, max_idx, [step_idx=1]]. Eventually divide the analysis in intervals
                       If None, it will be set to the entire section
                 
@@ -542,18 +545,35 @@ def FindLags(series, lags_index, subset_intervals=None, tolerance=1e-2, toleranc
                       NOTE: len(alllags[i]) depends on i (no element is added to the list if j+lag[i] >= len(series))
     unique_laglist:   2D list. One element per interval to be analyzed. Element [i][j] is j-th lagtime of i-th analyzed subsection
     '''
+    if refs_index is None:
+        refs_index = np.arange(len(series), dtype=int)
+    else:
+        # Check that refs_index is sorted ASC, and that all elements in refs_index are in the [0,len(series)] interval
+        assert (all(refs_index[i] < refs_index[i+1] for i in range(len(refs_index) - 1))), 'FindLags input error: refs_index needs to be sorted in ascending order'
+        logging.debug(refs_index)
+        logging.debug(refs_index[0])
+        assert (refs_index[0] >= 0), 'FindLags input error: refs_index cannot have negative indexes'
+        assert (refs_index[-1] < len(series)), 'FindLags input error: maximum value ({0}) exceeds length of time series ({1})'.format(refs_index[-1], len(series))
+        
     subset_intervals = ValidateAverageInterval(subset_intervals, len(series))
     alllags = []
     for lidx in range(len(lags_index)):
         if (lags_index[lidx]==0):
-            alllags.append(np.zeros_like(series, dtype=float))
+            alllags.append(np.zeros_like(refs_index, dtype=float))
         elif (lags_index[lidx] < len(series)):
-            alllags.append(np.subtract(series[lags_index[lidx]:], series[:-lags_index[lidx]]))
+            alllags.append(np.zeros_like(refs_index, dtype=float))
+            tmp_append = []
+            for tidx in range(len(refs_index)):
+                if refs_index[tidx] + lags_index[lidx] < len(series):
+                    tmp_append.append(series[refs_index[tidx] + lags_index[lidx]] - series[refs_index[tidx]])
+                else:
+                    break
+            alllags.append(np.asarray(tmp_append))
         else:
             alllags.append([])
     unique_laglist = []
     if verbose:
-        logging.debug('SharedFunctions.FindLags(): processing lags in time series ({0} time points), specialized to {1} time windows: {2}'.format(len(series), len(subset_intervals), subset_intervals))
+        logging.debug('SharedFunctions.FindLags(): processing lags in time series ({0} time points, {1} reference times), specialized to {2} time windows: {3}'.format(len(series), len(refs_index), len(subset_intervals), subset_intervals))
     for tavgidx in range(len(subset_intervals)):
         cur_uniquelist = np.unique([alllags[i][j] for i in range(len(lags_index)) 
                                     for j in range(subset_intervals[tavgidx][0], min(subset_intervals[tavgidx][1], len(alllags[i])), subset_intervals[tavgidx][2])])

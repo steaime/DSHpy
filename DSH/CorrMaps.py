@@ -161,7 +161,7 @@ class CorrMaps():
                       however, only reference times in save_tRange will be used to compute correlation maps
                       if None, self.imgRange will be used
                       Using save_tRange instead of self.imgRange allows computing correlation maps on 'valid' image pairs,
-                      without restricting both time points to be withing the specified range
+                      without restricting both time points to be within the specified range
         save_autocorr: if True, save autocorrelation (d0) map
         trim_endNaNs: if False, all correlation maps will have the same shape, set by save_tRange (if specified) or self.imgRange
                       and reported in the output *.ini file
