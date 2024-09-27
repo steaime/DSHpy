@@ -552,6 +552,7 @@ def FindLags(series, lags_index, refs_index=None, subset_intervals=None, toleran
         assert (all(refs_index[i] < refs_index[i+1] for i in range(len(refs_index) - 1))), 'FindLags input error: refs_index needs to be sorted in ascending order'
         logging.debug(refs_index)
         logging.debug(refs_index[0])
+        logging.debug('refs_index: ' + str(refs_index))
         assert (refs_index[0] >= 0), 'FindLags input error: refs_index cannot have negative indexes'
         assert (refs_index[-1] < len(series)), 'FindLags input error: maximum value ({0}) exceeds length of time series ({1})'.format(refs_index[-1], len(series))
         
