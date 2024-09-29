@@ -503,7 +503,7 @@ def AverageCorrTimetrace(CorrData, ImageTimes, Lagtimes_idxlist, avg_interval=No
     else:
         return g2m1, g2m1_lags
 
-def ValidateShiftRange(ShiftRange, ImageShape=None, useROI=None):
+def ValidateShiftRange(ShiftRange, ImageShape=None, useROI=None, minRange=None, maxRange=None):
     '''
     Validates the range of drifts that can be detected for a given image size and a given ROI size
     
@@ -517,6 +517,8 @@ def ValidateShiftRange(ShiftRange, ImageShape=None, useROI=None):
     - ImageShape :  shape of the input images [num_row, num_col], or None
                     if None, the program won't check that the correctly-formatted SearchRange is compatible with image size
     - useROI :      ROI coordinates, in the form [min_row, min_col, max_row, max_col], or None
+    - minRange, maxRange: positive integers. If specified, limit range to the [minRange, maxRange] interval
+                    NOTE: 'shape' validation based on ImageShape and useROI has the priority over minRange
                     
     Returns
     -------
@@ -528,6 +530,10 @@ def ValidateShiftRange(ShiftRange, ImageShape=None, useROI=None):
         res = ShiftRange
     if len(res) == 2:
         res = [-res[0], res[0], -res[1], res[1]]
+    if minRange is not None:
+        res = [min(res[0], -minRange), max(res[1], minRange), min(res[2], -minRange), max(res[3], minRange)]
+    if maxRange is not None:
+        res = [max(res[0], -maxRange), min(res[1], maxRange), max(res[2], -maxRange), min(res[3], maxRange)]
     if ImageShape is not None and useROI is not None:
         max_range = [-useROI[1], ImageShape[1]-useROI[3], -useROI[0], ImageShape[0]-useROI[2]]
         res = [max(res[0], max_range[0]), min(res[1], max_range[1]), max(res[2], max_range[2]), min(res[3], max_range[3])]
@@ -557,7 +563,7 @@ def ValidateShiftROI(SearchROI, ShiftRange, ImageShape, ValidateRange=True, debu
     return resROI
     
 
-def CalcCrosscorrMatrix(Image, Reference, SearchRange=1, SearchROI=None, ValidateInput=True, MaximizeReference=False, Normalized=True, debugMode=False):
+def CalcCrosscorrMatrix(Image, Reference, SearchRange=1, SearchROI=None, ValidateInput=True, CovarianceNorm='mean', debugMode=False):
     '''
     Calculates the spatial crosscorrelation matrix between two images
     
@@ -575,35 +581,27 @@ def CalcCrosscorrMatrix(Image, Reference, SearchRange=1, SearchROI=None, Validat
                     NOTE: ROI should be far enough from the boundaries to allow searching in the expected range.
                           If this is not the case, SearchRange will be adapted
     - ValidateInput : if True, validate SearchRange and SearchROI. Else, assume that it will be valid (to increase computation speed)
-    - MaximizeReference : if True, choose for each displacement choose the largest reference compatible with that displacement
-                    if False, choose the reference such that it fits all possible displacements
-                    MaximizeReference==True is slower, but allows computing larger displacements 
-                    and gives results more robust against changes in SearchRange
-    - Normalized :  if False, compute (non-normalized) covariance matrix: covar = <IJ>-<I><J>
-                    if True, compute normalized correlation: corr = covar / sqrt(<I2><J2>)
+    - CovarianceNorm : ['variance', 'mean', 'none'] 
+                    if 'none', compute (non-normalized) covariance matrix: covar = <IJ>-<I><J>
+                    if 'variance', compute normalized correlation: corr = covar / sqrt((<I2>-<I>2)(<J2>-<J>2))
+                    if 'mean', normalize correlation using product of means, as in cI: corr = covar/(<I><J>)
                     
 
     Returns
     -------
     - Xcorr:        cross-correlation matrix.
     '''
+    MaximizeReference = (SearchROI is None)
     if (ValidateInput):
         im_shape = Image.shape
-        if MaximizeReference:
-            if SearchROI is not None:
-                logging.warning('CalcCrosscorrMatrix: Specifying SearchROI is not compatible with MaximizeReference==True. Search ROI will be disregarded')
-                SearchROI = None
         SearchRange = ValidateShiftRange(SearchRange, im_shape, SearchROI)
-        if not MaximizeReference:
-            SearchROI = ValidateShiftROI(SearchROI, SearchRange, im_shape)
-            if SearchROI is None:
-                return None
+        SearchROI = ValidateShiftROI(SearchROI, SearchRange, im_shape)
     Xcorr = np.empty((SearchRange[3]-SearchRange[2]+1, SearchRange[1]-SearchRange[0]+1), dtype=float)
     if MaximizeReference:
         Im_square = np.square(Image)
         Ref_square = np.square(Reference)
         if debugMode:
-            logging.debug('CalcCrosscorrMatrix with MaximizeReference==True: Image has shape {0} (check: {1}), search range is {2}, Xcorr has shape {3}'.format(Image.shape, 
+            logging.debug('CalcCrosscorrMatrix without SearchROI: Image has shape {0} (check: {1}), search range is {2}, Xcorr has shape {3}'.format(Image.shape, 
                                                                                                     Reference.shape, SearchRange, Xcorr.shape))
         for iRow in range(Xcorr.shape[0]):
             lagy = iRow + SearchRange[2]  # SearchRange[2]==min_y
@@ -637,15 +635,22 @@ def CalcCrosscorrMatrix(Image, Reference, SearchRange=1, SearchROI=None, Validat
                     Image_crop, Imsq_crop, Ref_crop, Refsq_crop = row_img, row_imsq, row_ref, row_refsq
                 if debugMode and iRow==0:
                     logging.debug('Column #{0} (lagx={1}). Image shapes: {2} and {3}'.format(iCol, lagx, Image_crop.shape, Ref_crop.shape))
-                Xcorr[iRow, iCol] = np.mean(Image_crop * Ref_crop) - np.mean(Image_crop)*np.mean(Ref_crop)
-                if Normalized:
-                    Xcorr[iRow, iCol] /= np.sqrt(np.mean(Imsq_crop) * np.mean(Refsq_crop))
+                Imean, Rmean = np.mean(Image_crop), np.mean(Ref_crop)
+                if CovarianceNorm=='variance':
+                    Xcorr[iRow, iCol] = (np.mean(Image_crop * Ref_crop) - Imean*Rmean) / np.sqrt((np.mean(Imsq_crop)-Imean**2) * (np.mean(Refsq_crop)-Rmean**2))
+                elif CovarianceNorm=='mean':
+                    Xcorr[iRow, iCol] = np.mean(Image_crop * Ref_crop) / (Imean*Rmean) - 1
+                elif CovarianceNorm=='none':
+                    Xcorr[iRow, iCol] = np.mean(Image_crop * Ref_crop) - Imean*Rmean
+                else:
+                    raise ValueError('CalcCrosscorrMatrix: unknown normalization scheme "{0}"'.format(CovarianceNorm))
     else:
         Ref_crop = Reference[SearchROI[0]:SearchROI[2], SearchROI[1]:SearchROI[3]]
         Ref_crop_mean = np.mean(Ref_crop)
         Ref_crop_meansquare = np.mean(np.square(Ref_crop))
+        Ref_crop_meanvar = Ref_crop_meansquare - Ref_crop_mean**2
         if debugMode:
-            logging.debug('CalcCrosscorrMatrix with MaximizeReference==False: Image has shape {0} (check: {1}), cropped ROI has shape {2}, search range is {3}, Xcorr has shape {4}'.format(Image.shape, 
+            logging.debug('CalcCrosscorrMatrix with specified SearchROI: Image has shape {0} (check: {1}), cropped ROI has shape {2}, search range is {3}, Xcorr has shape {4}'.format(Image.shape, 
                                                                                                         Reference.shape, SearchROI, SearchRange, Xcorr.shape))
             logging.debug(str(Reference.shape) + '[' + str(SearchROI[0]) + ':' + str(SearchROI[2]) + ', ' 
                         + str(SearchROI[1]) + ':' + str(SearchROI[3]) + '] -> ' + str(Ref_crop.shape))
@@ -654,9 +659,15 @@ def CalcCrosscorrMatrix(Image, Reference, SearchRange=1, SearchROI=None, Validat
             for iCol in range(Xcorr.shape[1]):
                 lagx = iCol + SearchRange[0]
                 Image_crop = Image[SearchROI[0]+lagy:SearchROI[2]+lagy, SearchROI[1]+lagx:SearchROI[3]+lagx]
-                Xcorr[iRow, iCol] = np.mean(Image_crop * Ref_crop) - np.mean(Image_crop) * Ref_crop_mean
-                if Normalized:
-                    Xcorr[iRow, iCol] /= np.sqrt(np.mean(np.square(Image_crop)) * Ref_crop_meansquare)
+                Imean = np.mean(Image_crop)
+                if CovarianceNorm=='variance':
+                    Xcorr[iRow, iCol] = (np.mean(Image_crop * Ref_crop) - Imean * Ref_crop_mean) / np.sqrt((np.mean(np.square(Image_crop))-Imean**2) * Ref_crop_meansquare)
+                elif CovarianceNorm=='mean':
+                    Xcorr[iRow, iCol] = np.mean(Image_crop * Ref_crop) / (Imean * Ref_crop_mean) - 1
+                elif CovarianceNorm=='none':
+                    Xcorr[iRow, iCol] = np.mean(Image_crop * Ref_crop) - Imean * Ref_crop_mean
+                else:
+                    raise ValueError('CalcCrosscorrMatrix: unknown normalization scheme "{0}"'.format(CovarianceNorm))
     return Xcorr
 
 def FindParabolaExt(_corr, _x0, _y0, _x3, _y3, _a0, _a1, _a2, _a4, _a5):
@@ -673,11 +684,6 @@ def FindParabolaExt(_corr, _x0, _y0, _x3, _y3, _a0, _a1, _a2, _a4, _a5):
     zp = _a0 + _a1*(xp-_x0) + _a2*(xp-_x0)*(xp-_x0+1) + _a3*(xp-_x0)*(yp-_y0) + _a4*(yp-_y0) + _a5*(yp-_y0)*(yp-_y0+1)
     return xp, yp, zp
 
-def CheckEdgePosition(row, col, shape):
-    return (row<=0 or row>=(shape[0]-1) or col<=0 or col>=(shape[1]-1))
-
-
-
 
 def FindSubpixelPeak(Matrix, TopLeftCoord=(0,0), Method='paraboloid', SubPixelOnly=False, MaxCoords=None, debugMode=False):
     '''
@@ -692,7 +698,7 @@ def FindSubpixelPeak(Matrix, TopLeftCoord=(0,0), Method='paraboloid', SubPixelOn
                 - 'paraboloid': approximate the peak height with a 2D paraboloid, 
                                 use peak neighborhood to fix paraboloid coefficients,
                                 find vertex height and position
-                - 'overlap': Luca's method
+                - 'centroid': weighted intensities in quadrants
     - SubPixelOnly: if True, only get the subpixel component of the position, relative to the discretized max position
                     if False, get the absolute position (positive downwards and rightwards), added to the top-left coordinate position
     - MaxCoords:    speed up computation by passing the coordinates (col_index, row_index) of the max, if known. (0,0) is the top-left corner
@@ -713,7 +719,7 @@ def FindSubpixelPeak(Matrix, TopLeftCoord=(0,0), Method='paraboloid', SubPixelOn
     if debugMode:
         logging.debug('FindSubpixelPeak: max of crosscorrelation found in position {0} (matrix shape: {1}, coordinate of top-left corner: {2})'.format([rmax, cmax], Matrix.shape, TopLeftCoord))
     #check whether the max of corr lies on the edge of the search interval. If so, do not perform subpixel search
-    if CheckEdgePosition(rmax, cmax, Matrix.shape):
+    if sf.CheckEdgePosition(rmax, cmax, Matrix.shape):
         logging.warning('FindSubpixelPeak: peak found at the matrix edge')
         if SubPixelOnly:
             return 0, 0, -1
@@ -771,8 +777,8 @@ def FindSubpixelPeak(Matrix, TopLeftCoord=(0,0), Method='paraboloid', SubPixelOn
         weights = np.zeros(4, dtype=float)
         weights[0] = alpha2 * Matrix[rmax-1, cmax-1] + alpha1 * (Matrix[rmax-1, cmax] + Matrix[rmax, cmax-1]) + alpha3 * Matrix[rmax, cmax] # top left quadrant
         weights[1] = alpha2 * Matrix[rmax-1, cmax+1] + alpha1 * (Matrix[rmax-1, cmax] + Matrix[rmax, cmax+1]) + alpha3 * Matrix[rmax, cmax] # top right quadrant
-        weights[2] = alpha2 * Matrix[rmax+1, cmax-1] + alpha1 * (Matrix[rmax+1, cmax] + Matrix[rmax, cmax-1]) + alpha3 * Matrix[rmax, cmax] # bottom right quadrant
-        weights[3] = alpha2 * Matrix[rmax+1, cmax+1] + alpha1 * (Matrix[rmax+1, cmax] + Matrix[rmax, cmax+1]) + alpha3 * Matrix[rmax, cmax] # bottom left quadrant
+        weights[2] = alpha2 * Matrix[rmax+1, cmax+1] + alpha1 * (Matrix[rmax+1, cmax] + Matrix[rmax, cmax+1]) + alpha3 * Matrix[rmax, cmax] # bottom right quadrant
+        weights[3] = alpha2 * Matrix[rmax+1, cmax-1] + alpha1 * (Matrix[rmax+1, cmax] + Matrix[rmax, cmax-1]) + alpha3 * Matrix[rmax, cmax] # bottom left quadrant
 
         dy = (weights[2]+weights[3]-weights[0]-weights[1])/np.sum(weights)
         dx = (weights[1]+weights[2]-weights[0]-weights[3])/np.sum(weights)
@@ -782,53 +788,25 @@ def FindSubpixelPeak(Matrix, TopLeftCoord=(0,0), Method='paraboloid', SubPixelOn
         else:
             return cmax + TopLeftCoord[0] + dx, rmax + TopLeftCoord[1] + dy, Matrix[rmax,cmax] # TODO: unclear if the centroid method can get us any further in correcting the height of the crosscorrelation peak
     
-
-
-
-
-
-
-
-
-    # NOTE: PROBABLY THIS SHOULDN'T BE A METHOD IN THIS FUNCTION, PROBABLY THIS SHOULD BE A SEPARATED FUNCTION THAT NEEDS:
-    # - corr[J,I]
-    # - covar[J,I]
-    # - covar[I,I]
-    elif Method=='overlap':
-
-        dc, dr, _ = FindSubpixelPeak(Matrix, TopLeftCoord=(0,0), Method='centroid', SubPixelOnly=True, MaxCoords=(cmax, rmax))
-        min_row = int(np.floor(rmax+dr))
-        min_col = int(np.floor(cmax+dc))
-        TopQuadCoords = [[min_row,min_col], [min_row,min_col+1], [min_row+1,min_col], [min_row+1,min_col+1]]
-
-
-
-
-
-        b = np.zeros(4, dtype=float)
-        M = np.zeros((4,4), dtype=float)
-        # NOTE: here in principle we need the covariance, whereas elsewhere we use the correlation. Try to use correlation here as well, check!!!
-        for i in range(4):
-            b[i] = 0
-
-        raise ValueError('Overlap method under development')
-    
-
-
-
-    
     else:
 
-        raise ValueError('Method "' + str(Method) + '" not valid. Accepted methods: ["none", "paraboloid", "overlap"]')
-    
-def FindCrosscorrPeak(Image, Reference, SearchRange, SearchROI=None, SubgridShape=None, ValidateInput=True, MaximizeReference=True, debugMode=False, SubpixelMethod='none'):
+        raise ValueError('Method "' + str(Method) + '" not valid. Accepted methods: ["none", "paraboloid", "centroid"]')
+
+def CalcDriftCorrKernel(x, M=None):
+    if M is None:
+        M = len(x)
+    cosarg = x*2*np.pi/M
+    window = 0.42323 + 0.49755*np.cos(cosarg)+0.07922*np.cos(2*cosarg)
+    return window*np.sinc(x) #note: np.sinc = sin(pi*x)/(pi*x)  
+        
+def FindCrosscorrPeak(Image, Reference, SearchRange, SearchROI=None, SubgridShape=None, ValidateInput=True, SubpixelMethod='paraboloid', OverlapKernelSize=8, debugMode=False):
     '''
     Calculates the position and height of the crosscorrelation between two images with subpixel resolution
     Peak position is identified as the max of a paraboloid that goes through 6 points about the pixel-resolved peak
     
     Parameters
     ----------
-    - Image, Reference: 2D vectors (input images)
+    - Image, Reference: 2D vectors (input images). They should have the same shape
     - SearchRange : integer, couple of integers or 4D vector with boundaries for search range, in the form [min_x, max_x, min_y, max_y]
                     where min_x, max_x are minimum and maximum x lags (along columns)
                           min_y, max_y are minimum and maximum y lags (along rows)
@@ -840,7 +818,8 @@ def FindCrosscorrPeak(Image, Reference, SearchRange, SearchROI=None, SubgridShap
                     (M ROIs along x axis, N along y axis), and process drifts independently in each subROI, 
                     to obtain statistics (average and standard deviation).
                     None corresponds to (1,1)
-    - SubpixelMethod = ['none', 'paraboloid', 'overlap']
+    - SubpixelMethod = ['none', 'paraboloid', 'centroid', 'overlap']
+    - OverlapKernelSize : size of the overlap support kernel. Should be an even integer
 
     Returns
     -------
@@ -851,9 +830,14 @@ def FindCrosscorrPeak(Image, Reference, SearchRange, SearchROI=None, SubgridShap
     - xperr, yperr, zperr: standard errors on above quantities, only provided if SubgridShape is defined
     '''
     assert Image.shape == Reference.shape, 'Input images in FindCrosscorrPeak should have the same shape. Instead, here we have {0} and {1}'.format(Image.shape, Reference.shape)
-    if MaximizeReference and (SearchROI is not None or SubgridShape is not None):
-        logging.warning('FindCrosscorrPeak with SearchROI or SubgridShape specified: MaximizeReference option deactivated')
-        MaximizeReference = False
+    MaximizeReference = (SearchROI is None and SubgridShape is None)
+    if SubpixelMethod=='overlap':
+        assert OverlapKernelSize%2==0, 'FindCrosscorrPeak: Kernel size in overlap method should be an even integer. Invalid size: ' + str(OverlapKernelSize)
+        max_search = np.max(np.abs(SearchRange))
+        if max_search <= OverlapKernelSize//2:
+            old_range = SearchRange
+            SearchRange = ValidateShiftRange(SearchRange, minRange=OverlapKernelSize//2+1)
+            logging.warning('FindCrosscorrPeak: search range with overlap method should be larger than half the kernel size ({0}) in all directions. Invalid search range {1} extended to {2}'.format(OverlapKernelSize, old_range, SearchRange))
     if (ValidateInput):
         SearchRange = ValidateShiftRange(SearchRange, Image.shape, SearchROI)
         SearchROI = ValidateShiftROI(SearchROI, SearchRange, Image.shape)
@@ -862,8 +846,59 @@ def FindCrosscorrPeak(Image, Reference, SearchRange, SearchROI=None, SubgridShap
     if debugMode:
         logging.debug('ROIproc.FindCrosscorrPeak started. Search range: {0}, SearchROI: {1}, SubgridShape: {2}'.format(SearchRange, SearchROI, SubgridShape))
     if np.prod(SubgridShape) == 1:
-        Xcorr = CalcCrosscorrMatrix(Image, Reference, SearchRange, SearchROI, MaximizeReference=MaximizeReference, ValidateInput=False, debugMode=debugMode)
-        res = FindSubpixelPeak(Xcorr, TopLeftCoord=(SearchRange[0],SearchRange[2]), Method=SubpixelMethod, debugMode=debugMode)
+        if MaximizeReference:
+            SearchROI = None
+        Xcorr = CalcCrosscorrMatrix(Image, Reference, SearchRange, SearchROI, ValidateInput=False, CovarianceNorm='mean', debugMode=debugMode)
+        if SubpixelMethod == 'overlap':
+            px_peak_x, px_peak_y, px_peak_z = FindSubpixelPeak(Xcorr, TopLeftCoord=(0, 0), Method='none')
+            ctr_dx, ctr_dy, _ = FindSubpixelPeak(Xcorr, TopLeftCoord=(0, 0), Method='centroid', SubPixelOnly=True)
+            r = px_peak_y+int(np.floor(ctr_dy))
+            c = px_peak_x+int(np.floor(ctr_dx))
+            TopQuadCoords = [[r,c], [r,c+1], [r+1,c], [r+1,c+1]]
+            CovarIJ = CalcCrosscorrMatrix(Image, Reference, SearchRange=SearchRange, SearchROI=SearchROI, ValidateInput=False, CovarianceNorm='none')
+            CovarII = CalcCrosscorrMatrix(Image, Image, SearchRange=SearchRange, SearchROI=SearchROI, ValidateInput=False, CovarianceNorm='none')
+            b = np.zeros((4,1), dtype=float)
+            M = np.zeros((4,4), dtype=float)
+            for i in range(4):
+                ki,li = TopQuadCoords[i]
+                b[i] = CovarIJ[ki,li]
+                for j in range(4):
+                    kj,lj = TopQuadCoords[j]
+                    M[i,j] = CovarII[ki-kj-SearchRange[2],li-lj-SearchRange[0]]
+            a = np.matmul(np.linalg.inv(M), b)
+            dx = float(TopQuadCoords[0][1] + (a[1]+a[3])/np.sum(a) + SearchRange[0])
+            dy = float(TopQuadCoords[0][0] + (a[2]+a[3])/np.sum(a) + SearchRange[2])
+            j_x, i_y = int(np.floor(dx))-SearchRange[0], int(np.floor(dy))-SearchRange[2]
+            delta_x, delta_y = dx-np.floor(dx), dy-np.floor(dy)
+            ker_x = CalcDriftCorrKernel(np.linspace(delta_x+OverlapKernelSize/2-1, delta_x-OverlapKernelSize/2, num=OverlapKernelSize, endpoint=True), M=OverlapKernelSize)
+            ker_y = CalcDriftCorrKernel(np.linspace(delta_y+OverlapKernelSize/2-1, delta_y-OverlapKernelSize/2, num=OverlapKernelSize, endpoint=True), M=OverlapKernelSize)
+            ker2D = np.zeros((OverlapKernelSize, OverlapKernelSize), dtype=float)
+            for ridx in range(OverlapKernelSize):
+                ker2D[ridx] = ker_y[ridx]*ker_x
+            minr, maxr, minc, maxc = i_y-OverlapKernelSize//2+1, i_y+OverlapKernelSize//2+1, j_x-OverlapKernelSize//2+1, j_x+OverlapKernelSize//2+1
+            if minr < 0 or minc < 0 or maxr > CovarIJ.shape[0] or maxc > CovarIJ.shape[1]:
+                logging.debug('FindCrosscorrPeak computing convolution on trimmed area to fit covariance matrix size')
+                if minr < 0:
+                    ker2D = ker2D[-minr:]
+                    minr = 0
+                if maxr > CovarIJ.shape[0]:
+                    maxr = CovarIJ.shape[0]
+                    ker2D = ker2D[:maxr]
+                if minc < 0:
+                    ker2D = ker2D[:,-minc:]
+                    minc = 0
+                if maxc > CovarIJ.shape[1]:
+                    maxc = CovarIJ.shape[1]
+                    ker2D = ker2D[:,:maxc]
+            CovarCrop = CovarIJ[minr:maxr, minc:maxc]
+            if SearchROI is None:
+                norm = np.mean(Image)*np.mean(Reference)
+            else:
+                norm = np.mean(Image[SearchROI[0]:SearchROI[2], SearchROI[1]:SearchROI[3]])*np.mean(Reference[SearchROI[0]:SearchROI[2], SearchROI[1]:SearchROI[3]])
+            gcorr = np.sum(np.multiply(CovarCrop, ker2D)) / norm
+            res = (dx, dy, gcorr)
+        else:
+            res = FindSubpixelPeak(Xcorr, TopLeftCoord=(SearchRange[0],SearchRange[2]), Method=SubpixelMethod, debugMode=debugMode)
         if debugMode:
             logging.debug('FindCrosscorrPeak function returned ' + str(res))
         return res
@@ -879,7 +914,7 @@ def FindCrosscorrPeak(Image, Reference, SearchRange, SearchROI=None, SubgridShap
             for iy in range(SubgridShape[1]):
                 cur_xp, cur_yp, cur_zp = FindCrosscorrPeak(Image=Image, Reference=Reference, SearchRange=SearchRange, 
                                                            SearchROI=[grid_y[iy], grid_x[ix], grid_y[iy+1], grid_x[ix+1]], 
-                                                           SubgridShape=None, ValidateInput=False, debugMode=debugMode, Method=SubpixelMethod, MaximizeReference=False)
+                                                           SubgridShape=None, ValidateInput=False, SubpixelMethod=SubpixelMethod, debugMode=debugMode)
                 if cur_zp>0:
                     xp_all.append(cur_xp)
                     yp_all.append(cur_yp)
@@ -1236,6 +1271,8 @@ class ROIproc():
         '''
         Assumes that buffer contains images already cropped to size CropROIbb
         '''
+        if (self.MIinput.ReadFileHandle is None):
+            self.MIinput.OpenForReading()
         return self.MIinput.GetImage(image_idx, cropROI=self.CropROIbb, buffer=buffer, buffer_crop=False)
     def GetCroppedShape(self):
         return (self.CropROIbb[3], self.CropROIbb[2])
@@ -1533,7 +1570,7 @@ class ROIproc():
         
         return ROIavgs_allExp, ROIavgs_best, BestExptime_Idx, buf_images
 
-    def doDLS(self, saveFolder, lagtimes, reftimes='all', no_buffer=False, drift_corr=0, 
+    def doDLS(self, saveFolder, lagtimes, reftimes='all', no_buffer=False, drift_corr=0, drift_method='overlap', 
               force_SLS=True, save_transposed=False, export_configparams=None, include_negative_lags=False,
               g2m1_averageN=None, g2m1_reterr=False):
         """ Run SLS/DLS analysis
@@ -1550,6 +1587,10 @@ class ROIproc():
                                 up to a maximum drift of drift_corr pixels. If 0, do not perform this extra step
                                 NOTE: this analysis uses rectangular ROIs without masks.
                                 ROI coordinates are set by ROIproc.ROIboundingBoxes
+        drift_method :          str. Method for subpixel drift detection and correction. 
+                                Available methods: 'paraboloid' or 'overlap'
+                                'paraboloid' method is faster and suitable for large speckles
+                                'overlap' method is best for small speckles
         no_buffer :             bool. If True, avoid reading full MIfile to RAM
         force_SLS :             bool. If False, program will load previously computed SLS results if available.
         save_transposed:        bool. Format of correlation timetrace output
@@ -1640,6 +1681,7 @@ class ROIproc():
                                         'save_transposed' : save_transposed,
                                         'include_negative_lags' : include_negative_lags,
                                         'drift_corr' : drift_corr,
+                                        'drift_method' : drift_method,
                                         'g2m1_averageN' : g2m1_averageN,
                                         'g2m1_reterr' : g2m1_reterr,
                             },}
@@ -1798,7 +1840,7 @@ class ROIproc():
                                     for ridx in range(cI.shape[0]):
                                         if ValidROI[ridx]:
                                             xp, yp, corr_peak = FindCrosscorrPeak(find_img, ref_img, SearchRange=search_range, SearchROI=search_ROIs[ridx], 
-                                                                                  ValidateInput=False, debugMode=self.DebugMode)
+                                                                                  ValidateInput=False, SubpixelMethod=drift_method, debugMode=self.DebugMode)
                                             cIcr[ridx,ref_tidx,cur_lagidx[lidx]] = corr_peak * 2. / (all_d0[ridx, DLS_reftimes[ref_tidx]] + all_d0[ridx, cur_tidx2])
                                             dxdy[ridx,ref_tidx,cur_lagidx[lidx]] = (xp, yp)
                                         

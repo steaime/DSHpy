@@ -481,11 +481,6 @@ def ValidateAverageInterval(avg_interval, num_datapoints):
                  if interval=[min_idx, max_idx, [step_idx=1]], average will be done in the specified interval
                  if [interval1, ..., intervalN], a list of intervals will be computed as above
     - num_datapoints: int. Number of datapoints
-    - sharp_bound: None or bool. 
-                 if False, use interval bounds to associate any reference time to the corresponding interval, 
-                           but average on all time lags, including those for which ref_time + time_lag >= max_idx
-                 if True, for each reference time, restrict average such that both correlated timepoints are in the specified interval
-                 if None, decide automatically what to do: set it to False if avg_interval is None or int, otherwise set to True 
     
     Parameters
     ----------
@@ -505,15 +500,16 @@ def ValidateAverageInterval(avg_interval, num_datapoints):
                     int_bounds[i][1] = int_bounds[i][0]
         else:
             int_bounds = [[0, num_datapoints]]
-    elif avg_interval<=0:
-        int_bounds = [[0, num_datapoints]]
     else:
-        int_bounds = []
-        for i in range(int(math.ceil(num_datapoints*1.0/avg_interval))):
-            if i*avg_interval>=num_datapoints:
-                logging.warn('SharedFunctions.ValidateAverageInterval inconsistency: interval {0}/{1} of size {2} exceeds series length {3}'.format(i, int(math.ceil(num_datapoints*1.0/avg_interval)), avg_interval, num_datapoints))
-            else:
-                int_bounds.append([i*avg_interval, min((i+1)*avg_interval, num_datapoints)])
+        if avg_interval<=0:
+            int_bounds = [[0, num_datapoints]]
+        else:
+            int_bounds = []
+            for i in range(int(math.ceil(num_datapoints*1.0/avg_interval))):
+                if i*avg_interval>=num_datapoints:
+                    logging.warn('SharedFunctions.ValidateAverageInterval inconsistency: interval {0}/{1} of size {2} exceeds series length {3}'.format(i, int(math.ceil(num_datapoints*1.0/avg_interval)), avg_interval, num_datapoints))
+                else:
+                    int_bounds.append([i*avg_interval, min((i+1)*avg_interval, num_datapoints)])
     
     for i in range(len(int_bounds)):
         int_bounds[i][0] = min(int_bounds[i][0], num_datapoints)
@@ -550,9 +546,6 @@ def FindLags(series, lags_index, refs_index=None, subset_intervals=None, toleran
     else:
         # Check that refs_index is sorted ASC, and that all elements in refs_index are in the [0,len(series)] interval
         assert (all(refs_index[i] < refs_index[i+1] for i in range(len(refs_index) - 1))), 'FindLags input error: refs_index needs to be sorted in ascending order'
-        logging.debug(refs_index)
-        logging.debug(refs_index[0])
-        logging.debug('refs_index: ' + str(refs_index))
         assert (refs_index[0] >= 0), 'FindLags input error: refs_index cannot have negative indexes'
         assert (refs_index[-1] < len(series)), 'FindLags input error: maximum value ({0}) exceeds length of time series ({1})'.format(refs_index[-1], len(series))
         
@@ -562,7 +555,6 @@ def FindLags(series, lags_index, refs_index=None, subset_intervals=None, toleran
         if (lags_index[lidx]==0):
             alllags.append(np.zeros_like(refs_index, dtype=float))
         elif (lags_index[lidx] < len(series)):
-            alllags.append(np.zeros_like(refs_index, dtype=float))
             tmp_append = []
             for tidx in range(len(refs_index)):
                 if refs_index[tidx] + lags_index[lidx] < len(series):
@@ -669,3 +661,6 @@ def IntLogSpace_GetBestPPD(num_points, max_value, first_point=1):
     while IntLogSpace(num_points, guess_value, first_point)[-1] > max_value:
         guess_value = guess_value + 1
     return guess_value
+
+def CheckEdgePosition(row, col, shape):
+    return (row<=0 or row>=(shape[0]-1) or col<=0 or col>=(shape[1]-1))
