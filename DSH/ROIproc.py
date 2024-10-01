@@ -650,8 +650,10 @@ def CalcCrosscorrMatrix(Image, Reference, SearchRange=1, SearchROI=None, Validat
         Ref_crop_meansquare = np.mean(np.square(Ref_crop))
         Ref_crop_meanvar = Ref_crop_meansquare - Ref_crop_mean**2
         if debugMode:
-            logging.debug('CalcCrosscorrMatrix with specified SearchROI: Image has shape {0} (check: {1}), cropped ROI has shape {2}, search range is {3}, Xcorr has shape {4}'.format(Image.shape, 
-                                                                                                        Reference.shape, SearchROI, SearchRange, Xcorr.shape))
+            logging.debug('CalcCrosscorrMatrix with specified SearchROI: Image has shape {0} (check: {1}), cropped ROI is {2} (shape: {3}), search range is {4}, Xcorr has shape {5}'.format(Image.shape, 
+                                                                                                        Reference.shape, SearchROI, (SearchROI[2]-SearchROI[0],SearchROI[3]-SearchROI[1]), SearchRange, Xcorr.shape))
+            logging.debug('Cropped reference statistics: mean={0}, meansquare={1}, variance={2}'.format(np.mean(Reference), np.mean(np.square(Reference)), np.std(Reference)**2))
+            logging.debug('Reference statistics: mean={0}, meansquare={1}, variance={2}'.format(Ref_crop_mean, Ref_crop_meansquare, Ref_crop_meanvar))
             logging.debug(str(Reference.shape) + '[' + str(SearchROI[0]) + ':' + str(SearchROI[2]) + ', ' 
                         + str(SearchROI[1]) + ':' + str(SearchROI[3]) + '] -> ' + str(Ref_crop.shape))
         for iRow in range(Xcorr.shape[0]):
@@ -661,13 +663,15 @@ def CalcCrosscorrMatrix(Image, Reference, SearchRange=1, SearchROI=None, Validat
                 Image_crop = Image[SearchROI[0]+lagy:SearchROI[2]+lagy, SearchROI[1]+lagx:SearchROI[3]+lagx]
                 Imean = np.mean(Image_crop)
                 if CovarianceNorm=='variance':
-                    Xcorr[iRow, iCol] = (np.mean(Image_crop * Ref_crop) - Imean * Ref_crop_mean) / np.sqrt((np.mean(np.square(Image_crop))-Imean**2) * Ref_crop_meansquare)
+                    Xcorr[iRow, iCol] = (np.mean(Image_crop * Ref_crop) - Imean * Ref_crop_mean) / np.sqrt((np.mean(np.square(Image_crop))-Imean**2) * Ref_crop_meanvar)
                 elif CovarianceNorm=='mean':
                     Xcorr[iRow, iCol] = np.mean(Image_crop * Ref_crop) / (Imean * Ref_crop_mean) - 1
                 elif CovarianceNorm=='none':
                     Xcorr[iRow, iCol] = np.mean(Image_crop * Ref_crop) - Imean * Ref_crop_mean
                 else:
                     raise ValueError('CalcCrosscorrMatrix: unknown normalization scheme "{0}"'.format(CovarianceNorm))
+                if debugMode:
+                    logging.debug('Xcorr[{0},{1}] : cropping image to [{2}:{3},{4}:{5}]. Raw product: {6}. Corr: {7}'.format(iRow, iCol, SearchROI[0]+lagy, SearchROI[2]+lagy, SearchROI[1]+lagx, SearchROI[3]+lagx, np.mean(Image_crop * Ref_crop), Xcorr[iRow, iCol]))
     return Xcorr
 
 def FindParabolaExt(_corr, _x0, _y0, _x3, _y3, _a0, _a1, _a2, _a4, _a5):
@@ -685,7 +689,7 @@ def FindParabolaExt(_corr, _x0, _y0, _x3, _y3, _a0, _a1, _a2, _a4, _a5):
     return xp, yp, zp
 
 
-def FindSubpixelPeak(Matrix, TopLeftCoord=(0,0), Method='paraboloid', SubPixelOnly=False, MaxCoords=None, debugMode=False):
+def FindSubpixelPeak(Matrix, TopLeftCoord=(0,0), Method='paraboloid', SubPixelOnly=False, MaxCoords=None, debugMode=False, verbose=0):
     '''
     Finds the coordinates of the local maximum with subpixel resolution
     
@@ -720,7 +724,8 @@ def FindSubpixelPeak(Matrix, TopLeftCoord=(0,0), Method='paraboloid', SubPixelOn
         logging.debug('FindSubpixelPeak: max of crosscorrelation found in position {0} (matrix shape: {1}, coordinate of top-left corner: {2})'.format([rmax, cmax], Matrix.shape, TopLeftCoord))
     #check whether the max of corr lies on the edge of the search interval. If so, do not perform subpixel search
     if sf.CheckEdgePosition(rmax, cmax, Matrix.shape):
-        logging.warning('FindSubpixelPeak: peak found at the matrix edge')
+        if verbose > 0:
+            logging.warning('FindSubpixelPeak: peak position {0} at the edge of crosscorrelation matrix with shape {1}'.format((rmax, cmax), Matrix.shape))
         if SubPixelOnly:
             return 0, 0, -1
         else:
@@ -1570,7 +1575,7 @@ class ROIproc():
         
         return ROIavgs_allExp, ROIavgs_best, BestExptime_Idx, buf_images
 
-    def doDLS(self, saveFolder, lagtimes, reftimes='all', no_buffer=False, drift_corr=0, drift_method='overlap', 
+    def doDLS(self, saveFolder, lagtimes, reftimes='all', no_buffer=False, drift_corr=0, drift_method='paraboloid', 
               force_SLS=True, save_transposed=False, export_configparams=None, include_negative_lags=False,
               g2m1_averageN=None, g2m1_reterr=False):
         """ Run SLS/DLS analysis
