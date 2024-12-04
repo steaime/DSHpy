@@ -203,6 +203,7 @@ class SALS(RP.ROIproc):
         return RP.ROIproc.SetROIs(self, ROImasks, ROImetadata=ROImetadata)
     
     def GenerateROIs(self, ROI_specs, maskRaw=None):
+        self.px_mask = maskRaw
         ROImasks, ROIcoords = GenerateROIs(ROI_specs, imgShape=self.MIinput.ImageShape(), centerPos=self.centerPos, maskRaw=maskRaw)
         return self.SetROIs(ROImasks, ROIcoords=ROIcoords)
     
@@ -213,14 +214,27 @@ class SALS(RP.ROIproc):
     def doDLS(self, saveFolder, lagtimes, export_configparams=None, **kwargs):
         sf.CheckCreateFolder(saveFolder)
         # save raw mask, get filename
-        raw_mask_filename = os.path.join(saveFolder, 'px_mask.raw')
-        MI.WriteBinary(raw_mask_filename, self.px_mask, 'b')
-        
         additional_params = {'SALS'    : self.GetSALSparams(), 
                              'General' : {'generated_by': 'SALS.doDLS'}}
-        additional_params['SALS']['raw_mask'] = os.path.abspath(raw_mask_filename)
+        if self.px_mask is not None:
+            raw_mask_filename = os.path.join(saveFolder, 'px_mask.raw')
+            MI.WriteBinary(raw_mask_filename, self.px_mask, 'b')
+            additional_params['SALS']['raw_mask'] = os.path.abspath(raw_mask_filename)
 
         
         if export_configparams is not None:
             additional_params = sf.UpdateDict(additional_params, export_configparams)
         return RP.ROIproc.doDLS(self, saveFolder, lagtimes=lagtimes, export_configparams=additional_params, **kwargs)
+    
+    def doSLS(self, saveFolder, export_configparams=None, **kwargs):
+        sf.CheckCreateFolder(saveFolder)
+        additional_params = {'SALS'    : self.GetSALSparams(), 
+                             'General' : {'generated_by': 'SALS.doSLS'}}
+        if self.px_mask is not None:
+            raw_mask_filename = os.path.join(saveFolder, 'px_mask.raw')
+            MI.WriteBinary(raw_mask_filename, self.px_mask, 'b')
+            additional_params['SALS']['raw_mask'] = os.path.abspath(raw_mask_filename)
+
+        if export_configparams is not None:
+            additional_params = sf.UpdateDict(additional_params, export_configparams)
+        return RP.ROIproc.doSLS(self, saveFolder, export_config=True, export_configparams=additional_params, **kwargs)

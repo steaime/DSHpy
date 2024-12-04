@@ -5,6 +5,24 @@ import numpy as np
 
 from DSH import SharedFunctions as sf
 
+def ExportArrays(filename, arrays, headers, delimiter='\t'):
+    # Check that the number of headers matches the number of arrays
+    if len(headers) != len(arrays):
+        raise ValueError("Number of headers must match the number of arrays")
+    
+    # Check that all arrays have the same length
+    length = len(arrays[0])
+    if not all(len(arr) == length for arr in arrays):
+        raise ValueError("All arrays must have the same length")
+    
+    # Stack arrays column-wise for export
+    data = np.column_stack(arrays)
+    
+    # Save data to ASCII file with headers
+    header_line = delimiter.join(headers)
+    np.savetxt(filename, data, header=header_line, fmt="%.6f", comments='', delimiter=delimiter)
+    
+
 def LoadResFile(fname, readHeader=True, isolateFirst=0, delimiter=',', comments='#', missing_values=None):
     """Reads a 2D ASCII file
     

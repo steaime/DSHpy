@@ -1511,7 +1511,7 @@ class ROIproc():
             ROIavgs_best[idx] = AverageIntensities[idx[0], BestExptime_Idx[idx], idx[1]] / self.expTimes[BestExptime_Idx[idx]]
         return ROIavgs_best, BestExptime_Idx
                              
-    def doSLS(self, saveFolder, buf_images=None, no_buffer=False, force_calc=True):
+    def doSLS(self, saveFolder, buf_images=None, no_buffer=False, force_calc=True, export_config=True, export_configparams=None):
         """ Run SLS analysis: compute average intensity, eventually choosing best exposure time for each ROI
         
         Parameters
@@ -1534,6 +1534,22 @@ class ROIproc():
         if saveFolder is not None:
             sf.CheckCreateFolder(saveFolder)
             self.LastSaveFolder = saveFolder
+            
+            if export_config:
+                analysis_params = {'General' : {'generated_by' : 'ROIproc.doSLS'},
+                       'Analysis': {
+                                    'type' : 'SLS',
+                                    'out_folder' : os.path.abspath(saveFolder),
+                                    'no_buffer' : no_buffer,
+                                    'force_calc' : force_calc
+                        },}
+                analysis_params['General']['generated_by'] = 'ROIproc.doDLS'
+                config_fname = 'ROIprocConfig.ini'
+                if export_configparams is not None:
+                    analysis_params = sf.UpdateDict(analysis_params, export_configparams)
+                    if 'SALS' in analysis_params['General']['generated_by']:
+                        config_fname = 'SALSconfig.ini'
+                self.ExportConfiguration(saveFolder, other_params=analysis_params, out_fname=config_fname)
         
         ROIavgs_allExp, ROIavgs_best, BestExptime_Idx = None, None, None
         if not force_calc:
@@ -1675,7 +1691,7 @@ class ROIproc():
                         fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
         
 
-        analysis_params = {'General' : {},
+        analysis_params = {'General' : {'generated_by' : 'ROIproc.doDLS'},
                            'Analysis': {
                                         'type' : 'DLS',
                                         'out_folder' : os.path.abspath(saveFolder),
@@ -1692,7 +1708,6 @@ class ROIproc():
                             },}
         if drift_corr>0:
             analysis_params['Analysis']['drift_search_range'] = search_range
-        analysis_params['General']['generated_by'] = 'ROIproc.doDLS'
         config_fname = 'ROIprocConfig.ini'
         if export_configparams is not None:
             analysis_params = sf.UpdateDict(analysis_params, export_configparams)
@@ -1716,7 +1731,7 @@ class ROIproc():
             return None
         
             
-        ROIavgs_allExp, ROIavgs_best, BestExptime_Idx, buf_images = self.doSLS(saveFolder, buf_images=None, no_buffer=no_buffer, force_calc=force_SLS)
+        ROIavgs_allExp, ROIavgs_best, BestExptime_Idx, buf_images = self.doSLS(saveFolder, buf_images=None, no_buffer=no_buffer, force_calc=force_SLS, export_config=False)
         
         if buf_images is None:
             if no_buffer:
