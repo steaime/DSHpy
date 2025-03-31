@@ -664,3 +664,32 @@ def IntLogSpace_GetBestPPD(num_points, max_value, first_point=1):
 
 def CheckEdgePosition(row, col, shape):
     return (row<=0 or row>=(shape[0]-1) or col<=0 or col>=(shape[1]-1))
+
+def ReplaceEnvironmentVariables(input_string):
+    """
+    Replaces environment variables in the input string with their corresponding values.
+
+    :param input_string: The string containing environment variables in the format %VARNAME%.
+    :return: A string with environment variables replaced by their values.
+    """
+    # Regular expression to match %VARNAME% patterns
+    env_var_pattern = re.compile(r"%([A-Z_][A-Z0-9_]*)%", re.IGNORECASE)
+
+    def replacer(match):
+        var_name = match.group(1)
+        # Get the environment variable value, default to empty string if not found
+        return os.environ.get(var_name, '')
+
+    # Replace all matches in the input string
+    return env_var_pattern.sub(replacer, input_string)
+
+def StackArrayList(array_list, fill_val=np.nan, none_to_empty=True):
+    max_len = np.max([len(x) for x in array_list if IsIterable(x)])
+    res = np.ones((max_len, len(array_list)), dtype=float) * fill_val
+    for i in range(len(array_list)):
+        if array_list[i] is not None:
+            if IsIterable(array_list[i]):
+                res[:len(array_list[i]),i] = array_list[i]
+            else:
+                res[0,i] = array_list[i]
+    return res

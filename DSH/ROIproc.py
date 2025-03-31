@@ -180,6 +180,8 @@ def ROIAverage(image, ROImask, boolMask=False, weights=None, norm=None, masknans
                           Pixels not belonging to any ROI must be labeled with -1
                    It can be none if BoundingBoxes is specified. In this case, 
                    bounding boxes themselves will be used as ROIs
+    boolMask     - if True: interpret ROImask as a list of 2D bool arrays
+                 - if False: interpret ROImask as a single 2D int array
     weights      - can do a weighted average instead of a simple average if this keyword parameter
                    is set.  weights.shape must = image.shape.
     norm         - Normalization factors. Equals the number of pixel belonging to each ROI if average is not weighted
@@ -1078,7 +1080,7 @@ def LoadFromConfig(ConfigParams, runAnalysis=True, outputSubfolder='reproc'):
 class ROIproc():
     """ Class to process MIfile computing averages and time correlations on Regions Of Interest (ROIs) """
     
-    def __init__(self, MIin, ROImasks, ROImetadata=None, imgTimes=None, expTimes=[1]):
+    def __init__(self, MIin, ROImasks, ROImetadata=None, imgTimes=None, expTimes=[1], PDdata=None, BkgCorr=None):
         """
         Initialize SALS
 
@@ -1093,6 +1095,13 @@ class ROIproc():
                     
         imgTimes :  Float array of length Nimgs. i-th element will be the time of the image.
                     If none, images will be 
+        PDdata :    None, 1D float array or list of 2 arrays [Iin, Itr], each of length equal to the number of images.
+        BkgCorr :   Eventually, data for background correction: [DarkBkg, OptBkg, PDdata], where:
+                    DarkBkg : None, float array or MIfile with dark measurement from the camera. 
+                              If None, dark subtraction will be skipped
+                              If MIfile, all images from MIfile will be averaged and the raw result will be stored
+                    OptBkg :  None, float array or MIfile with empty cell measurement. Sale as MIdark
+                    PD data:  None or [[Idark_in, Idark_tr], [Iopt_in, Iopt_tr]]
         """
         
         self.MIinput   = MIin
@@ -1100,6 +1109,9 @@ class ROIproc():
         self._loadTimes(imgTimes)
         self.SetExptimes(expTimes)
         self._initConstants()
+        
+        self.LoadPD(PDdata)
+        self._loadBkg(BkgCorr)
         
     def _loadTimes(self, imgTimes=None):
         if imgTimes is None:
@@ -1115,10 +1127,48 @@ class ROIproc():
                 self.imgTimes  = imgTimes
                 logging.debug('{0} image times loaded (Image number: {1})'.format(len(self.imgTimes), self.MIinput.ImageNumber()))
 
+    def LoadPD(self, PDdata):
+        if not sf.IsIterable(PDdata):
+            PDdata = None
+        if PDdata is None:
+            PDdata = [None, None]
+        if len(PDdata) < 2 or not sf.IsIterable(PDdata[0]):
+            PDdata = [PDdata, None]
+        if PDdata[0] is not None and PDdata[1] is None:
+            logging.info('ROIproc._loadPD called with single scalar array: interpreted as incoming intensity')
+        self.PDdata = PDdata
+
+    def _loadBkg(self, BkgCorr):
+        if BkgCorr is None:
+            BkgCorr = [None, None, None]
+        self.DarkBkg, self.OptBkg, self.BkgPDdata = BkgCorr
+
+    def HasPDdata(self):
+        return self.CountPDchannels() > 0 and self.CountPDdata() > 0
+    
+    def CountPDchannels(self):
+        if self.PDdata is not None:
+            return np.sum([1 for x in self.PDdata if x is not None])
+        else:
+            return 0
+
+    def CountPDdata(self, chIdx=None):
+        res = -1
+        if self.PDdata is not None:
+            if chIdx is None:
+                for i in range(len(self.PDdata)):
+                    if sf.IsIterable(self.PDdata[i]):
+                        res = len(self.PDdata[i])
+                        break
+            else:
+                if chIdx < len(self.PDdata):
+                    res = len(self.PDdata[chIdx])
+        return res
      
     def _initConstants(self):
         #Constants
-        self.MaxSafeAvgIntensity = 40
+        self.ExpTimeCorrFactor = 0
+        self.MaxSafeAvgIntensity = 30
         self.LoopMaxInfoN = 100
         self.dt_tolerance = 1e-2
         self.dt_tolerance_isrelative = True
@@ -1128,7 +1178,14 @@ class ROIproc():
         self.savetxt_kwargs = {'delimiter': self.txt_delim, 'comments': self.txt_comm}
         self.out_names = {'imgTimes' : 'imgTimes.dat',
                           'ROIcoords': 'ROIcoords.dat',
-                          'ROI_mask' : 'ROI_mask.raw'}
+                          'ROI_mask' : 'ROI_mask.raw',
+                          'PDdata'   : 'PDdata.dat'}
+    
+    def GetExptimes(self, corr=True):
+        if corr and self.ExpTimeCorrFactor != 0:
+            return self.expTimes*(1+0.01/self.expTimes)
+        else:
+            return self.expTimes
         
     def __repr__(self):
         if (self.MIinput.IsStack()):
@@ -1231,6 +1288,10 @@ class ROIproc():
         self.ROIboundingBoxes = np.asarray(self.ROIboundingBoxes)
         if trivial_cropbb:
             self.ROI_masks_crop = None
+            
+    def SetExptimeCorrFactor(self, corrFactor):
+        logging.warn('ROIproc: changing exposure time correction factor from {0:.4f} to {1:.4f} ms'.format(self.ExpTimeCorrFactor, corrFactor))
+        self.ExpTimeCorrFactor = corrFactor
 
     def SetExptimes(self, expTimes):
         if not hasattr(expTimes, "__len__"):
@@ -1285,13 +1346,15 @@ class ROIproc():
     def ReadMI(self):
         return self.MIinput.Read(cropROI=self.CropROIbb)
 
-    def SaveIavg(self, SaveFolder, Iavg, AllExpData=None):
+    def SaveIavg(self, SaveFolder, Iavg, AllExpData=None, NormData=None, CorrExptime=True):
         """ Saves output of SLS analysis
 
         Parameters
         ----------
         Iavg :          2D array of shape (NumTimes(), NumROIs())
         AllExpData :    None or [Iav_allexp, best_exptime_idx], data with all exposure times
+        NormData :      None or [Norm, Base], data with normalization
+        CorrExptime :   bool. If False, disable exposure time correction even if a correcting factor (self.ExpTimeCorrFactor) is specified
         
         Saves
         -----
@@ -1306,19 +1369,26 @@ class ROIproc():
         ROIhdr_str = self.txt_delim.join(self.ROIcoord_names)
         flat_times = self.imgTimes.reshape(-1)
         
-        str_hdr_avg = ROIhdr_str + ''.join([self.txt_delim+'t{0:.3f}'.format(flat_times[i])
+        str_hdr = ''.join([self.txt_delim+'t{0:.3f}'.format(flat_times[i])
                                             for i in range(0, self.ImageNumber(), self.NumExpTimes())])
+        str_hdr_avg = ROIhdr_str + str_hdr
         np.savetxt(os.path.join(SaveFolder, 'Iavg.dat'), np.append(self.ROIcoords[:,:2], Iavg.T, axis=1), 
                    header=str_hdr_avg, **self.savetxt_kwargs)
         
         if AllExpData is not None:
             ROIavgs_allExp, BestExptime_Idx = AllExpData
-            np.savetxt(os.path.join(SaveFolder, 'exptimes.dat'), np.append(self.ROIcoords[:,:2], BestExptime_Idx.T, axis=1), 
-                       header=str_hdr_avg, **self.savetxt_kwargs)
+            np.savetxt(os.path.join(SaveFolder, 'exptimes.dat'), BestExptime_Idx.T.astype(int), header=str_hdr, fmt='%i', **self.savetxt_kwargs)
             str_hdr_raw = ROIhdr_str + ''.join([self.txt_delim+'t{0:.3f}_e{1:.3f}'.format(flat_times[i], self.expTimes[i%len(self.expTimes)])
                                                 for i in range(len(flat_times))])
             np.savetxt(os.path.join(SaveFolder, 'Iavg_raw.dat'), np.append(self.ROIcoords[:,:2], ROIavgs_allExp.reshape((-1, ROIavgs_allExp.shape[-1])).T, axis=1), 
                        header=str_hdr_raw, **self.savetxt_kwargs)
+            
+        if self.ExpTimeCorrFactor != 0:
+            np.savetxt(os.path.join(SaveFolder, 'exptimes.dat'), np.asarray([self.expTimes, self.GetExptimes(corr=CorrExptime)]).T, 
+                       header='texp_nominal[ms]'+self.txt_delim+'texp_corr[ms]', **self.savetxt_kwargs)
+        
+        if NormData is not None:
+            iof.ExportArrays(os.path.join(SaveFolder, 'normbase.dat'), NormData, ['normalization', 'baseline'])
 
     def LoadIavg(self, outFolder, skipcols=2):
         Ir_allexp, Ir, best_exptimes = None, None, None
@@ -1489,29 +1559,35 @@ class ROIproc():
             corr = 2 * corr / (contrast_t1 + contrast_t2)
         return np.squeeze(corr)
             
-    def FindBestExptimes(self, AverageIntensities):
+    def FindBestExptimes(self, AverageIntensities, CorrExptime=True):
         '''
         Find best exposure times based on ROI-averaged intensities
         
         Parameters
         ----------
         - AverageIntensities: 3D array. Element [i,j,k] is the average intensity of j-th ROI measured at k-th exposure time during i-th exposure time ramp
+        - CorrExptime : bool. If False, disable exposure time correction even if a correcting factor (self.ExpTimeCorrFactor) is specified
         
         Returns
         -------
         - ROIavgs_best: 2D array. Element [i,j] is the intensity of the best exposure time of j-th ROI during i-th time, normalized by the exposure time itself
         - BestExptime_Idx: 2D array, containing the index of the best exposure time selected for ROIavgs_best
         '''
+        if self.ExpTimeCorrFactor != 0:
+            if CorrExptime:
+                logging.info('ROIproc.FindBestExptimes: Correcting exposure times with factor dt={0:.4f} ms'.format(self.ExpTimeCorrFactor))
+            else:
+                logging.info('ROIproc.FindBestExptimes: Disregarding correction time factor dt={0:.4f} ms. Normalizing intensities with nominal exposure times'.format(self.ExpTimeCorrFactor))
         if AverageIntensities.ndim < 3:
             AverageIntensities = AverageIntensities.reshape((self.NumTimes(), self.NumExpTimes(), -1))
         ROIavgs_best = np.zeros((self.NumTimes(), AverageIntensities.shape[-1]), dtype=float)
         BestExptime_Idx = -1 * np.ones_like(ROIavgs_best, dtype=int)
         for idx, val in np.ndenumerate(ROIavgs_best):
             BestExptime_Idx[idx] = min(bisect.bisect(AverageIntensities[idx[0], :, idx[1]], self.MaxSafeAvgIntensity), len(self.expTimes)-1)
-            ROIavgs_best[idx] = AverageIntensities[idx[0], BestExptime_Idx[idx], idx[1]] / self.expTimes[BestExptime_Idx[idx]]
+            ROIavgs_best[idx] = AverageIntensities[idx[0], BestExptime_Idx[idx], idx[1]] / self.GetExptimes(CorrExptime)[BestExptime_Idx[idx]]
         return ROIavgs_best, BestExptime_Idx
                              
-    def doSLS(self, saveFolder, buf_images=None, no_buffer=False, force_calc=True, export_config=True, export_configparams=None):
+    def doSLS(self, saveFolder, buf_images=None, no_buffer=False, force_calc=True, norm_PDdata=True, CorrExptime=True, export_config=True, export_configparams=None):
         """ Run SLS analysis: compute average intensity, eventually choosing best exposure time for each ROI
         
         Parameters
@@ -1522,11 +1598,15 @@ class ROIproc():
         - no_buffer: bool, used only if buf_images is None. If False, the entire image stack will be read in a buffer at once.
                      otherwise, images will be loaded one by one
         - force_calc: bool. If False, program will search for previously computed SLS results and load those.
+        - norm_PDdata: bool. If True, normalize SLS data using PDdata, if available.
+                       If False (or if PDdata is None), SLS data will still be normalized by the exposure time
+        - CorrExptime : bool. If False, disable exposure time correction even if a correcting factor (self.ExpTimeCorrFactor) is specified
         
         Returns
         -------
         - ROIavgs_allExp : 3D array. Element [i,j,k] is the average of j-th exposure time in i-th exposure time sweep, averaged on k-th ROI
         - ROIavgs_best : 2D array. Element [i,j] is the best average intensity taken from i-th exposure time sweep, averaged on j-th ROI
+                         NOTE: values in ROIavgs_best and ROIavgs_allExp are normalized by the exposure time, and eventually by the photodiode count.
         - BestExptime_Idx : 2D array (int). Element [i,j] is the index of the optimum exposure time for j-th ROI
         - buf_images : 3D array. Buffer of images eventually read during the analysis
         """
@@ -1540,8 +1620,9 @@ class ROIproc():
                        'Analysis': {
                                     'type' : 'SLS',
                                     'out_folder' : os.path.abspath(saveFolder),
-                                    'no_buffer' : no_buffer,
-                                    'force_calc' : force_calc
+                                    'no_buffer'  : no_buffer,
+                                    'force_calc' : force_calc,
+                                    'CorrExptime': CorrExptime
                         },}
                 analysis_params['General']['generated_by'] = 'ROIproc.doDLS'
                 config_fname = 'ROIprocConfig.ini'
@@ -1573,9 +1654,19 @@ class ROIproc():
                                 'Average intensity output of shape {0} cannot be reshaped using number of times ({1}) '.format(all_avg.shape, self.NumTimes()) +
                                 'and exposure times ({1}). Restricting SLS analysis to first {0} images'.format(self.NumExpTimes(), limit_len))
             ROIavgs_allExp = all_avg.reshape((self.NumTimes(), self.NumExpTimes(), -1))
-            ROIavgs_best, BestExptime_Idx = self.FindBestExptimes(ROIavgs_allExp)
+            ROIavgs_best, BestExptime_Idx = self.FindBestExptimes(ROIavgs_allExp, CorrExptime=CorrExptime)
+            
+            Inorm = np.ones(ROIavgs_best.shape[0], dtype=float)
+            Ibase = np.zeros_like(Inorm)
+            if norm_PDdata and self.HasPDdata():
+                if sf.IsIterable(self.PDdata[0]):
+                    for i in range(ROIavgs_best.shape[0]):
+                        if i*self.NumExpTimes() < len(self.PDdata[0]):
+                            Inorm[i] = np.nanmean(self.PDdata[0][i*self.NumExpTimes():min((i+1)*self.NumExpTimes(),len(self.PDdata[0]))])
+                            ROIavgs_best[i] /= Inorm[i]
+
             if saveFolder is not None:
-                self.SaveIavg(saveFolder, ROIavgs_best, [ROIavgs_allExp, BestExptime_Idx])
+                self.SaveIavg(saveFolder, ROIavgs_best, [ROIavgs_allExp, BestExptime_Idx], [Inorm, Ibase], CorrExptime=CorrExptime)
             
             logging.debug('ROIproc.doSLS: output saved')
 
@@ -1967,6 +2058,8 @@ class ROIproc():
                                    'skiprow' : 0,
                                 },
                        'ExpTimes' : {'values' : self.expTimes,
+                                     'corr_factor' : self.ExpTimeCorrFactor,
+                                     'corr_values' : self.GetExptimes(),
                                 },
                        'Constants' : {'max_avg_intensity' : self.MaxSafeAvgIntensity,
                                       'dt_tolerance' : self.dt_tolerance,
@@ -1975,6 +2068,13 @@ class ROIproc():
                                       'txt_comm' : self.txt_comm,
                                        },
                        }
+        if self.HasPDdata():
+            np.savetxt(os.path.join(outFolder, self.out_names['PDdata']), sf.StackArrayList(self.PDdata))
+            my_params['PDdata'] = {'num_channels' : self.CountPDchannels(),
+                                   'num_datapoints' : self.CountPDdata(),
+                                   'file' : self.out_names['PDdata'],
+                                   'usecol' : 0,
+                                   'skiprow' : 0}
         if other_params is not None:
             my_params = sf.UpdateDict(my_params, other_params)
         if self.MIinput.IsStack():

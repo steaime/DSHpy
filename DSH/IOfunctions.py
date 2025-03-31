@@ -3,9 +3,25 @@ import os
 import logging
 import numpy as np
 
+from DSH import Config as cf
 from DSH import SharedFunctions as sf
 
-def ExportArrays(filename, arrays, headers, delimiter='\t'):
+def DictToIni(dict_to_export, out_filename, section_name=None):
+    """Exports dictionary to text file
+
+    Parameters
+    ----------
+    dict_to_export : dictionary to be exported
+    out_filename : full path of output file
+    section_name : section name (string). Section to be used in Config.Import()
+                   keys in dict_to_export will become options of section section_name
+                   if None, keys in dict_config will be interpreted as section names
+                            entries in dict_config must be dictionaries
+                            (WARNING: section_name==None assumes nested dictionnary)
+    """
+    cf.ExportDict(dict_to_export, out_filename, section_name=section_name)
+
+def ExportArrays(filename, arrays, headers, delimiter='\t', fmt='%.18e'):
     # Check that the number of headers matches the number of arrays
     if len(headers) != len(arrays):
         raise ValueError("Number of headers must match the number of arrays")
@@ -20,7 +36,7 @@ def ExportArrays(filename, arrays, headers, delimiter='\t'):
     
     # Save data to ASCII file with headers
     header_line = delimiter.join(headers)
-    np.savetxt(filename, data, header=header_line, fmt="%.6f", comments='', delimiter=delimiter)
+    np.savetxt(filename, data, header=header_line, fmt=fmt, comments='', delimiter=delimiter)
     
 
 def LoadResFile(fname, readHeader=True, isolateFirst=0, delimiter=',', comments='#', missing_values=None):

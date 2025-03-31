@@ -10,15 +10,43 @@ from DSH import MIfile as MI
 from DSH import ROIproc as RP
 from DSH import SharedFunctions as sf
 
-def ValidatePolarSlices(ROI_specs, imgShape=None):
+def ValidatePolarSlices(ROI_specs, imgShape=None, rMax=None):
+    """ Validate ROI specs for SALS analysis
+
+    Parameters
+    ----------
+    ROI_specs : None, or raw mask with ROI numbers, or int, or couple [rSlices, aSlices].
+                if raw mask:integer mask with ROI indexes for every pixel, 0-based.
+                            Each pixel can only belong to one ROI.
+                            Pixels belonging to no ROI are labeled with -1
+                            Number of ROI is given by np.max(mask)
+                None would correspond to [None, None]
+                int would correspond to [int, None]
+                rSlices :   2D float array of shape (N, 2), or 1D float array of length N+1, or int, or None. 
+                            If 2D:  i-th element will be (rmin_i, rmax_i), where rmin_i and rmax_i 
+                                     delimit i-th annulus (values in pixels)
+                            If 1D:  i-th annulus will be delimited by i-th and (i+1)-th element of the list
+                            If int: generate n annuli, linearly spaced
+                            If None: one single annulus will be generated, comprising the whole image
+                aSlices :   angular slices, same structure as for rSlices. 
+                            Here, angles are measured clockwise (y points downwards) starting from the positive x axis
+    rMax     :  maximum radius (only used if rSlices is None or int), or None
+    imgShape :  shape of the binary image (num_rows, num_cols). Only used if rSlices is None or int, and rMax is None
+    """
     if ROI_specs is None:
         ROI_specs = [None, None]
+    elif not sf.IsIterable(ROI_specs):
+        ROI_specs = [ROI_specs, None]
     rSlices, aSlices = ROI_specs
-    if rSlices is None:
-        if imgShape is None:
-            raise ValueError('Image shape must be specified to determine the range of radii')
+    if rSlices is None or not sf.IsIterable(rSlices):
+        if rMax is None and imgShape is None:
+            raise ValueError('Image shape or maximum radius must be specified to determine the range of radii')
+        if rMax is None:
+            rMax = np.hypot(imgShape[0], imgShape[1])
+        if rSlices is None:
+            rSlices = [1, rMax]
         else:
-            rSlices = [1, np.hypot(imgShape[0], imgShape[1])]
+            rSlices = list(np.linspace(1, rMax, int(rSlices)+1, endpoint=True))
     if aSlices is None:
         aSlices = [-3.15, 3.15]
     return rSlices, aSlices
@@ -28,19 +56,7 @@ def GenerateROIs(ROI_specs, imgShape, centerPos, maskRaw=None):
 
     Parameters
     ----------
-    ROI_specs : None, or raw mask with ROI numbers, or couple [rSlices, aSlices].
-                if raw mask:integer mask with ROI indexes for every pixel, 0-based.
-                            Each pixel can only belong to one ROI.
-                            Pixels belonging to no ROI are labeled with -1
-                            Number of ROI is given by np.max(mask)
-                None would correspond to [None, None]
-                rSlices :   2D float array of shape (N, 2), or 1D float array of length N+1, or None. 
-                            If 2D: i-th element will be (rmin_i, rmax_i), where rmin_i and rmax_i 
-                                    delimit i-th annulus (values in pixels)
-                            If 1D: i-th annulus will be delimited by i-th and (i+1)-th element of the list
-                            If None: one single annulus will be generated, comprising the whole image
-                aSlices :   angular slices, same structure as for rSlices. 
-                            Here, angles are measured clockwise (y points downwards) starting from the positive x axis
+    ROI_specs : None, or raw mask with ROI numbers, or int couple [rSlices, aSlices]. Check ValidatePolarSlices
     imgShape :  shape of the binary image (num_rows, num_cols)
     centerPos : center of polar coordinates.
     maskRaw :   2D binary array with same shape as MIin.ImageShape()
@@ -55,10 +71,12 @@ def GenerateROIs(ROI_specs, imgShape, centerPos, maskRaw=None):
     """
     if ROI_specs is None:
         ROI_specs = [None, None]
+    if not sf.IsIterable(ROI_specs):
+        ROI_specs = [ROI_specs, None]
     if (len(ROI_specs)==2):
-        rSlices, aSlices = ValidatePolarSlices(ROI_specs, imgShape)
-        ROIcoords = RP.MaskCoordsFromBoundaries(rSlices, aSlices, flatten_res=True)
         pxCoords = sf.PixelCoordGrid(shape=imgShape, center=centerPos, coords='polar')
+        rSlices, aSlices = ValidatePolarSlices(ROI_specs, rMax=np.max(pxCoords[0]))
+        ROIcoords = RP.MaskCoordsFromBoundaries(rSlices, aSlices, flatten_res=True)
         ROIs = RP.GenerateMasks(ROIcoords, pxCoords, common_mask=maskRaw)
         
         return ROIs, ROIcoords
@@ -69,6 +87,29 @@ def GenerateROIs(ROI_specs, imgShape, centerPos, maskRaw=None):
         a_min, a_max = RP.ROIEval(a_map, ROI_specs, [np.min, np.max])
         rSlices, aSlices = [[r_min[i], r_max[i]] for i in range(len(r_min))], [[a_min[i], a_max[i]] for i in range(len(a_min))]
         return GenerateROIs([rSlices, aSlices], imgShape, centerPos, maskRaw=maskRaw)
+    
+def RawSLS(image, centerPos, ROI_specs, maskRaw=None):
+    """ compute average intensity of raw image on concentric rings 
+
+    Parameters
+    ----------
+    image     : 2D image or 3D ndarray with list of images
+    centerPos : center of polar coordinates.
+    ROI_specs : None, or raw mask with ROI numbers, or int couple [rSlices, aSlices]. Check ValidatePolarSlices
+    maskRaw :   2D binary array with same shape as MIin.ImageShape()
+                
+    Returns:
+    ROI_avg: if image is 2D: 1D float array with ROI-averaged data
+             if image is 3D: 2D float array, one image per row, one ROI per column.
+    ROIcoords: 
+    """
+    im_shape = image.shape
+    if len(im_shape) > 2:
+        im_shape = im_shape[-2:]
+    ROI_masks, ROIcoords = GenerateROIs(ROI_specs, imgShape=im_shape, centerPos=centerPos, maskRaw=maskRaw)
+    ROI_avg, norm = RP.ROIAverage(image, ROI_masks, boolMask=True)
+    return ROI_avg, ROIcoords
+    
     
 def LoadFromConfig(ConfigParams, runAnalysis=True, outputSubfolder='reproc', debugMode=False):
     """Loads a SALS object from a config file like the one exported in SALS.ExportConfiguration
@@ -116,7 +157,7 @@ def LoadFromConfig(ConfigParams, runAnalysis=True, outputSubfolder='reproc', deb
 class SALS(RP.ROIproc):
     """ Class to do small angle static and dynamic light scattering from a MIfile """
     
-    def __init__(self, MIin, centerPos, ROIslices=None, maskRaw=None, imgTimes=None, expTimes=[1], BkgCorr=None):
+    def __init__(self, MIin, centerPos, ROIslices=None, maskRaw=None, imgTimes=None, expTimes=[1], PDdata=None, BkgCorr=None):
         """
         Initialize SALS
 
@@ -127,16 +168,7 @@ class SALS(RP.ROIproc):
         centerPos : [float, float]. Position of transmitted beam [posX, posY], in pixels.
                     The center of top left pixel is [0,0], 
                     posX increases leftwards, posY increases downwards
-        ROIslices : None, or couple [rSlices, aSlices].
-                    None would correspond to [None, None]
-                    rSlices :   2D float array of shape (N, 2), or 1D float array of length N+1, or None. 
-                                If 2D: i-th element will be (rmin_i, rmax_i), where rmin_i and rmax_i 
-                                        delimit i-th annulus (values in pixels)
-                                If 1D: i-th annulus will be delimited by i-th and (i+1)-th element of the list
-                                If None: one single annulus will be generated, comprising the whole image
-                    aSlices :   angular slices, same structure as for rSlices. 
-                                Here, angles are measured clockwise (y points downwards) starting from the positive x axis
-                                None corresponds to full 2*pi angle
+        ROIslices : None, or int, or couple [rSlices, aSlices]. See ValidatePolarSlices for details
         maskRaw :   2D binary array with same shape as MIin.ImageShape()
                     True values (nonzero) denote pixels that will be included in the analysis,
                     False values (zeroes) will be excluded
@@ -145,19 +177,17 @@ class SALS(RP.ROIproc):
         imgTimes :  None or float array of length Nimgs. i-th element will be the time of the image
                     if None, i-th time will be computed using the FPS from the MIfile Metadata
         expTimes :  list of floats
+        PDdata :    None, 1D float array or list of 2 arrays [Iin, Itr], each of length equal to the number of images.
         BkgCorr :   Eventually, data for background correction: [DarkBkg, OptBkg, PDdata], where:
-                    DarkBkg :    None, float array or MIfile with dark measurement from the camera. 
-                                If None, dark subtraction will be skipped
-                                If MIfile, all images from MIfile will be averaged and the raw result will be stored
-                    OptBkg :     None, float array or MIfile with empty cell measurement. Sale as MIdark
-                    PDdata :    2D float array of shape (Nimgs+2, 2), where Nimgs is the number of images.
-                                i-th item is (PD0, PD1), where PD0 is the reading of the incident light, 
-                                and PD1 is the reading of the transmitted light.
-                                Only useful if DarkBkg or OptBkg is not None
+                    DarkBkg : None, float array or MIfile with dark measurement from the camera. 
+                              If None, dark subtraction will be skipped
+                              If MIfile, all images from MIfile will be averaged and the raw result will be stored
+                    OptBkg :  None, float array or MIfile with empty cell measurement. Sale as MIdark
+                    PD data:  None or [[Idark_in, Idark_tr], [Iopt_in, Iopt_tr]]
         """
         
         # Initialize ROIproc
-        RP.ROIproc.__init__(self, MIin, None, imgTimes=imgTimes, expTimes=expTimes)
+        RP.ROIproc.__init__(self, MIin, None, imgTimes=imgTimes, expTimes=expTimes, PDdata=PDdata, BkgCorr=BkgCorr)
 
         # Set ROIs
         self.ROIslices = ValidatePolarSlices(ROIslices, MIin.ImageShape())
@@ -165,9 +195,6 @@ class SALS(RP.ROIproc):
         self.px_mask = maskRaw
         ROImasks, ROIcoords = GenerateROIs(self.ROIslices, imgShape=MIin.ImageShape(), centerPos=self.centerPos, maskRaw=self.px_mask)
         self.SetROIs(ROImasks, ROIcoords)
-        
-        # SALS-specific initialization
-        self._loadBkg(BkgCorr)
         
     def __repr__(self):
         if (self.MIinput.IsStack()):
@@ -190,11 +217,6 @@ class SALS(RP.ROIproc):
         str_res += '\n| Exposure times  : ' + str(self.NumExpTimes()) + ', from ' + str(self.expTimes[0]) + ' to ' + str(self.expTimes[-1])
         str_res += '\n|-----------------+---------------'
         return str_res
-
-    def _loadBkg(self, BkgCorr):
-        if BkgCorr is None:
-            BkgCorr = [None, None, None]
-        self.DarkBkg, self.OptBkg, self.PDdata = BkgCorr
         
     def SetROIs(self, ROImasks, ROIcoords=None):
         if ROIcoords is not None:
