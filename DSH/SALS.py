@@ -178,12 +178,16 @@ class SALS(RP.ROIproc):
                     if None, i-th time will be computed using the FPS from the MIfile Metadata
         expTimes :  list of floats
         PDdata :    None, 1D float array or list of 2 arrays [Iin, Itr], each of length equal to the number of images.
-        BkgCorr :   Eventually, data for background correction: [DarkBkg, OptBkg, PDdata], where:
-                    DarkBkg : None, float array or MIfile with dark measurement from the camera. 
-                              If None, dark subtraction will be skipped
-                              If MIfile, all images from MIfile will be averaged and the raw result will be stored
-                    OptBkg :  None, float array or MIfile with empty cell measurement. Sale as MIdark
-                    PD data:  None or [[Idark_in, Idark_tr], [Iopt_in, Iopt_tr]]
+        BkgCorr :   Eventually, dict with data for background correction. A few keys:
+                    ['Dark', 'Opt'] : dict with dark measurement and empty beam measurement. Each with a few keys: 
+                                      - 'Iavg'     : 1D float array, i-th element is I averaged on i-th ROI, 
+                                                     normalized the same way as the output of Iavg.dat
+                                      - 'Iavg_norm': float, normalization factor that needs to be removed from Iavg
+                                                     for it to be expressed as raw (8-bit grayscale) per unit exptime [ms]
+                                                     If missing, Iavg will be interpreted as already expressed in these units
+                                      - 'Iavg_raw' : 2D float array, element [i,j] is the average of i-th exposure time on j-th ROI
+                                      - 'exptimes' : 1D float array with exposure times, in ms
+                                      - 'PDdata'   : [Iin, Itr], each being a float value
         """
         
         # Initialize ROIproc

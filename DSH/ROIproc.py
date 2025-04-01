@@ -1096,12 +1096,13 @@ class ROIproc():
         imgTimes :  Float array of length Nimgs. i-th element will be the time of the image.
                     If none, images will be 
         PDdata :    None, 1D float array or list of 2 arrays [Iin, Itr], each of length equal to the number of images.
-        BkgCorr :   Eventually, data for background correction: [DarkBkg, OptBkg, PDdata], where:
-                    DarkBkg : None, float array or MIfile with dark measurement from the camera. 
-                              If None, dark subtraction will be skipped
-                              If MIfile, all images from MIfile will be averaged and the raw result will be stored
-                    OptBkg :  None, float array or MIfile with empty cell measurement. Sale as MIdark
-                    PD data:  None or [[Idark_in, Idark_tr], [Iopt_in, Iopt_tr]]
+        BkgCorr :   Eventually, dict with data for background correction. A few keys:
+                    ['Dark', 'Opt'] : dict with dark measurement and empty beam measurement. Each with a few keys: 
+                                      - 'Iavg'     : 1D float array, i-th element is I averaged on i-th ROI, 
+                                                     normalized the same way as the output of Iavg.dat
+                                      - 'Iavg_raw' : 2D float array, element [i,j] is the average of i-th exposure time on j-th ROI
+                                      - 'exptimes' : 1D float array with exposure times, in ms
+                                      - 'PDdata'   : [Iin, Itr], each being a float value
         """
         
         self.MIinput   = MIin
@@ -1111,7 +1112,7 @@ class ROIproc():
         self._initConstants()
         
         self.LoadPD(PDdata)
-        self._loadBkg(BkgCorr)
+        self.LoadBkg(BkgCorr)
         
     def _loadTimes(self, imgTimes=None):
         if imgTimes is None:
@@ -1132,19 +1133,131 @@ class ROIproc():
             PDdata = None
         if PDdata is None:
             PDdata = [None, None]
-        if len(PDdata) < 2 or not sf.IsIterable(PDdata[0]):
+        if len(PDdata) < 2 or (not sf.IsIterable(PDdata[0]) and PDdata[0] is not None):
             PDdata = [PDdata, None]
         if PDdata[0] is not None and PDdata[1] is None:
             logging.info('ROIproc._loadPD called with single scalar array: interpreted as incoming intensity')
         self.PDdata = PDdata
 
-    def _loadBkg(self, BkgCorr):
+    def LoadBkg(self, BkgCorr):
         if BkgCorr is None:
-            BkgCorr = [None, None, None]
-        self.DarkBkg, self.OptBkg, self.BkgPDdata = BkgCorr
-
-    def HasPDdata(self):
-        return self.CountPDchannels() > 0 and self.CountPDdata() > 0
+            BkgCorr = {}
+        self.BkgCorr = BkgCorr
+        for bkg_key in ['Dark', 'Opt']:
+            if self.HasBkg(bkg_key=bkg_key):
+                if self.HasBkgIavg(bkg_key=bkg_key):
+                    if self.BkgCorr[bkg_key]['Iavg'].ndim > 1:
+                        cur_shape = self.BkgCorr[bkg_key]['Iavg'].shape
+                        logging.warn('ROIproc.LoadBkg: {0} background has {1}d Iavg (shape: {2}). Averaging on all but last dimension'.format(bkg_key, len(cur_shape), cur_shape))
+                        self.BkgCorr[bkg_key]['Iavg'] = self.BkgCorr[bkg_key]['Iavg'].reshape(-1, cur_shape[-1]).mean(axis=0)
+                if self.HasBkgIraw(bkg_key=bkg_key):
+                    if self.BkgCorr[bkg_key]['Iavg_raw'].ndim > 2:
+                        cur_shape = self.BkgCorr[bkg_key]['Iavg_raw'].shape
+                        logging.warn('ROIproc.LoadBkg: {0} background has {1}d Iavg_raw (shape: {2}). Averaging on all but last two dimensions'.format(bkg_key, len(cur_shape), cur_shape))
+                        self.BkgCorr[bkg_key]['Iavg_raw'] = self.BkgCorr[bkg_key]['Iavg_raw'].reshape(-1, cur_shape[-2], cur_shape[-1]).mean(axis=0)
+    
+    def HasBkg(self, bkg_key):
+        return (bkg_key in self.BkgCorr)
+    def HasDarkBkg(self):
+        return self.HasBkg(bkg_key='Dark')
+    def HasOptBkg(self):
+        return self.HasBkg(bkg_key='Opt')
+        
+    def HasBkgIavg(self, bkg_key):
+        if self.HasBkg(bkg_key=bkg_key):
+            return ('Iavg' in self.BkgCorr[bkg_key])
+        else:
+            return False
+    def HasDarkBkgIavg(self):
+        return self.HasBkgIavg(bkg_key='Dark')
+    def HasOptBkgIavg(self):
+        return self.HasBkgIavg(bkg_key='Opt')
+    
+    def HasBkgIraw(self, bkg_key):
+        if self.HasBkg(bkg_key=bkg_key):
+            return ('Iavg_raw' in self.BkgCorr[bkg_key])
+        else:
+            return False
+    def HasDarkBkgIraw(self):
+        return self.HasBkgIraw(bkg_key='Dark')
+    def HasOptBkgIraw(self):
+        return self.HasBkgIraw(bkg_key='Opt')
+    
+    def GetBkgIavg(self, bkg_key, texp=1):
+        if self.HasBkgIavg(bkg_key=bkg_key):
+            if 'Iavg_norm' in self.BkgCorr[bkg_key]:
+                cur_norm = self.BkgCorr[bkg_key]['Iavg_norm']
+            else:
+                cur_norm = 1
+            return (self.BkgCorr[bkg_key]['Iavg'] / cur_norm) * texp
+        else:
+            return None
+    def GetDarkBkgIavg(self, texp=1):
+        return self.GetBkgIavg(bkg_key='Dark', texp=texp)
+    def GetOptBkgIavg(self, texp=1):
+        return self.GetBkgIavg(bkg_key='Opt', texp=texp)
+    
+    def GetBkgIraw(self, bkg_key, exp_idx=-1):
+        if self.HasBkgIraw(bkg_key=bkg_key):
+            res = self.BkgCorr[bkg_key]['Iavg_raw']
+            #logging.debug('GetBkgIraw: raw {0} background has shape {1}. Exposure time to be extracted: {2}'.format(bkg_key, res.shape, exp_idx))
+            if exp_idx < 0:
+                return res
+            elif exp_idx < len(res):
+                #logging.debug('GetBkgIraw: returning {0}-th exposure time for raw {1} background. Result has shape: {2}'.format(exp_idx, bkg_key, res[exp_idx].shape))
+                return res[exp_idx]
+            else:
+                raise ValueError('Unable to get {0}-th exposure time in {1} dark background: {2} exposure times available'.format(exp_idx, bkg_key, len(res)))
+        else:
+            return None
+    def GetDarkBkgIraw(self, exp_idx=-1):
+        return self.GetBkgIraw(bkg_key='Dark', exp_idx=exp_idx)
+    def GetOptBkgIraw(self, exp_idx=-1):
+        return self.GetBkgIraw(bkg_key='Opt', exp_idx=exp_idx)
+    
+    def GetBkgIbest(self, bkg_key, exp_idx, nobkg_res=None):
+        if self.HasBkgIraw(bkg_key=bkg_key):
+            #logging.debug('GetBkgIbest found raw data for {0} background. Extracting {1}-th exposure time'.format(bkg_key, exp_idx))
+            return self.GetBkgIraw(bkg_key=bkg_key, exp_idx=exp_idx)
+        elif self.HasBkgIavg(bkg_key=bkg_key):
+            logging.debug('GetBkgIbest found only averaged data for {0} background. Renormalizing it to map it to {1}-th exposure time ({2}ms)'.format(bkg_key, exp_idx, self.GetExptimes(exp_idx=exp_idx, corr=CorrExptime)))
+            return self.GetBkgIavg(bkg_key=bkg_key, texp=self.GetExptimes(exp_idx=exp_idx, corr=CorrExptime))
+        else:
+            return nobkg_res
+    def GetDarkBkgIbest(self, exp_idx, nobkg_res=None):
+        return self.GetBkgIbest(bkg_key='Dark', exp_idx=exp_idx, nobkg_res=nobkg_res)
+    def GetOptBkgIbest(self, exp_idx, nobkg_res=None):
+        return self.GetBkgIbest(bkg_key='Opt', exp_idx=exp_idx, nobkg_res=nobkg_res)
+    
+    def HasBkgPDdata(self, bkg_key):
+        if self.HasBkg(bkg_key=bkg_key):
+            return ('PDdata' in self.BkgCorr[bkg_key])
+        else:
+            return False
+    def HasDarkBkgPDdata(self):
+        return self.HasBkgPDdata(bkg_key='Dark')
+    def HasOptBkgPDdata(self):
+        return self.HasBkgPDdata(bkg_key='Opt')
+    
+    def GetBkgPDdata(self, bkg_key, PDidx=-1, calc_avg=False):
+        if self.HasBkgPDdata(bkg_key=bkg_key):
+            res = self.BkgCorr[bkg_key]['PDdata']
+        else:
+            res = [0, 0]
+        if PDidx < 0:
+            return res
+        elif PDidx < len(res):
+            res = res[PDidx]
+            if calc_avg and sf.IsIterable(res):
+                #logging.debug('ROIproc.GetBkgPDdata: now averaging on {0} available PD datapoints for {1} background (channel {2})'.format(len(res), bkg_key, PDidx))
+                res = np.mean(res)
+            return res
+        else:
+            return None
+    def GetDarkBkgPDdata(self, PDidx=-1, calc_avg=False):
+        return self.GetBkgPDdata(bkg_key='Dark', PDidx=PDidx, calc_avg=calc_avg)
+    def GetOptBkgPDdata(self, PDidx=-1, calc_avg=False):
+        return self.GetBkgPDdata(bkg_key='Opt', PDidx=PDidx, calc_avg=calc_avg)
     
     def CountPDchannels(self):
         if self.PDdata is not None:
@@ -1164,6 +1277,33 @@ class ROIproc():
                 if chIdx < len(self.PDdata):
                     res = len(self.PDdata[chIdx])
         return res
+    
+    def HasPDdata(self, chIdx=-1, tidx=-1, tgroup_len=1):
+        if chIdx<0:
+            return self.CountPDchannels() > 0 and self.CountPDdata() > 0
+        else:
+            res = self.CountPDchannels() > chIdx
+            if tidx < 0:
+                res = res and self.CountPDdata(chIdx=chIdx) > 0
+            else:
+                res = res and self.CountPDdata(chIdx=chIdx) > tidx*tgroup_len
+            return res
+
+    def GetPDdata(self, chIdx, tidx=-1, tgroup_len=1, nopd_res=None):
+        if self.HasPDdata(chIdx=chIdx, tidx=tidx, tgroup_len=tgroup_len):
+            if chIdx < 0:
+                return self.PDdata
+            else:
+                cur_startidx, cur_endidx = tidx*tgroup_len, min((tidx+1)*tgroup_len, self.CountPDdata(chIdx=chIdx))
+                if cur_startidx < cur_endidx:
+                    if cur_endidx - cur_startidx > 1:
+                        return np.mean(self.PDdata[chIdx][cur_startidx:cur_endidx])
+                    else:
+                        return self.PDdata[chIdx][cur_startidx]
+                else:
+                    raise ValueError('Unable to access data for PD #{0}: {1}-th time sweep of length {2} corresponds to interval [{3}:{4}] exceeding data size {5}'.format(chIdx, tidx, tgroup_len, cur_startidx, cur_endidx, self.CountPDdata(chIdx=chIdx)))
+        else:
+            return nopd_res
      
     def _initConstants(self):
         #Constants
@@ -1181,11 +1321,17 @@ class ROIproc():
                           'ROI_mask' : 'ROI_mask.raw',
                           'PDdata'   : 'PDdata.dat'}
     
-    def GetExptimes(self, corr=True):
-        if corr and self.ExpTimeCorrFactor != 0:
-            return self.expTimes*(1+0.01/self.expTimes)
+    def GetExptimes(self, exp_idx=-1, corr=True):
+        if exp_idx < 0:
+            res = self.expTimes
+        elif exp_idx < len(self.expTimes):
+            res = self.expTimes[exp_idx]
         else:
-            return self.expTimes
+            raise ValueError('{0}-th exposure time unavailable ({1} exposure times total)'.format(exp_idx, len(self.expTimes)))
+        if corr and self.ExpTimeCorrFactor != 0:
+            return res * (1+0.01/res)
+        else:
+            return res
         
     def __repr__(self):
         if (self.MIinput.IsStack()):
@@ -1353,7 +1499,7 @@ class ROIproc():
         ----------
         Iavg :          2D array of shape (NumTimes(), NumROIs())
         AllExpData :    None or [Iav_allexp, best_exptime_idx], data with all exposure times
-        NormData :      None or [Norm, Base], data with normalization
+        NormData :      None or [Norm, Base], data with normalization (Norm, Base are both 2D arrays with same shape as Iavg)
         CorrExptime :   bool. If False, disable exposure time correction even if a correcting factor (self.ExpTimeCorrFactor) is specified
         
         Saves
@@ -1388,7 +1534,10 @@ class ROIproc():
                        header='texp_nominal[ms]'+self.txt_delim+'texp_corr[ms]', **self.savetxt_kwargs)
         
         if NormData is not None:
-            iof.ExportArrays(os.path.join(SaveFolder, 'normbase.dat'), NormData, ['normalization', 'baseline'])
+            np.savetxt(os.path.join(SaveFolder, 'normalization.dat'), np.append(self.ROIcoords[:,:2], NormData[0].T, axis=1),
+                       header=str_hdr_avg, **self.savetxt_kwargs)
+            np.savetxt(os.path.join(SaveFolder, 'baseline.dat'), np.append(self.ROIcoords[:,:2], NormData[1].T, axis=1),
+                       header=str_hdr_avg, **self.savetxt_kwargs)
 
     def LoadIavg(self, outFolder, skipcols=2):
         Ir_allexp, Ir, best_exptimes = None, None, None
@@ -1559,13 +1708,15 @@ class ROIproc():
             corr = 2 * corr / (contrast_t1 + contrast_t2)
         return np.squeeze(corr)
             
-    def FindBestExptimes(self, AverageIntensities, CorrExptime=True):
+    def FindBestExptimes(self, AverageIntensities, normExptime=True, CorrExptime=True):
         '''
         Find best exposure times based on ROI-averaged intensities
         
         Parameters
         ----------
         - AverageIntensities: 3D array. Element [i,j,k] is the average intensity of j-th ROI measured at k-th exposure time during i-th exposure time ramp
+        - normExptime : bool. If True, normalize ROIavgs_best by the best exposure time
+                              If False, ROIavgs_best will be the raw (8-bit grayscale) value
         - CorrExptime : bool. If False, disable exposure time correction even if a correcting factor (self.ExpTimeCorrFactor) is specified
         
         Returns
@@ -1573,7 +1724,7 @@ class ROIproc():
         - ROIavgs_best: 2D array. Element [i,j] is the intensity of the best exposure time of j-th ROI during i-th time, normalized by the exposure time itself
         - BestExptime_Idx: 2D array, containing the index of the best exposure time selected for ROIavgs_best
         '''
-        if self.ExpTimeCorrFactor != 0:
+        if normExptime and self.ExpTimeCorrFactor != 0:
             if CorrExptime:
                 logging.info('ROIproc.FindBestExptimes: Correcting exposure times with factor dt={0:.4f} ms'.format(self.ExpTimeCorrFactor))
             else:
@@ -1584,31 +1735,34 @@ class ROIproc():
         BestExptime_Idx = -1 * np.ones_like(ROIavgs_best, dtype=int)
         for idx, val in np.ndenumerate(ROIavgs_best):
             BestExptime_Idx[idx] = min(bisect.bisect(AverageIntensities[idx[0], :, idx[1]], self.MaxSafeAvgIntensity), len(self.expTimes)-1)
-            ROIavgs_best[idx] = AverageIntensities[idx[0], BestExptime_Idx[idx], idx[1]] / self.GetExptimes(CorrExptime)[BestExptime_Idx[idx]]
+            ROIavgs_best[idx] = AverageIntensities[idx[0], BestExptime_Idx[idx], idx[1]]
+            if normExptime:
+                ROIavgs_best[idx] /= self.GetExptimes(corr=CorrExptime)[BestExptime_Idx[idx]]
         return ROIavgs_best, BestExptime_Idx
                              
-    def doSLS(self, saveFolder, buf_images=None, no_buffer=False, force_calc=True, norm_PDdata=True, CorrExptime=True, export_config=True, export_configparams=None):
+    def doSLS(self, saveFolder, buf_images=None, no_buffer=False, force_calc=True, norm_PDdata=True, CorrExptime=True, corr_bkg=True, export_config=True, export_configparams=None, verbose=0):
         """ Run SLS analysis: compute average intensity, eventually choosing best exposure time for each ROI
         
         Parameters
         ----------
-        - saveFolder: folder path, to save analysis output. 
-                      If None, no output will be saved
-        - buf_images: 3D array, buffer with images to be processed. If None, images will be loaded
-        - no_buffer: bool, used only if buf_images is None. If False, the entire image stack will be read in a buffer at once.
-                     otherwise, images will be loaded one by one
-        - force_calc: bool. If False, program will search for previously computed SLS results and load those.
-        - norm_PDdata: bool. If True, normalize SLS data using PDdata, if available.
-                       If False (or if PDdata is None), SLS data will still be normalized by the exposure time
+        - saveFolder  : folder path, to save analysis output. 
+                        If None, no output will be saved
+        - buf_images  : 3D array, buffer with images to be processed. If None, images will be loaded
+        - no_buffer   : bool, used only if buf_images is None. If False, the entire image stack will be read in a buffer at once.
+                        otherwise, images will be loaded one by one
+        - force_calc  : bool. If False, program will search for previously computed SLS results and load those.
+        - norm_PDdata : bool. If True, normalize SLS data using PDdata, if available.
+                        If False (or if PDdata is None), SLS data will still be normalized by the exposure time
+        - corr_bkg    : bool. If False, disable background correction even if it is given
         - CorrExptime : bool. If False, disable exposure time correction even if a correcting factor (self.ExpTimeCorrFactor) is specified
         
         Returns
         -------
-        - ROIavgs_allExp : 3D array. Element [i,j,k] is the average of j-th exposure time in i-th exposure time sweep, averaged on k-th ROI
-        - ROIavgs_best : 2D array. Element [i,j] is the best average intensity taken from i-th exposure time sweep, averaged on j-th ROI
-                         NOTE: values in ROIavgs_best and ROIavgs_allExp are normalized by the exposure time, and eventually by the photodiode count.
+        - ROIavgs_allExp  : 3D array. Element [i,j,k] is the average of j-th exposure time in i-th exposure time sweep, averaged on k-th ROI
+        - ROIavgs_best    : 2D array. Element [i,j] is the best average intensity taken from i-th exposure time sweep, averaged on j-th ROI
+                            NOTE: values in ROIavgs_best and ROIavgs_allExp are normalized by the exposure time, and eventually by the photodiode count.
         - BestExptime_Idx : 2D array (int). Element [i,j] is the index of the optimum exposure time for j-th ROI
-        - buf_images : 3D array. Buffer of images eventually read during the analysis
+        - buf_images      : 3D array. Buffer of images eventually read during the analysis
         """
         
         if saveFolder is not None:
@@ -1654,16 +1808,63 @@ class ROIproc():
                                 'Average intensity output of shape {0} cannot be reshaped using number of times ({1}) '.format(all_avg.shape, self.NumTimes()) +
                                 'and exposure times ({1}). Restricting SLS analysis to first {0} images'.format(self.NumExpTimes(), limit_len))
             ROIavgs_allExp = all_avg.reshape((self.NumTimes(), self.NumExpTimes(), -1))
-            ROIavgs_best, BestExptime_Idx = self.FindBestExptimes(ROIavgs_allExp, CorrExptime=CorrExptime)
+            ROIavgs_best, BestExptime_Idx = self.FindBestExptimes(ROIavgs_allExp, normExptime=False)
             
-            Inorm = np.ones(ROIavgs_best.shape[0], dtype=float)
-            Ibase = np.zeros_like(Inorm)
+            
+            # Correct for dark and optical background, normalize by exposure time and photodiode readings
+            PDmon = np.ones(ROIavgs_best.shape[0], dtype=float)
+            Inorm = np.ones_like(ROIavgs_best)
+            Ibase = np.zeros_like(ROIavgs_best)
             if norm_PDdata and self.HasPDdata():
-                if sf.IsIterable(self.PDdata[0]):
-                    for i in range(ROIavgs_best.shape[0]):
-                        if i*self.NumExpTimes() < len(self.PDdata[0]):
-                            Inorm[i] = np.nanmean(self.PDdata[0][i*self.NumExpTimes():min((i+1)*self.NumExpTimes(),len(self.PDdata[0]))])
-                            ROIavgs_best[i] /= Inorm[i]
+                for tidx in range(ROIavgs_best.shape[0]):
+                    cur_mon = self.GetPDdata(chIdx=0, tidx=tidx, tgroup_len=self.NumExpTimes())
+                    if cur_mon is None:
+                        logging.warning('No monitor PD data available for {0}-th sweep of {1} exposure times each ({2} PD datapoints total)'.format(tidx, self.NumExpTimes(), len(self.PDdata[0])))
+                    else:
+                        if corr_bkg and self.HasDarkBkgPDdata():
+                            cur_mon -= self.GetDarkBkgPDdata(0)
+                        PDmon[tidx] = cur_mon
+                        for ridx in range(ROIavgs_best.shape[1]):
+                            Inorm[tidx, ridx] = cur_mon
+                            
+            if corr_bkg:
+                for tidx in range(ROIavgs_best.shape[0]):
+                    for ridx in range(ROIavgs_best.shape[1]):
+                        cur_dark = self.GetDarkBkgIbest(exp_idx=BestExptime_Idx[tidx,ridx])
+                        if cur_dark is not None:
+                            Ibase[tidx,ridx] += cur_dark[ridx]
+                        cur_opt = self.GetOptBkgIbest(exp_idx=BestExptime_Idx[tidx,ridx])
+                        if cur_opt is not None:
+                            if cur_dark is not None:
+                                cur_opt -= cur_dark
+                            cur_opt_normf = 1
+                            if norm_PDdata:
+                                opt_mon = self.GetOptBkgPDdata(0, calc_avg=True)
+                                if not opt_mon is None:
+                                    cur_trans = self.GetPDdata(chIdx=1, tidx=tidx, tgroup_len=self.NumExpTimes())
+                                    if cur_trans is None:
+                                        logging.warning('No transmitted PD data available for {0}-th sweep of {1} exposure times each ({2} PD datapoints total)'.format(tidx, self.NumExpTimes(), len(self.PDdata[1])))
+                                    else:
+                                        if self.HasDarkBkgPDdata():
+                                            opt_mon -= self.GetDarkBkgPDdata(0, calc_avg=True)
+                                            cur_opt_normf = (cur_trans - self.GetDarkBkgPDdata(1, calc_avg=True)) / (self.GetOptBkgPDdata(1, calc_avg=True) - self.GetDarkBkgPDdata(1, calc_avg=True))
+                                        else:
+                                            cur_opt_normf = cur_trans / self.GetOptBkgPDdata(1, calc_avg=True)
+                                    cur_opt_normf *= PDmon[tidx] / opt_mon
+                                    if verbose > 1:
+                                        logging.debug('{0}-th time: sample ({1}) and Opt ({2}) PD data used to compute weight of optical background: {3}'.format(tidx, 
+                                                        [self.GetPDdata(chIdx=0, tidx=tidx, tgroup_len=self.NumExpTimes()), cur_trans],
+                                                        [self.GetOptBkgPDdata(0, calc_avg=True), self.GetOptBkgPDdata(1, calc_avg=True)], cur_opt_normf))
+                            if verbose > 1:
+                                logging.debug('Now updating baseline ({0}th time, {1}th roi) with optical background correction ({2}) multiplied by correction factor {3}'.format(tidx,ridx,cur_opt[ridx],cur_opt_normf))
+                            Ibase[tidx,ridx] += cur_opt[ridx] * cur_opt_normf
+                            
+            for tidx in range(ROIavgs_best.shape[0]):
+                for ridx in range(ROIavgs_best.shape[1]):
+                    if verbose > 1:
+                        logging.debug('Now updating normalization ({0}th time, {1}th roi) with {2}-th exposure time (best). Current value {3} will be multiplied by {4}'.format(tidx,ridx,BestExptime_Idx[tidx,ridx],Inorm[tidx,ridx],self.GetExptimes(exp_idx=BestExptime_Idx[tidx,ridx], corr=CorrExptime)))
+                    Inorm[tidx,ridx] *= self.GetExptimes(exp_idx=BestExptime_Idx[tidx,ridx], corr=CorrExptime)
+            ROIavgs_best = (ROIavgs_best - Ibase) / Inorm
 
             if saveFolder is not None:
                 self.SaveIavg(saveFolder, ROIavgs_best, [ROIavgs_allExp, BestExptime_Idx], [Inorm, Ibase], CorrExptime=CorrExptime)
