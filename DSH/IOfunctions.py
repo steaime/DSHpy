@@ -165,7 +165,7 @@ def OpenG2M1s(froot, expt_idx=None, roi_idx=None, fname_prefix='g2m1_', time_col
     logging.debug('DSH.IOfunctions.OpenG2M1s: {0} g2-1 functions loaded from {1} ROIs found in folder {2}'.format(len(res), len(fnames_list), froot))
     return res, lagtimes, imgtimes, ROI_list, exptime_list
 
-def LoadImageTimes(img_times_source, usecols=0, skiprows=1, root_folder=None, return_unique=False):
+def LoadImageTimes(img_times_source, usecols=0, skiprows=1, root_folder=None, return_unique=False, squeeze=False):
     '''
     Load image times from file or list of files
     
@@ -176,6 +176,7 @@ def LoadImageTimes(img_times_source, usecols=0, skiprows=1, root_folder=None, re
     - skiprows         : number of rows to be skipped at the beginning of the file
     - root_folder      : root folder path. If specified, img_times_source will be interpreted as a relative path
     - return_unique    : if True, remove duplicates before returning result
+    - squeeze          : if True, squeeze the result to remove axes of length 1
     '''
     if img_times_source is not None:
         if usecols is None:
@@ -213,8 +214,11 @@ def LoadImageTimes(img_times_source, usecols=0, skiprows=1, root_folder=None, re
     else:
         res = None
         logging.debug('DSH.SALS.LoadImageTimes(): no file specified. Returning default value ' + str(res))
-    if res is not None and return_unique:
-        res = np.unique(res)
+    if res is not None:
+        if squeeze:
+            res = np.squeeze(res)
+        if return_unique:
+            res = np.unique(res)
     return res
 
 def LoadROIcoords(file_name, delimiter='\t', comments='#'):

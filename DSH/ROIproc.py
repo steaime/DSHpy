@@ -1136,8 +1136,13 @@ class ROIproc():
         if len(PDdata) < 2 or (not sf.IsIterable(PDdata[0]) and PDdata[0] is not None):
             PDdata = [PDdata, None]
         if PDdata[0] is not None and PDdata[1] is None:
-            logging.info('ROIproc._loadPD called with single scalar array: interpreted as incoming intensity')
+            logging.info('ROIproc.LoadPD called with single scalar array: interpreted as incoming intensity')
         self.PDdata = PDdata
+        for i in range(2):
+            if sf.IsIterable(PDdata[i]):
+                if PDdata[i].ndim > 1:
+                    logging.warning('LoadPD: flattening multi-dimensional PD data')
+                    PDdata[i] = PDdata[i].flatten()
 
     def LoadBkg(self, BkgCorr):
         if BkgCorr is None:
