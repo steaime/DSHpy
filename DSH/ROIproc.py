@@ -1721,7 +1721,7 @@ class ROIproc():
             corr = 2 * corr / (contrast_t1 + contrast_t2)
         return np.squeeze(corr)
             
-    def FindBestExptimes(self, AverageIntensities, normExptime=True, CorrExptime=True):
+    def FindBestExptimes(self, AverageIntensities, normExptime=True, CorrExptime=True, debug_logfile=None):
         '''
         Find best exposure times based on ROI-averaged intensities
         
@@ -1743,12 +1743,23 @@ class ROIproc():
             else:
                 logging.info('ROIproc.FindBestExptimes: Disregarding correction time factor dt={0:.4f} ms. Normalizing intensities with nominal exposure times'.format(self.ExpTimeCorrFactor))
         if AverageIntensities.ndim < 3:
+            tmp_shape = AverageIntensities.shape
             AverageIntensities = AverageIntensities.reshape((self.NumTimes(), self.NumExpTimes(), -1))
+            logging.debug('FindBestExptimes: array with raw intensities reshaped from {0} to {1} ({2} times, {3} exptimes)'.format(tmp_shape, AverageIntensities.shape, self.NumTimes(), self.NumExpTimes()))
         ROIavgs_best = np.zeros((self.NumTimes(), AverageIntensities.shape[-1]), dtype=float)
         BestExptime_Idx = -1 * np.ones_like(ROIavgs_best, dtype=int)
+        if debug_logfile is not None:
+            debug_logfile.write('\nNow bisecting raw average intensities ({0} times, {1} exptimes, {2} ROIs) with threshold value {3}'.format(*AverageIntensities.shape, self.MaxSafeAvgIntensity))
+        
         for idx, val in np.ndenumerate(ROIavgs_best):
             BestExptime_Idx[idx] = min(bisect.bisect(AverageIntensities[idx[0], :, idx[1]], self.MaxSafeAvgIntensity), len(self.expTimes)-1)
             ROIavgs_best[idx] = AverageIntensities[idx[0], BestExptime_Idx[idx], idx[1]]
+            if debug_logfile is not None:
+                debug_logfile.write('\n{0}: bisect returned {1} (value: {2})'.format(idx, BestExptime_Idx[idx], ROIavgs_best[idx]))
+                if BestExptime_Idx[idx]>0:
+                    debug_logfile.write('. Smaller exptime ({0}) has raw intensity {1}'.format(BestExptime_Idx[idx]-1, AverageIntensities[idx[0], BestExptime_Idx[idx]-1, idx[1]]))
+                if BestExptime_Idx[idx]<AverageIntensities.shape[1]-1:
+                    debug_logfile.write('. Larger exptime ({0}) has raw intensity {1}'.format(BestExptime_Idx[idx]+1, AverageIntensities[idx[0], BestExptime_Idx[idx]+1, idx[1]]))
             if normExptime:
                 ROIavgs_best[idx] /= self.GetExptimes(corr=CorrExptime)[BestExptime_Idx[idx]]
         return ROIavgs_best, BestExptime_Idx
