@@ -10,6 +10,18 @@ from DSH import MIfile as MI
 from DSH import ROIproc as RP
 from DSH import SharedFunctions as sf
 
+def r_to_theta(r, feff, px_size=1, n=1, aberr=0):
+    # Eq. 6 in Tamborini, Cipelletti https://hal.science/hal-00725045/document
+    # aberr = 1/b
+    if aberr==0:
+        return np.arcsin((1./n)*(r*px_size/feff))
+    else:
+        return np.arcsin((1./n)*(r*px_size/feff + 1./(1./aberr-r*px_size) - aberr))
+
+def r_to_q(r, feff, wavelength=0.6328, px_size=1, n=1, aberr=0):
+    k = 2* np.pi * n / wavelength
+    return 2*k*np.sin(0.5*r_to_theta(r, feff, px_size=px_size, n=n, aberr=aberr))
+
 def ValidatePolarSlices(ROI_specs, imgShape=None, rMax=None):
     """ Validate ROI specs for SALS analysis
 
@@ -157,7 +169,7 @@ def LoadFromConfig(ConfigParams, runAnalysis=True, outputSubfolder='reproc', deb
 class SALS(RP.ROIproc):
     """ Class to do small angle static and dynamic light scattering from a MIfile """
     
-    def __init__(self, MIin, centerPos, ROIslices=None, maskRaw=None, imgTimes=None, expTimes=[1], PDdata=None, BkgCorr=None):
+    def __init__(self, MIin, centerPos, ROIslices=None, maskRaw=None, imgTimes=None, expTimes=[1], PDdata=None, BkgCorr=None, qCalcParams={}):
         """
         Initialize SALS
 
@@ -188,6 +200,7 @@ class SALS(RP.ROIproc):
                                       - 'Iavg_raw' : 2D float array, element [i,j] is the average of i-th exposure time on j-th ROI
                                       - 'exptimes' : 1D float array with exposure times, in ms
                                       - 'PDdata'   : [Iin, Itr], each being a float value
+        qCalcParams: Eventually, dict with parameters needed to convert ROI coordinates to scattering vector in physical units
         """
         
         # Initialize ROIproc
@@ -199,6 +212,7 @@ class SALS(RP.ROIproc):
         self.px_mask = maskRaw
         ROImasks, ROIcoords = GenerateROIs(self.ROIslices, imgShape=MIin.ImageShape(), centerPos=self.centerPos, maskRaw=self.px_mask)
         self.SetROIs(ROImasks, ROIcoords)
+        self.Set_qCalcParams(**sf.filter_kwdict_funcparams(qCalcParams, self.Set_qCalcParams))
         
     def __repr__(self):
         if (self.MIinput.IsStack()):
@@ -228,13 +242,51 @@ class SALS(RP.ROIproc):
         ROImetadata = {'coords' : ROIcoords, 'coord_names' : ['r[px]', 'theta[rad]'], 'box_margin' : 0}
         return RP.ROIproc.SetROIs(self, ROImasks, ROImetadata=ROImetadata)
     
+    def Set_qCalcParams(self, feff=None, wavelength=None, px_size=None, n=None, aberr=None, q_units=None):
+        if not hasattr(self, 'qCalcParams'):
+            self.qCalcParams = {}
+        if feff is not None:
+            self.qCalcParams['feff'] = feff
+        if wavelength is not None:
+            self.qCalcParams['wavelength'] = wavelength
+        if px_size is not None:
+            self.qCalcParams['px_size'] = px_size
+        if n is not None:
+            self.qCalcParams['n'] = n
+        if aberr is not None:
+            self.qCalcParams['aberr'] = aberr
+        if q_units is not None:
+            self.qCalcParams['q_units'] = q_units
+            
+    def Get_qCalcParam(self, key, fallback=None):
+        if key in self.qCalcParams:
+            return self.qCalcParams[key]
+        else:
+            return fallback
+            
+    def r_to_theta(self, r):
+        feff = self.Get_qCalcParam('feff')
+        if feff is None:
+            logging.error('feff key not found in qCalcParams')
+            return None
+        else:
+            return r_to_theta(r, feff=feff, **sf.filter_kwdict_keylist(self.qCalcParams, ['px_size', 'n', 'aberr']))
+
+    def r_to_q(self, r):
+        feff = self.Get_qCalcParam('feff')
+        if feff is None:
+            logging.error('feff key not found in qCalcParams')
+            return None
+        else:
+            return r_to_q(r, feff=feff, **sf.filter_kwdict_keylist(self.qCalcParams, ['wavelength', 'px_size', 'n', 'aberr']))
+    
     def GenerateROIs(self, ROI_specs, maskRaw=None):
         self.px_mask = maskRaw
         ROImasks, ROIcoords = GenerateROIs(ROI_specs, imgShape=self.MIinput.ImageShape(), centerPos=self.centerPos, maskRaw=maskRaw)
         return self.SetROIs(ROImasks, ROIcoords=ROIcoords)
     
     def GetSALSparams(self):
-        res = {'ctrPos' : list(self.centerPos), 'rSlices' : list(self.ROIslices[0]), 'aSlices' : list(self.ROIslices[1])}
+        res = {'ctrPos' : list(self.centerPos), 'rSlices' : list(self.ROIslices[0]), 'aSlices' : list(self.ROIslices[1]), **self.qCalcParams}
         return res
     
     def doDLS(self, saveFolder, lagtimes, export_configparams=None, **kwargs):

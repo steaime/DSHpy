@@ -125,3 +125,7 @@ dmypy.json
 .pyre/
 example2a_RheoDLS_analDLS-Copy1.ipynb
 example2a_RheoDLS_analDLS-Copy1 copy.ipynb
+
+
+# Louanne files
+LOUANNE*.ipynb
