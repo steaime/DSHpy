@@ -8,6 +8,7 @@ import numpy as np
 import collections
 import collections.abc
 import ast
+from pathlib import Path
     
 
 def AllIntInStr(my_string):
@@ -52,6 +53,63 @@ def LastFloatInStr(my_string):
     else:
         return None
     
+def BisectSorted(arr, x, lo=0, hi=None):
+    if arr[-1] > arr[0]:
+        return bisect.bisect(arr, x, lo=lo, hi=hi)
+    else:
+        return BisectDescending(arr, x, lo=lo, hi=hi)
+
+def BisectDescending(arr, x, lo=0, hi=None):
+    """Find position where item x should be inserted in list a, 
+    to keep it reverse-sorted assuming a is reverse-sorted.
+
+    If x is already in a, insert it to the right of the rightmost x.
+
+    Optional args lo (default 0) and hi (default len(a)) bound the
+    slice of a to be searched.
+    """
+    if lo < 0:
+        raise ValueError('lo must be non-negative')
+    if hi is None:
+        hi = len(arr)
+    while lo < hi:
+        mid = (lo+hi)//2
+        if x > arr[mid]: hi = mid
+        else: lo = mid+1
+    return lo
+
+def Decimate(arr, q, x=None, bin_spacing='lin', q_meaning='resc_f', xmin=None, xmax=None, return_opts=False):
+    if q_meaning=='resc_f':
+        nbins = int(np.ceil(len(arr)/q))
+    elif q_meaning=='num':
+        nbins = int(q)
+    if nbins > 1:
+        if x is None:
+            x = np.arange(1, len(arr)+1)
+        if xmin is None:
+            xmin = np.min(x)
+        if xmax is None:
+            xmax = np.max(x)
+        assert xmax > xmin, 'Maximum x value has to be larger than minimum'
+        if bin_spacing=='lin':
+            xbins = np.linspace(xmin, xmax, nbins+1, endpoint=True)
+        elif bin_spacing=='log':
+            assert xmin > 0, 'Minimum x value has to be strictly positive for log spacing'
+            xbins = np.geomspace(xmin, xmax, nbins+1, endpoint=True)
+        else:
+            raise ValueError('Invalid spacing: "{0}"'.format(bin_spacing))
+        bin_idx = np.digitize(x, xbins)
+        res = np.array([np.nanmean(arr[bin_idx==i]) for i in range(len(xbins))])
+        avg_x = 0.5*(xbins[1:]+xbins[:-1])
+        if return_opts:
+            num = np.array([np.count_nonzero(bin_idx==i) for i in range(len(xbins))])
+        if return_opts:
+            return avg_x, res[1:], {'bin_count': num, 'xbins': xbins, 'bin_idx': bin_idx}
+        else:
+            return avg_x, res[1:]
+    else:
+        return None
+    
 def ValidateRange(Range, MaxVal, MinVal=None, replaceNone=True):
     """ Validates a range of positive, integer quantities (Note: MaxVal must be positive!)
     
@@ -89,6 +147,10 @@ def PathJoinOrNone(root, folder):
         return None
     else:
         return os.path.join(root, folder)
+
+def AddSuffixToPath(fpath, suffix):
+    path = Path(fpath)
+    return path.with_name(path.stem + suffix + path.suffix)
     
 def ReportCyclic(var, start_val=-np.pi, period=2*np.pi):
     """ Reports a given cyclic variable (e.g. an angle) 
