@@ -1333,6 +1333,7 @@ class ROIproc():
                           'PDdata'   : 'PDdata.dat',
                           'Iavg'     : 'Iavg.dat',
                           'Iavg_raw' : 'Iavg_raw.dat'}
+        self.log_verbose = 2 # 0: only errors; 1: also warnings; 2: also info; 3: full logging, including debug info 
     
     def GetExptimes(self, exp_idx=-1, corr=True):
         if exp_idx < 0:
@@ -1917,7 +1918,7 @@ class ROIproc():
 
     def doDLS(self, saveFolder, lagtimes, reftimes='all', no_buffer=False, drift_corr=0, drift_method='paraboloid', 
               force_SLS=True, save_transposed=False, export_configparams=None, include_negative_lags=False,
-              g2m1_averageN=None, g2m1_reterr=False):
+              skip_avg_g2m1=False, g2m1_averageN=None, g2m1_reterr=False):
         """ Run SLS/DLS analysis
 
         Parameters
@@ -1946,6 +1947,7 @@ class ROIproc():
                                 If reftimes=='all', negative lagtimes are redundant and include_negative_lags will be set to False.
                                 If sparse reftimes and all lagtimes are processed, set include_negative_lags==True to include negative lagtimes
         export_configparams:    None or dict with additional configuration parameters to be exported to the output configuration file
+        skip_avg_g2m1 :         set to True to skip averaging g2-1 curves at the end
         g2m1_averageN :         int or None. If None, average correlation timetraces on the whole time window to obtain one g2-1 curve per ROI
                                 if N>0, average correlation timetraces on windows of N datapoints, 
                                 to obtain (self.NumTimes() / N) g2-1 curves per ROI
@@ -1959,8 +1961,9 @@ class ROIproc():
         if reftimes=='all':
             DLS_reftimes = np.arange(self.NumTimes())
             if include_negative_lags:
-                sf.LogWrite('ROIproc.doDLS(): No need of processing negative timelags with reftimes==all: include_negative_lags changed to False', 
-                            fLog=fout, logLevel=logging.WARNING, add_prefix='\n'+sf.TimeStr()+' | WARNING: ')
+                if self.log_verbose > 0:
+                    sf.LogWrite('ROIproc.doDLS(): No need of processing negative timelags with reftimes==all: include_negative_lags changed to False', 
+                                fLog=fout, logLevel=logging.WARNING, add_prefix='\n'+sf.TimeStr()+' | WARNING: ')
                 include_negative_lags = False
         else:
             DLS_reftimes = np.asarray(reftimes)
@@ -1976,19 +1979,21 @@ class ROIproc():
             DLS_lags = np.asarray(lagtimes)
             if np.min(DLS_lags) < 0 and not include_negative_lags:
                 DLS_lags = DLS_lags[DLS_lags>=0]
-                sf.LogWrite('ROIproc.doDLS(): Negative lagtimes specified with include_negative_lags==False. Negative lag times will be removed from the list', 
-                            fLog=fout, logLevel=logging.WARNING, add_prefix='\n'+sf.TimeStr()+' | WARNING: ')
+                if self.log_verbose > 0:
+                    sf.LogWrite('ROIproc.doDLS(): Negative lagtimes specified with include_negative_lags==False. Negative lag times will be removed from the list', 
+                                fLog=fout, logLevel=logging.WARNING, add_prefix='\n'+sf.TimeStr()+' | WARNING: ')
         if DLS_lags[0] != 0:
-            sf.LogWrite('ROIproc.doDLS(): 0 lagtime prepended to DLS_lags', 
-                        fLog=fout, logLevel=logging.WARNING, add_prefix='\n'+sf.TimeStr()+' | WARNING: ')
+            if self.log_verbose > 0:
+                sf.LogWrite('ROIproc.doDLS(): 0 lagtime prepended to DLS_lags', 
+                            fLog=fout, logLevel=logging.WARNING, add_prefix='\n'+sf.TimeStr()+' | WARNING: ')
             DLS_lags = np.insert(DLS_lags, 0, 0)
         DLS_lagnum = len(DLS_lags)
-        if self.DebugMode:
+        if self.DebugMode or self.log_verbose > 2:
             sf.LogWrite('Complete list of lagtimes: ' + str(DLS_lags), 
                         fLog=fout, logLevel=logging.DEBUG, add_prefix='\n'+sf.TimeStr()+' | DEBUG: ')
             
         if drift_corr>0:
-            if self.ROI_masks_crop is not None:
+            if self.ROI_masks_crop is not None and self.log_verbose > 0:
                 sf.LogWrite('ROIproc.doDLS(): using drift correction with non-rectangular ROIs or with a pixel mask excluding some pixels. ' +\
                             'WARNING: drift correction will take into account all pixels in ROI bounding boxes, disregarding masks', 
                             fLog=fout, logLevel=logging.WARNING, add_prefix='\n'+sf.TimeStr()+' | WARNING: ')
@@ -2007,12 +2012,14 @@ class ROIproc():
                 else:
                     if not np.array_equal(cur_valid_ROI, self.ROIboundingBoxes[ridx]):
                         count_ROImodif += 1
-                        sf.LogWrite('ROIproc.doDLS() error: ROI {0} (bounding box: {1}) has to be shrunk to {2} to accommodate search range {3} '.format(ridx, self.ROIboundingBoxes[ridx], cur_valid_ROI, search_range) +\
-                                     'in image of cropped shape {0} (Original shape: {1}, bounding box margin: {2})'.format(self.GetCroppedShape(), self.MIinput.ImageShape(), self.BoundingBoxMargin), 
-                                    fLog=fout, logLevel=logging.WARNING, add_prefix='\n'+sf.TimeStr()+' | WARNING: ')
+                        if self.log_verbose > 0:
+                            sf.LogWrite('ROIproc.doDLS() error: ROI {0} (bounding box: {1}) has to be shrunk to {2} to accommodate search range {3} '.format(ridx, self.ROIboundingBoxes[ridx], cur_valid_ROI, search_range) +\
+                                        'in image of cropped shape {0} (Original shape: {1}, bounding box margin: {2})'.format(self.GetCroppedShape(), self.MIinput.ImageShape(), self.BoundingBoxMargin), 
+                                        fLog=fout, logLevel=logging.WARNING, add_prefix='\n'+sf.TimeStr()+' | WARNING: ')
                     search_ROIs.append(cur_valid_ROI)
-            sf.LogWrite('ROIproc.doDLS() configured spatial crosscorrelation analysis on {0} ROIs ({1} valid, {2} modified)'.format(len(self.ROIboundingBoxes), np.sum(ValidROI), count_ROImodif), 
-                        fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
+            if self.log_verbose > 1:
+                sf.LogWrite('ROIproc.doDLS() configured spatial crosscorrelation analysis on {0} ROIs ({1} valid, {2} modified)'.format(len(self.ROIboundingBoxes), np.sum(ValidROI), count_ROImodif), 
+                            fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
         
 
         analysis_params = {'General' : {'generated_by' : 'ROIproc.doDLS'},
@@ -2039,14 +2046,16 @@ class ROIproc():
                 config_fname = 'SALSconfig.ini'
         self.ExportConfiguration(saveFolder, other_params=analysis_params, out_fname=config_fname)
         
-        sf.LogWrite('ROIproc.doDLS Analysis started! Input data is {0} images ({1} times, {2} exposure times)'.format(self.ImageNumber(), self.NumTimes(), self.NumExpTimes()), 
-                    fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
-        if (self.ImageNumber() != (self.NumTimes() * self.NumExpTimes())):
+        if self.log_verbose > 1:
+            sf.LogWrite('ROIproc.doDLS Analysis started! Input data is {0} images ({1} times, {2} exposure times)'.format(self.ImageNumber(), self.NumTimes(), self.NumExpTimes()), 
+                        fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
+        if (self.ImageNumber() != (self.NumTimes() * self.NumExpTimes())) and self.log_verbose > 0:
             sf.LogWrite('WARNING: Number of images ({0}) should correspond to the number of times ({1}) times the number of exposure times ({2})'.format(self.ImageNumber(), 
                             self.NumTimes(), self.NumExpTimes()), fLog=fout, logLevel=logging.WARN, add_prefix='\n'+sf.TimeStr()+' | WARN: ')
-        sf.LogWrite('Analysis will resolve {0} ROIs and DLS will be performed on {1} reference times and {2} lagtimes. Output will be saved in folder {3}'.format(self.CountROIs(), 
-                        len(DLS_reftimes), DLS_lagnum, saveFolder), fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
-        sf.LogWrite('Now starting with SLS...', fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
+        if self.log_verbose > 1:
+            sf.LogWrite('Analysis will resolve {0} ROIs and DLS will be performed on {1} reference times and {2} lagtimes. Output will be saved in folder {3}'.format(self.CountROIs(), 
+                            len(DLS_reftimes), DLS_lagnum, saveFolder), fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
+            sf.LogWrite('Now starting with SLS...', fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
                 
         if len(DLS_reftimes)<1:
             sf.LogWrite('ERROR: at least 1 reference time needed for DLS (' + str(len(DLS_reftimes)) + ' given). DLS aborted', 
@@ -2064,25 +2073,29 @@ class ROIproc():
             elif self.StackInput()==False:
                 buf_images = self.ReadMI()
 
-        sf.LogWrite('SLS analysis completed. Now doing DLS ({0} exposure times, {1} time points, {2} lagtimes)'.format(self.NumExpTimes(), len(DLS_reftimes), DLS_lagnum), 
-                    fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
+        if self.log_verbose > 1:
+            sf.LogWrite('SLS analysis completed. Now doing DLS ({0} exposure times, {1} time points, {2} lagtimes)'.format(self.NumExpTimes(), len(DLS_reftimes), DLS_lagnum), 
+                        fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
         
         log_period = 1
         for e in range(self.NumExpTimes()):
             readrange = self.MIinput.Validate_zRange([e, -1, self.NumExpTimes()])
             idx_list = np.arange(*readrange, dtype=int)
-            sf.LogWrite('Now performing DLS on {0}-th exposure time. Using image range {1} ({2} images)'.format(e, readrange, len(idx_list)), 
-                        fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
+            if self.log_verbose > 1:
+                sf.LogWrite('Now performing DLS on {0}-th exposure time. Using image range {1} ({2} images)'.format(e, readrange, len(idx_list)), 
+                            fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
             ISQavg = self.ROIaverageProduct(stack1=idx_list, stack2=idx_list, no_buffer=no_buffer, imgs=buf_images)
 
             if reftimes=='all' and drift_corr==0:
                 cI = np.nan * np.ones((ISQavg.shape[1], ISQavg.shape[0], DLS_lagnum), dtype=float)
                 cI[:,:,0] = np.subtract(np.divide(ISQavg, np.square(ROIavgs_allExp[:,e,:])), 1).T
-                sf.LogWrite('Contrast (d0) processed', fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
+                if self.log_verbose > 1:
+                    sf.LogWrite('Contrast (d0) processed', fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
                 if (self.LoopMaxInfoN < DLS_lagnum):
                     log_period = int(math.ceil(DLS_lagnum*1.0/self.LoopMaxInfoN))
-                    sf.LogWrite('Number of lagtimes ({0}) exceeding {1}: logging every {2}-th lagtime processed'.format(DLS_lagnum, self.LoopMaxInfoN, log_period), 
-                                fLog=fout, logLevel=logging.DEBUG, add_prefix='\n'+sf.TimeStr()+' | DEBUG: ')
+                    if self.log_verbose > 2:
+                        sf.LogWrite('Number of lagtimes ({0}) exceeding {1}: logging every {2}-th lagtime processed'.format(DLS_lagnum, self.LoopMaxInfoN, log_period), 
+                                    fLog=fout, logLevel=logging.DEBUG, add_prefix='\n'+sf.TimeStr()+' | DEBUG: ')
                 for lidx in range(1, DLS_lagnum):
                     if (DLS_lags[lidx]<ISQavg.shape[0]):
 
@@ -2094,7 +2107,7 @@ class ROIproc():
                         # d0 normalization
                         cI[:,:-DLS_lags[lidx],lidx] = np.divide(cI[:,:-DLS_lags[lidx],lidx], 0.5 * np.add(cI[:,:-DLS_lags[lidx],0], cI[:,DLS_lags[lidx]:,0]))
                         
-                        if (lidx % log_period == 0 or lidx == DLS_lagnum-1):
+                        if (lidx % log_period == 0 or lidx == DLS_lagnum-1) and self.log_verbose > 1:
                             sf.LogWrite('Lagtime {0}/{1} (d{2}) completed'.format(lidx, DLS_lagnum-1, DLS_lags[lidx]), 
                                         fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
 
@@ -2105,17 +2118,19 @@ class ROIproc():
                 if drift_corr>0:
                     cIcr = np.nan * np.ones_like(cI, dtype=float)
                     dxdy = np.nan * np.ones((cI.shape[0], cI.shape[1], cI.shape[2], 2), dtype=float)
-                sf.LogWrite('Computing cI with custom-defined set of reference time and/or lag times: result has shape {0} ({1} ROIs, {2} reference times, {3} lag times)'.format(cI.shape, 
-                                self.CountROIs(), len(DLS_reftimes), DLS_lagnum), fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
+                if self.log_verbose > 1:
+                    sf.LogWrite('Computing cI with custom-defined set of reference time and/or lag times: result has shape {0} ({1} ROIs, {2} reference times, {3} lag times)'.format(cI.shape, 
+                                    self.CountROIs(), len(DLS_reftimes), DLS_lagnum), fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
 
                 if (self.LoopMaxInfoN < len(DLS_reftimes)):
                     log_period = int(math.ceil(len(DLS_reftimes)*1.0/self.LoopMaxInfoN))
-                    sf.LogWrite('Number of reference times ({0}) exceeding {1}: logging every {2}-th reference time processed'.format(len(DLS_reftimes), self.LoopMaxInfoN, log_period), 
-                                fLog=fout, logLevel=logging.DEBUG, add_prefix='\n'+sf.TimeStr()+' | DEBUG: ')
+                    if self.log_verbose > 2:
+                        sf.LogWrite('Number of reference times ({0}) exceeding {1}: logging every {2}-th reference time processed'.format(len(DLS_reftimes), self.LoopMaxInfoN, log_period), 
+                                    fLog=fout, logLevel=logging.DEBUG, add_prefix='\n'+sf.TimeStr()+' | DEBUG: ')
 
                 # compute all d0s (even if it is not in the list of lagtimes)
                 all_d0 = np.subtract(np.divide(ISQavg, np.square(ROIavgs_allExp[:,e,:])), 1).T
-                if self.DebugMode:
+                if self.DebugMode or self.log_verbose > 2:
                     sf.LogWrite('SALS.doDLS - cI.shape : ' + str(cI.shape), fLog=fout, logLevel=logging.DEBUG, add_prefix='\n'+sf.TimeStr()+' | DEBUG: ')
                     sf.LogWrite('SALS.doDLS - ISQavg.shape : ' + str(ISQavg.shape), fLog=fout, logLevel=logging.DEBUG, add_prefix='\n'+sf.TimeStr()+' | DEBUG: ')
                     sf.LogWrite('SALS.doDLS - ROIavgs_allExp.shape : ' + str(ROIavgs_allExp.shape), fLog=fout, logLevel=logging.DEBUG, add_prefix='\n'+sf.TimeStr()+' | DEBUG: ')
@@ -2130,7 +2145,7 @@ class ROIproc():
                             cur_stack2.append(DLS_lags[lidx]+DLS_reftimes[ref_tidx])
                             cur_lagtimes.append(DLS_lags[lidx])
                             cur_lagidx.append(lidx)
-                    if self.DebugMode:
+                    if self.DebugMode or self.log_verbose > 2:
                         strLog = 'Images to correlate with reference time #{0} (t={1}): '.format(ref_tidx, DLS_reftimes[ref_tidx]) +\
                                 str([str(cur_stack2[i]) + ' (d' + str(cur_lagtimes[i]) + ')' for i in range(min(10, len(cur_lagtimes)))])
                         if len(cur_lagtimes) > 10:
@@ -2140,7 +2155,7 @@ class ROIproc():
                     # 
                     if drift_corr>0:
                         ref_img = self.GetImage(DLS_reftimes[ref_tidx], buffer=buf_images)
-                        if self.DebugMode:
+                        if self.DebugMode or self.log_verbose > 2:
                             sf.LogWrite('Reference image shape for drift correction: ' + str(ref_img.shape), 
                                             fLog=fout, logLevel=logging.DEBUG, add_prefix='\n'+sf.TimeStr()+' | DEBUG: ')
 
@@ -2149,14 +2164,14 @@ class ROIproc():
                         IXavg = self.ROIaverageProduct(stack1=[idx_list[DLS_reftimes[ref_tidx]]]*len(cur_stack2), stack2=cur_stack2, 
                                                                  no_buffer=no_buffer, imgs=buf_images)
 
-                        if self.DebugMode:
+                        if self.DebugMode or self.log_verbose > 2:
                             sf.LogWrite('IXavg.shape [num_images={0}, num_ROIs={1}] = {2}'.format(len(cur_stack2), cI.shape[0], IXavg.shape), fLog=fout, logLevel=logging.DEBUG, add_prefix='\n'+sf.TimeStr()+' | DEBUG: ')
                         for lidx in range(len(cur_lagtimes)):
 
                             cur_tidx2 = DLS_reftimes[ref_tidx]+cur_lagtimes[lidx]
                             if cur_tidx2>=0 and cur_tidx2 < ISQavg.shape[0]:
 
-                                if self.DebugMode:
+                                if self.DebugMode or self.log_verbose > 2:
                                     sf.LogWrite('Correlating reftime {0} (t={1}) and lagtime {2} (d={3}, t={4})'.format(ref_tidx, DLS_reftimes[ref_tidx], 
                                                                                                     cur_lagidx[lidx], cur_lagtimes[lidx], cur_stack2[lidx]), 
                                                 fLog=fout, logLevel=logging.DEBUG, add_prefix='\n'+sf.TimeStr()+' | DEBUG: ')
@@ -2164,7 +2179,7 @@ class ROIproc():
                                     cI[:,ref_tidx,cur_lagidx[lidx]] = all_d0[:,ref_tidx]
                                 else:
                                     # 'classic' cI formula
-                                    if self.DebugMode:
+                                    if self.DebugMode or self.log_verbose > 2:
                                         sf.LogWrite('test: IXavg[0,0] = <I(t={0},ROI0)I(t={1},ROI0)> = {2}'.format(idx_list[DLS_reftimes[ref_tidx]], cur_stack2[0], IXavg[0,0]), 
                                                     fLog=fout, logLevel=logging.DEBUG, add_prefix='\n'+sf.TimeStr()+' | DEBUG: ')
                                         sf.LogWrite('ROIavgs_allExp test: ' + str(ROIavgs_allExp[DLS_reftimes[ref_tidx],e,0]), 
@@ -2178,7 +2193,7 @@ class ROIproc():
                                 
                                 if drift_corr>0:
                                     find_img = self.GetImage(cur_stack2[lidx], buffer=buf_images)
-                                    if self.DebugMode:
+                                    if self.DebugMode or self.log_verbose > 2:
                                         sf.LogWrite('Image shape for drift correction: ' + str(find_img.shape), 
                                                     fLog=fout, logLevel=logging.DEBUG, add_prefix='\n'+sf.TimeStr()+' | DEBUG: ')
                                     for ridx in range(cI.shape[0]):
@@ -2188,20 +2203,22 @@ class ROIproc():
                                             cIcr[ridx,ref_tidx,cur_lagidx[lidx]] = corr_peak * 2. / (all_d0[ridx, DLS_reftimes[ref_tidx]] + all_d0[ridx, cur_tidx2])
                                             dxdy[ridx,ref_tidx,cur_lagidx[lidx]] = (xp, yp)
                                         
-                        if (ref_tidx % log_period == 0 or ref_tidx == len(DLS_reftimes)-1):
+                        if (ref_tidx % log_period == 0 or ref_tidx == len(DLS_reftimes)-1) and self.log_verbose > 1:
                             sf.LogWrite('Reference time {0}/{1} (tref={2}) completed'.format(ref_tidx+1, len(DLS_reftimes), DLS_reftimes[ref_tidx]), 
                                         fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
 
                     else:
 
-                        sf.LogWrite('Reference time {0}/{1} (tref={2}) empty'.format(ref_tidx+1, len(DLS_reftimes), DLS_reftimes[ref_tidx]), 
-                                    fLog=fout, logLevel=logging.WARN, add_prefix='\n'+sf.TimeStr()+' | WARN: ')
+                        if self.log_verbose > 0:
+                            sf.LogWrite('Reference time {0}/{1} (tref={2}) empty'.format(ref_tidx+1, len(DLS_reftimes), DLS_reftimes[ref_tidx]), 
+                                        fLog=fout, logLevel=logging.WARN, add_prefix='\n'+sf.TimeStr()+' | WARN: ')
 
 
 
             # Save data to file
             for ridx in range(cI.shape[0]):
-                sf.LogWrite('Now saving ROI {0} to file'.format(ridx), fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
+                if self.log_verbose > 1:
+                    sf.LogWrite('Now saving ROI {0} to file'.format(ridx), fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
                 if save_transposed:
                     np.savetxt(os.path.join(saveFolder, 'cI_ROI' + str(ridx).zfill(3) + '_e' + str(e).zfill(2) + '.dat'), np.append(DLS_lags[1:].reshape((-1, 1)), cI[ridx,:,1:].T, axis=1), 
                                header='tau'+self.txt_delim + str(self.txt_delim).join(['t{0}'.format(l) for l in DLS_reftimes]), **self.savetxt_kwargs)    
@@ -2225,18 +2242,27 @@ class ROIproc():
                                    header='idx'+self.txt_delim+'t'+self.txt_delim + str(self.txt_delim).join(['d{0}_dy'.format(l) for l in DLS_lags]), **self.savetxt_kwargs)                  
                     
         if save_transposed:
-            sf.LogWrite('DLS analysis completed. Transposed result saved (no g2-1 function will be averaged).', 
-                        fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
+            if self.log_verbose > 1:
+                sf.LogWrite('DLS analysis completed. Transposed result saved (no g2-1 function will be averaged).', 
+                            fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
         else:
-            sf.LogWrite('DLS analysis completed. Now averaging correlation functions g2-1', 
-                        fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
-            self.AverageG2M1(saveFolder, avg_interval=g2m1_averageN, save_stderr=g2m1_reterr)
+            if self.log_verbose > 1:
+                sf.LogWrite('DLS analysis completed. Now averaging correlation functions g2-1', 
+                            fLog=fout, logLevel=logging.INFO, add_prefix='\n'+sf.TimeStr()+' | INFO: ')
+            if not skip_avg_g2m1:
+                self.AverageG2M1(saveFolder, avg_interval=g2m1_averageN, save_stderr=g2m1_reterr)
         fout.close()
             
-    def AverageG2M1(self, folder_path, avg_interval=None, search_prefix=['cI_','cIcr_','dx_','dy_'], save_prefix=['g2m1','g2m1cr','avgdx','avgdy'], save_stderr=False, sharp_bound=False, lag_tolerance=1e-2, lag_tolerance_isrelative=True):
+    def AverageG2M1(self, folder_path, avg_interval=None, search_prefix=['cI_','cIcr_','dx_','dy_'], save_prefix=['g2m1','g2m1cr','avgdx','avgdy'], save_stderr=False, sharp_bound=False, lag_tolerance=None, lag_tolerance_isrelative=None):
         """
         Loads cI-like files from folder and average correlations with equal time delays to obtain g2-1 curves
         """
+
+        if lag_tolerance is None:
+            lag_tolerance = self.dt_tolerance
+        if lag_tolerance_isrelative is None:
+            lag_tolerance_isrelative = self.dt_tolerance_isrelative
+
         
         for i in range(len(search_prefix)):
             if i>len(save_prefix):
