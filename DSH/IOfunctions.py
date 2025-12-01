@@ -128,6 +128,7 @@ def ReadCIfile(fpath, time_colidx=1, delimiter='\t', comments='#', line_step=1, 
     else:
         usecols = list(range(time_colidx+1)) + list(range(time_colidx+1, len(hdr_line), col_step))
         lagidx_list = lagidx_list[::col_step]
+        logging.debug('ReadCIfile reading every {0}th lagtime. {1}/{2} columns to be read: {3}'.format(col_step, len(usecols), len(hdr_line), usecols))
     if line_step==1:
         data = np.loadtxt(fpath, delimiter=delimiter, comments=comments, skiprows=1, ndmin=2, usecols=usecols)
     else:
@@ -139,6 +140,7 @@ def ReadCIfile(fpath, time_colidx=1, delimiter='\t', comments='#', line_step=1, 
         with open(fpath) as f:
             iter = (line for line in f if read_line(line, mod=line_step))
             data = np.genfromtxt(iter, delimiter=delimiter, comments=comments, skip_header=1, ndmin=2, usecols=usecols)
+        logging.debug('ReadCIfile reading every {0}th reference time. {1} times loaded'.format(line_step, data.shape[0]))
     times = data[:,time_colidx]
     cI_data = data[:,time_colidx+1:]
     return cI_data, times, lagidx_list
