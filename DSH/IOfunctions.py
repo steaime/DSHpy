@@ -134,7 +134,7 @@ def ReadCIfile(fpath, time_colidx=1, delimiter='\t', comments='#', line_step=1, 
         def read_line(line, mod):
             return int(line[0]) % mod == 0
         with open(fpath) as f:
-            iter = (line for line in f if read_line(line))
+            iter = (line for line in f if read_line(line, mod=line_step))
             data = np.genfromtxt(iter, delimiter=delimiter, comments=comments, skip_header=1, ndmin=2, usecols=usecols)
     times = data[:,time_colidx]
     cI_data = data[:,time_colidx+1:]
