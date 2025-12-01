@@ -102,7 +102,7 @@ def OpenSLS(fname, roi_numcoords=2, delimiter='\t', comments='#'):
     times = np.asarray([sf.FirstFloatInStr(hdr) for hdr in res_hdr])
     return res_Iavg, roi_coord, times
 
-def ReadCIfile(fpath, time_colidx=1, delimiter='\t', comments='#'):
+def ReadCIfile(fpath, time_colidx=1, delimiter='\t', comments='#', line_step=1, col_step=1):
     """Loads a CI file
     
     Parameters
@@ -119,12 +119,25 @@ def ReadCIfile(fpath, time_colidx=1, delimiter='\t', comments='#'):
     times :        array of image times in physical units (float)
     lagidx_list :  list of lagtimes, in image units (int)
     """
-    data = np.loadtxt(fpath, delimiter=delimiter, comments=comments, skiprows=1, ndmin=2)
-    times = data[:,time_colidx]
-    cI_data = data[:,time_colidx+1:]
+
     with open(fpath, "r") as file:
         hdr_line = file.readline().strip()
     lagidx_list = sf.ExtractIndexFromStrings(hdr_line.split(delimiter)[time_colidx+1:])
+    if col_step==1:
+        usecols = None
+    else:
+        usecols = list(range(time_colidx+1)) + list(range(time_colidx+1, len(hdr_line), col_step))
+        lagidx_list = lagidx_list[::col_step]
+    if line_step==1:
+        data = np.loadtxt(fpath, delimiter=delimiter, comments=comments, skiprows=1, ndmin=2, usecols=usecols)
+    else:
+        def read_line(line, mod):
+            return int(line[0]) % mod == 0
+        with open(fpath) as f:
+            iter = (line for line in f if read_line(line))
+            data = np.genfromtxt(iter, delimiter=delimiter, comments=comments, skip_header=1, ndmin=2, usecols=usecols)
+    times = data[:,time_colidx]
+    cI_data = data[:,time_colidx+1:]
     return cI_data, times, lagidx_list
     
 def OpenCIs(froot, fname_prefix='cI_', time_colidx=1, delimiter='\t', comments='#'):

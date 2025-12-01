@@ -367,8 +367,10 @@ def FindSubfolders(FolderPath, FirstLevelOnly=True, Prefix='', Step=-1, FilterSt
 FilenameList:    list of filenames
 index_pos:       index of the desired integer in the list of integer found in each string
 """
-def ExtractIndexFromStrings(StringList, index_pos=0, index_notfound=-1):
+def ExtractIndexFromStrings(StringList, index_pos=0, index_notfound=-1, step=1):
     res = []
+    if step!=1:
+        StringList = StringList[::step]
     for cur_name in StringList:
         allInts = AllIntInStr(cur_name)
         if (len(allInts) > 0):
