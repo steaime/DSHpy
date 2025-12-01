@@ -121,8 +121,8 @@ def ReadCIfile(fpath, time_colidx=1, delimiter='\t', comments='#', line_step=1, 
     """
 
     with open(fpath, "r") as file:
-        hdr_line = file.readline().strip()
-    lagidx_list = sf.ExtractIndexFromStrings(hdr_line.split(delimiter)[time_colidx+1:])
+        hdr_line = file.readline().strip().split(delimiter)
+    lagidx_list = sf.ExtractIndexFromStrings(hdr_line[time_colidx+1:])
     if col_step==1:
         usecols = None
     else:
@@ -134,7 +134,9 @@ def ReadCIfile(fpath, time_colidx=1, delimiter='\t', comments='#', line_step=1, 
     else:
         def read_line(line, mod):
             try:
-                return int(line[0]) % mod == 0
+                line = line.strip().split(delimiter)
+                line_idx = float(line[0])
+                return int(line_idx) % mod == 0
             except:
                 return False
         with open(fpath) as f:
