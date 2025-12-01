@@ -102,7 +102,7 @@ def OpenSLS(fname, roi_numcoords=2, delimiter='\t', comments='#'):
     times = np.asarray([sf.FirstFloatInStr(hdr) for hdr in res_hdr])
     return res_Iavg, roi_coord, times
 
-def ReadCIfile(fpath, time_colidx=1, delimiter='\t', comments='#', line_range=None, col_range=None):
+def ReadCIfile(fpath, time_colidx=1, delimiter='\t', comments='#', line_range=None, line_step=1, col_range=None):
     """Loads a CI file
     
     Parameters
@@ -126,19 +126,26 @@ def ReadCIfile(fpath, time_colidx=1, delimiter='\t', comments='#', line_range=No
     if col_range is None:
         usecols = None
     else:
-        read_lagidx = [i for i in range(**col_range) if time_colidx+1+i < len(hdr_line)]
+        if len(col_range) > 1:
+            if col_range[1] < 0:
+                col_range[1] += len(hdr_line)-(time_colidx+1)
+        read_lagidx = [i for i in range(*col_range) if time_colidx+1+i < len(hdr_line)]
         usecols = list(range(time_colidx+1)) + [time_colidx+1+i for i in read_lagidx]
         lagidx_list = [lagidx_list[i] for i in read_lagidx]
-        logging.debug('ReadCIfile reading custom lagtime range: {0}. {1} columns inferred from header {2}. {3}/{1} columns to be read: {4}'.format(col_range, len(hdr_line), hdr_line, len(usecols), usecols))
-    if line_range is None:
+        logging.debug('ReadCIfile reading custom lagtime range: {0}. {1} columns inferred from header. {2}/{1} columns to be read: {3}'.format(col_range, len(hdr_line), len(usecols), usecols))
+    if line_range is None and line_step==1:
         data = np.loadtxt(fpath, delimiter=delimiter, comments=comments, skiprows=1, ndmin=2, usecols=usecols)
     else:
-        lines_to_read = list(range(**line_range))
+        if line_range is not None:
+            lines_to_read = list(range(*line_range))
         def read_line(line):
             try:
                 line = line.strip().split(delimiter)
                 line_idx = float(line[0])
-                return int(line_idx) in lines_to_read
+                if line_range is not None:
+                    return int(line_idx) in lines_to_read
+                else:
+                    return int(line_idx) % line_step == 0
             except:
                 return False
         with open(fpath) as f:
