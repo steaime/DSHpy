@@ -1,5 +1,6 @@
 import os
 import re
+import bisect
 import inspect
 import logging
 import datetime
@@ -454,7 +455,14 @@ def IsWithinTolerance(t1, t2, tolerance, tolerance_isrelative):
         return (np.abs(t2 - t1) < tolerance * 0.5 * np.abs(t2 + t1))
     else:
         return (np.abs(t2 - t1) < tolerance)
-    
+
+def AllWithinTolerance(t_arr, tolerance, tolerance_isrelative):
+    max_dev = np.max(t_arr) - np.min(t_arr)
+    if tolerance_isrelative:
+        return (max_dev < tolerance * np.mean(t_arr))
+    else:
+        return (max_dev < tolerance)
+
 def CheckLoadTxtUsecols(fpath, usecols=None, delimiter=None):
     with open(fpath, 'rb') as f:
         lines = [f.readline()]
@@ -562,7 +570,7 @@ def ValidateAverageInterval(avg_interval, num_datapoints):
                 int_bounds = [avg_interval]
             for i in range(len(int_bounds)):
                 if int_bounds[i][1] <= int_bounds[i][0]:
-                    logging.warn('ROIproc.ValidateAverageInterval(): bounds for interval must be strictly ascending. Empty interval generated.')
+                    logging.warning('ROIproc.ValidateAverageInterval(): bounds for interval must be strictly ascending. Empty interval generated.')
                     int_bounds[i][1] = int_bounds[i][0]
         else:
             int_bounds = [[0, num_datapoints]]
@@ -573,7 +581,7 @@ def ValidateAverageInterval(avg_interval, num_datapoints):
             int_bounds = []
             for i in range(int(math.ceil(num_datapoints*1.0/avg_interval))):
                 if i*avg_interval>=num_datapoints:
-                    logging.warn('SharedFunctions.ValidateAverageInterval inconsistency: interval {0}/{1} of size {2} exceeds series length {3}'.format(i, int(math.ceil(num_datapoints*1.0/avg_interval)), avg_interval, num_datapoints))
+                    logging.warning('SharedFunctions.ValidateAverageInterval inconsistency: interval {0}/{1} of size {2} exceeds series length {3}'.format(i, int(math.ceil(num_datapoints*1.0/avg_interval)), avg_interval, num_datapoints))
                 else:
                     int_bounds.append([i*avg_interval, min((i+1)*avg_interval, num_datapoints)])
     
@@ -581,7 +589,7 @@ def ValidateAverageInterval(avg_interval, num_datapoints):
         int_bounds[i][0] = min(int_bounds[i][0], num_datapoints)
         int_bounds[i][1] = min(int_bounds[i][1], num_datapoints)
         if int_bounds[i][0] >= int_bounds[i][1]:
-            logging.warn('SharedFunctions.ValidateAverageInterval WARNING: inconsistent {0}-th interval {1} with {2} datapoints'.format(i, int_bounds[i], num_datapoints))
+            logging.warning('SharedFunctions.ValidateAverageInterval WARNING: inconsistent {0}-th interval {1} with {2} datapoints'.format(i, int_bounds[i], num_datapoints))
         if len(int_bounds[i]) < 3:
             int_bounds[i].append(1)
     return int_bounds

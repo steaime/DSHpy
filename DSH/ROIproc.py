@@ -1,12 +1,10 @@
-import sys
 import os
 import logging
 import bisect
 import collections
 import math
 import numpy as np
-from scipy import ndimage as nd
-import importlib.util
+from multiprocessing import Process
 
 from DSH import Config as cf
 from DSH import MIfile as MI
@@ -376,8 +374,23 @@ def LoadImageTimes(img_times_source, usecols=0, skiprows=1, root_folder=None, de
     Load image times from file or list of files
     '''
     return iof.LoadImageTimes(img_times_source, usecols=usecols, skiprows=skiprows, root_folder=root_folder, return_unique=return_unique)
+
+def AverageG2M1_multi(cI_file_list, avg_interval=None, save_fname=None, save_prefix='g2m1', cut_prefix_len=2, delimiter='\t', comment='#', save_stderr=False, 
+                      sharp_bound=False, lag_tolerance=1e-2, lag_tolerance_isrelative=True, imgTimes=None, num_threads=1):
+    for pool in range(len(cI_file_list)//num_threads):
+        procs = []
+        min_idx, max_idx = pool*num_threads, min(len(cI_file_list), (pool+1)*num_threads)
+        for k in range(min_idx, max_idx):
+            p = Process(target=AverageG2M1, args=(cI_file_list[k], avg_interval, save_fname, save_prefix, cut_prefix_len, delimiter, comment, save_stderr, sharp_bound, lag_tolerance, lag_tolerance_isrelative, imgTimes))
+            p.start()
+            procs.append(p)
+        for p in procs:
+            p.join()
+
+
     
-def AverageG2M1(cI_file, avg_interval=None, save_fname=None, save_prefix='g2m1', cut_prefix_len=2, delimiter='\t', comment='#', save_stderr=False, sharp_bound=False, lag_tolerance=1e-2, lag_tolerance_isrelative=True, imgTimes=None):
+def AverageG2M1(cI_file, avg_interval=None, save_fname=None, save_prefix='g2m1', cut_prefix_len=2, delimiter='\t', comment='#', save_stderr=False, 
+                sharp_bound=False, lag_tolerance=1e-2, lag_tolerance_isrelative=True, imgTimes=None):
     '''
     Load cI-like file and average g2m1. 
     '''
@@ -458,49 +471,87 @@ def AverageCorrTimetrace(CorrData, ImageTimes, Lagtimes_idxlist, avg_interval=No
                     Only returned if return_stderr==True
     '''
     if (img_indexes is None):
-        img_indexes = np.arange(CorrData.shape[0], dtype=int)
+        img_indexes = np.arange(CorrData.shape[0], dtype=int)    
         
     int_bounds = sf.ValidateAverageInterval(avg_interval, num_datapoints=CorrData.shape[0])
-            
-    g2m1_alllags, g2m1_laglist = sf.FindLags(series=ImageTimes, lags_index=Lagtimes_idxlist, refs_index=img_indexes, subset_intervals=int_bounds, tolerance=lag_tolerance, tolerance_isrelative=lag_tolerance_isrelative, verbose=verbose)
-    
-    g2m1 = np.zeros((len(int_bounds), np.max([len(l) for l in g2m1_laglist])), dtype=float)
-    g2m1_lags = np.nan * np.ones_like(g2m1, dtype=float)
-    g2m1_avgnum = np.zeros_like(g2m1, dtype=int)
-    if verbose:
-        logging.debug('AverageCorrTimetrace: cI time averages will be performed by dividing the {0} time points into {1} windows of sizes {2}'.format(CorrData.shape[0], len(int_bounds), [intb[1]-intb[0] for intb in int_bounds]))
-        logging.debug('Detailed interval bounds: {0}'.format(int_bounds))
-        logging.debug('original cI has shape ' + str(CorrData.shape) + '. Averaged g2m1 has shape ' + str(g2m1.shape) + ' (check: ' + str(g2m1_avgnum.shape) + ')')
-    
-    for cur_tavg_idx in range(len(int_bounds)):
-        g2m1_lags[cur_tavg_idx,:len(g2m1_laglist[cur_tavg_idx])] = g2m1_laglist[cur_tavg_idx]
-        for tidx in range(*int_bounds[cur_tavg_idx]): # all timepoints in current interval
-            for lidx in range(CorrData.shape[1]): # all available lagtimes in input correlation matrix
-                if (tidx < len(g2m1_alllags[lidx])): # g2m1_alllags[lidx] is the list of time delays in physical units associated to lidx-th integer lagtime
-                                                     # don't consider reference times tidx >= len(g2m1_alllags[lidx]), as the second time points is beyond maximum timepoint
-                    if (sharp_bound == False) or (tidx + Lagtimes_idxlist[lidx] >= int_bounds[cur_tavg_idx][0] and \
-                                                  tidx + Lagtimes_idxlist[lidx] < int_bounds[cur_tavg_idx][1]):
-                        # find which lagtime in physical units is closest to the current lagtime
-                        cur_lagidx = np.argmin(np.abs(np.subtract(g2m1_laglist[cur_tavg_idx], g2m1_alllags[lidx][tidx])))
-                        if (~np.isnan(CorrData[tidx,lidx])):
-                            g2m1_avgnum[cur_tavg_idx,cur_lagidx] += 1
-                            g2m1[cur_tavg_idx,cur_lagidx] += CorrData[tidx,lidx]
-                    elif verbose:
-                        logging.debug('Time index {0} and lag index {1} (d{2}) skipped because of sharp bound {3}'.format(tidx, lidx, Lagtimes_idxlist[lidx], int_bounds[cur_tavg_idx]))
-    g2m1 = np.divide(g2m1, g2m1_avgnum)
-    
-    if return_stderr:
-        g2m1_err = np.zeros_like(g2m1)
+
+    if lag_tolerance_isrelative:
+        strmsg = '{0:.1f}% relative tolerance'.format(lag_tolerance*100)
+    else:
+        strmsg = 'an absolute tolerance of {0} time units'.format(lag_tolerance)
+
+    start_imtime = np.min([b[0] for b in int_bounds])
+    end_imtime = min(len(ImageTimes), np.max(Lagtimes_idxlist)+np.max([b[1] for b in int_bounds]))
+    if sf.AllWithinTolerance(np.diff(ImageTimes[start_imtime:end_imtime]), lag_tolerance, lag_tolerance_isrelative):
+
+        tdiff = np.nanmean(np.diff(ImageTimes[start_imtime:end_imtime]))
+        g2m1_lags = np.multiply(Lagtimes_idxlist, tdiff)
+
+        logging.debug('Acquisition at constant rate within ' + strmsg + '. Average time between frames: {0} time units'.format(tdiff))
+
+        g2m1 = np.zeros((len(int_bounds), len(Lagtimes_idxlist)), dtype=float)
+        g2m1_err = np.zeros_like(g2m1, dtype=float)
         for cur_tavg_idx in range(len(int_bounds)):
-            for tidx in range(*int_bounds[cur_tavg_idx]):
-                for lidx in range(CorrData.shape[1]):
-                    if (tidx < len(g2m1_alllags[lidx])):
+            for lidx in range(CorrData.shape[1]): # all available lagtimes in input correlation matrix
+                cur_tmin, cur_tmax = int_bounds[cur_tavg_idx][0], int_bounds[cur_tavg_idx][1]
+                if len(int_bounds[cur_tavg_idx])>2:
+                    cur_tstep = int_bounds[cur_tavg_idx][2]
+                else:
+                    cur_tstep = 1
+                if sharp_bound:
+                    cur_tmax = max(cur_tmin, int_bounds[cur_tavg_idx][1]-Lagtimes_idxlist[lidx])
+                if (cur_tmax > cur_tmin):
+                    avg_slice = slice(cur_tmin, cur_tmax, cur_tstep)
+                    g2m1[cur_tavg_idx,lidx] = np.nanmean(CorrData[avg_slice,lidx])
+                    g2m1_err[cur_tavg_idx,lidx] = np.nanstd(CorrData[avg_slice,lidx])
+                elif verbose:
+                    logging.debug('Lag index {0} (d{1}) skipped because of sharp bound {2}'.format(lidx, Lagtimes_idxlist[lidx], int_bounds[cur_tavg_idx]))
+
+    else:
+
+        logging.debug('Acquisition rate was not constant within ' + strmsg + '. Running generalized procedure')
+            
+        g2m1_alllags, g2m1_laglist = sf.FindLags(series=ImageTimes, lags_index=Lagtimes_idxlist, refs_index=img_indexes, subset_intervals=int_bounds, tolerance=lag_tolerance, tolerance_isrelative=lag_tolerance_isrelative, verbose=verbose)
+        
+        g2m1 = np.zeros((len(int_bounds), np.max([len(l) for l in g2m1_laglist])), dtype=float)
+        g2m1_lags = np.nan * np.ones_like(g2m1, dtype=float)
+        g2m1_avgnum = np.zeros_like(g2m1, dtype=int)
+        if verbose:
+            logging.debug('AverageCorrTimetrace: cI time averages will be performed by dividing the {0} time points into {1} windows of sizes {2}'.format(CorrData.shape[0], len(int_bounds), [intb[1]-intb[0] for intb in int_bounds]))
+            logging.debug('Detailed interval bounds: {0}'.format(int_bounds))
+            logging.debug('original cI has shape ' + str(CorrData.shape) + '. Averaged g2m1 has shape ' + str(g2m1.shape) + ' (check: ' + str(g2m1_avgnum.shape) + ')')
+        
+        for cur_tavg_idx in range(len(int_bounds)):
+            g2m1_lags[cur_tavg_idx,:len(g2m1_laglist[cur_tavg_idx])] = g2m1_laglist[cur_tavg_idx]
+            for tidx in range(*int_bounds[cur_tavg_idx]): # all timepoints in current interval
+                for lidx in range(CorrData.shape[1]): # all available lagtimes in input correlation matrix
+                    if (tidx < len(g2m1_alllags[lidx])): # g2m1_alllags[lidx] is the list of time delays in physical units associated to lidx-th integer lagtime
+                                                        # don't consider reference times tidx >= len(g2m1_alllags[lidx]), as the second time points is beyond maximum timepoint
                         if (sharp_bound == False) or (tidx + Lagtimes_idxlist[lidx] >= int_bounds[cur_tavg_idx][0] and \
-                                                      tidx + Lagtimes_idxlist[lidx] < int_bounds[cur_tavg_idx][1]):
+                                                    tidx + Lagtimes_idxlist[lidx] < int_bounds[cur_tavg_idx][1]):
+                            # find which lagtime in physical units is closest to the current lagtime
                             cur_lagidx = np.argmin(np.abs(np.subtract(g2m1_laglist[cur_tavg_idx], g2m1_alllags[lidx][tidx])))
                             if (~np.isnan(CorrData[tidx,lidx])):
-                                g2m1_err[cur_tavg_idx,cur_lagidx] += np.square(CorrData[tidx,lidx]-g2m1[cur_tavg_idx,cur_lagidx])
-        g2m1_err = np.sqrt(np.divide(g2m1_err, g2m1_avgnum))
+                                g2m1_avgnum[cur_tavg_idx,cur_lagidx] += 1
+                                g2m1[cur_tavg_idx,cur_lagidx] += CorrData[tidx,lidx]
+                        elif verbose:
+                            logging.debug('Time index {0} and lag index {1} (d{2}) skipped because of sharp bound {3}'.format(tidx, lidx, Lagtimes_idxlist[lidx], int_bounds[cur_tavg_idx]))
+        g2m1 = np.divide(g2m1, g2m1_avgnum)
+        
+        if return_stderr:
+            g2m1_err = np.zeros_like(g2m1)
+            for cur_tavg_idx in range(len(int_bounds)):
+                for tidx in range(*int_bounds[cur_tavg_idx]):
+                    for lidx in range(CorrData.shape[1]):
+                        if (tidx < len(g2m1_alllags[lidx])):
+                            if (sharp_bound == False) or (tidx + Lagtimes_idxlist[lidx] >= int_bounds[cur_tavg_idx][0] and \
+                                                        tidx + Lagtimes_idxlist[lidx] < int_bounds[cur_tavg_idx][1]):
+                                cur_lagidx = np.argmin(np.abs(np.subtract(g2m1_laglist[cur_tavg_idx], g2m1_alllags[lidx][tidx])))
+                                if (~np.isnan(CorrData[tidx,lidx])):
+                                    g2m1_err[cur_tavg_idx,cur_lagidx] += np.square(CorrData[tidx,lidx]-g2m1[cur_tavg_idx,cur_lagidx])
+            g2m1_err = np.sqrt(np.divide(g2m1_err, g2m1_avgnum))
+
+    if return_stderr:
         return g2m1, g2m1_lags, g2m1_err
     else:
         return g2m1, g2m1_lags
@@ -1228,8 +1279,8 @@ class ROIproc():
             #logging.debug('GetBkgIbest found raw data for {0} background. Extracting {1}-th exposure time'.format(bkg_key, exp_idx))
             return self.GetBkgIraw(bkg_key=bkg_key, exp_idx=exp_idx)
         elif self.HasBkgIavg(bkg_key=bkg_key):
-            logging.debug('GetBkgIbest found only averaged data for {0} background. Renormalizing it to map it to {1}-th exposure time ({2}ms)'.format(bkg_key, exp_idx, self.GetExptimes(exp_idx=exp_idx, corr=CorrExptime)))
-            return self.GetBkgIavg(bkg_key=bkg_key, texp=self.GetExptimes(exp_idx=exp_idx, corr=CorrExptime))
+            logging.debug('GetBkgIbest found only averaged data for {0} background. Renormalizing it to map it to {1}-th exposure time ({2}ms)'.format(bkg_key, exp_idx, self.GetExptimes(exp_idx=exp_idx, corr=exp_idx)))
+            return self.GetBkgIavg(bkg_key=bkg_key, texp=self.GetExptimes(exp_idx=exp_idx, corr=exp_idx))
         else:
             return nobkg_res
     def GetDarkBkgIbest(self, exp_idx, nobkg_res=None):
