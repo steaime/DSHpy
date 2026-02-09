@@ -376,12 +376,12 @@ def LoadImageTimes(img_times_source, usecols=0, skiprows=1, root_folder=None, de
     return iof.LoadImageTimes(img_times_source, usecols=usecols, skiprows=skiprows, root_folder=root_folder, return_unique=return_unique)
 
 def AverageG2M1_multi(cI_file_list, avg_interval=None, save_fname=None, save_prefix='g2m1', cut_prefix_len=2, delimiter='\t', comment='#', save_stderr=False, 
-                      sharp_bound=False, lag_tolerance=1e-2, lag_tolerance_isrelative=True, imgTimes=None, num_threads=1):
+                      sharp_bound=False, lag_tolerance=1e-2, lag_tolerance_isrelative=True, imgTimes=None, verbose=0, num_threads=1):
     for pool in range(len(cI_file_list)//num_threads):
         procs = []
         min_idx, max_idx = pool*num_threads, min(len(cI_file_list), (pool+1)*num_threads)
         for k in range(min_idx, max_idx):
-            p = Process(target=AverageG2M1, args=(cI_file_list[k], avg_interval, save_fname, save_prefix, cut_prefix_len, delimiter, comment, save_stderr, sharp_bound, lag_tolerance, lag_tolerance_isrelative, imgTimes))
+            p = Process(target=AverageG2M1, args=(cI_file_list[k], avg_interval, save_fname, save_prefix, cut_prefix_len, delimiter, comment, save_stderr, sharp_bound, lag_tolerance, lag_tolerance_isrelative, imgTimes, verbose))
             p.start()
             procs.append(p)
         for p in procs:
@@ -390,7 +390,7 @@ def AverageG2M1_multi(cI_file_list, avg_interval=None, save_fname=None, save_pre
 
     
 def AverageG2M1(cI_file, avg_interval=None, save_fname=None, save_prefix='g2m1', cut_prefix_len=2, delimiter='\t', comment='#', save_stderr=False, 
-                sharp_bound=False, lag_tolerance=1e-2, lag_tolerance_isrelative=True, imgTimes=None):
+                sharp_bound=False, lag_tolerance=1e-2, lag_tolerance_isrelative=True, imgTimes=None, verbose=0):
     '''
     Load cI-like file and average g2m1. 
     '''
@@ -404,7 +404,8 @@ def AverageG2M1(cI_file, avg_interval=None, save_fname=None, save_prefix='g2m1',
             imgTimes = np.loadtxt(imgTimes)
         ref_indexes = np.asarray([np.argmin(np.abs(imgTimes-curt)) for curt in cur_times])
     
-    g2m1_avg = AverageCorrTimetrace(cur_cI, imgTimes, cur_lagidx_list, avg_interval=avg_interval, img_indexes=ref_indexes, return_stderr=True, sharp_bound=sharp_bound, lag_tolerance=lag_tolerance, lag_tolerance_isrelative=lag_tolerance_isrelative)
+    g2m1_avg = AverageCorrTimetrace(cur_cI, imgTimes, cur_lagidx_list, avg_interval=avg_interval, img_indexes=ref_indexes, return_stderr=True, sharp_bound=sharp_bound, 
+                                    lag_tolerance=lag_tolerance, lag_tolerance_isrelative=lag_tolerance_isrelative, verbose=verbose)
     g2m1, g2m1_lags = g2m1_avg[0], g2m1_avg[1]
     
     if sharp_bound:
@@ -425,8 +426,14 @@ def AverageG2M1(cI_file, avg_interval=None, save_fname=None, save_prefix='g2m1',
     else:
         str_hdr_g = str(delimiter).join(['dt'+delimiter+'t{0:.2f}[{1}:{2}]'.format(cur_times[int((int_bounds[tavgidx][0]+int_bounds[tavgidx][1])/2)], int_bounds[tavgidx][0], int_bounds[tavgidx][1])+int_suffix for tavgidx in range(g2m1.shape[0])])
         g2m1_out = np.empty((g2m1.shape[1], 2*g2m1.shape[0]), dtype=float)
-        g2m1_out[:,0::2] = g2m1_lags.T
-        g2m1_out[:,1::2] = g2m1.T
+        if verbose>0:
+            logging.debug('Input cI has shape {0}. Time-averaged g2m1 has shape {1} (lag shape: {2}). Not saving stderr, output file will have shape {3}'.format(cur_cI.shape, g2m1.shape, g2m1_lags.shape, g2m1_out.shape))
+        if g2m1.shape[0]>1:
+            g2m1_out[:,0::2] = g2m1_lags.T
+            g2m1_out[:,1::2] = g2m1.T
+        else:
+            g2m1_out[:,0] = np.squeeze(g2m1_lags)
+            g2m1_out[:,1] = np.squeeze(g2m1)
     
     if save_fname is None:
         save_fname = save_prefix + sf.GetFilenameFromCompletePath(cI_file)[cut_prefix_len:]
@@ -482,16 +489,19 @@ def AverageCorrTimetrace(CorrData, ImageTimes, Lagtimes_idxlist, avg_interval=No
 
     start_imtime = np.min([b[0] for b in int_bounds])
     end_imtime = min(len(ImageTimes), np.max(Lagtimes_idxlist)+np.max([b[1] for b in int_bounds]))
+
     if sf.AllWithinTolerance(np.diff(ImageTimes[start_imtime:end_imtime]), lag_tolerance, lag_tolerance_isrelative):
 
         tdiff = np.nanmean(np.diff(ImageTimes[start_imtime:end_imtime]))
-        g2m1_lags = np.multiply(Lagtimes_idxlist, tdiff)
-
-        logging.debug('Acquisition at constant rate within ' + strmsg + '. Average time between frames: {0} time units'.format(tdiff))
+        g2m1_lags_shared = np.multiply(Lagtimes_idxlist, tdiff)
+        if verbose:
+            logging.debug('Acquisition at constant rate within ' + strmsg + '. Average time between frames: {0} time units'.format(tdiff))
 
         g2m1 = np.zeros((len(int_bounds), len(Lagtimes_idxlist)), dtype=float)
+        g2m1_lags = np.zeros_like(g2m1, dtype=float)
         g2m1_err = np.zeros_like(g2m1, dtype=float)
         for cur_tavg_idx in range(len(int_bounds)):
+            g2m1_lags[cur_tavg_idx] = g2m1_lags_shared
             for lidx in range(CorrData.shape[1]): # all available lagtimes in input correlation matrix
                 cur_tmin, cur_tmax = int_bounds[cur_tavg_idx][0], int_bounds[cur_tavg_idx][1]
                 if len(int_bounds[cur_tavg_idx])>2:
@@ -509,7 +519,8 @@ def AverageCorrTimetrace(CorrData, ImageTimes, Lagtimes_idxlist, avg_interval=No
 
     else:
 
-        logging.debug('Acquisition rate was not constant within ' + strmsg + '. Running generalized procedure')
+        if verbose:
+            logging.debug('Acquisition rate was not constant within ' + strmsg + '. Running generalized procedure')
             
         g2m1_alllags, g2m1_laglist = sf.FindLags(series=ImageTimes, lags_index=Lagtimes_idxlist, refs_index=img_indexes, subset_intervals=int_bounds, tolerance=lag_tolerance, tolerance_isrelative=lag_tolerance_isrelative, verbose=verbose)
         
